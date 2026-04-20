@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.review-assist/
+.idea
+*.tgz
+.env
+.env.local

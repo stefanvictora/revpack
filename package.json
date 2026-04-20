@@ -1,0 +1,47 @@
+{
+  "name": "review-assist",
+  "version": "0.1.0",
+  "description": "CLI assistant for code review workflows — fetch MR/PR threads, prepare agent-ready context, assist resolution, generate summaries.",
+  "type": "module",
+  "bin": {
+    "review-assist": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "dev": "tsx src/cli/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "clean": "rimraf dist"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "code-review",
+    "gitlab",
+    "github",
+    "merge-request",
+    "pull-request",
+    "cli"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.19.39",
+    "rimraf": "^5.0.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "conf": "^12.0.0",
+    "undici": "^6.21.2",
+    "zod": "^3.22.4"
+  }
+}
