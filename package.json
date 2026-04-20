@@ -16,7 +16,8 @@
     "clean": "rimraf dist"
   },
   "files": [
-    "dist"
+    "dist",
+    "templates"
   ],
   "engines": {
     "node": ">=18"
