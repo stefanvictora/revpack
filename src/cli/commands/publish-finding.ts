@@ -6,7 +6,11 @@ import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 
 const DEFAULT_FINDINGS_FILE = '.review-assist/outputs/new-findings.json';
 
-async function loadNewFindings(filePath: string): Promise<NewFinding[]> {
+interface FindingEntry extends NewFinding {
+  published?: boolean;
+}
+
+async function loadNewFindings(filePath: string): Promise<FindingEntry[]> {
   let raw: string;
   try {
     raw = await fs.readFile(filePath, 'utf-8');
@@ -16,10 +20,14 @@ async function loadNewFindings(filePath: string): Promise<NewFinding[]> {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) throw new Error('expected array');
-    return parsed as NewFinding[];
+    return parsed as FindingEntry[];
   } catch {
     throw new Error(`${filePath} must be a JSON array of { filePath, line, body, severity, category } objects`);
   }
+}
+
+async function saveFindings(filePath: string, entries: FindingEntry[]): Promise<void> {
+  await fs.writeFile(filePath, JSON.stringify(entries, null, 2), 'utf-8');
 }
 
 export function registerPublishFindingCommand(program: Command): void {
@@ -31,7 +39,8 @@ export function registerPublishFindingCommand(program: Command): void {
     ].join('\n'))
     .option('--from <file>', `Findings JSON file (default: ${DEFAULT_FINDINGS_FILE})`)
     .option('--dry-run', 'Show what would be published without creating threads')
-    .action(async (opts: { from?: string; dryRun?: boolean }) => {
+    .option('--force', 'Re-publish already-published findings')
+    .action(async (opts: { from?: string; dryRun?: boolean; force?: boolean }) => {
       try {
         const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
         const findings = await loadNewFindings(filePath);
@@ -41,12 +50,19 @@ export function registerPublishFindingCommand(program: Command): void {
           return;
         }
 
+        const pending = opts.force ? findings : findings.filter((f) => !f.published);
+
         if (opts.dryRun) {
-          console.log(chalk.bold(`${findings.length} finding(s) would be published:\n`));
-          for (const f of findings) {
+          console.log(chalk.bold(`${pending.length} finding(s) would be published:\n`));
+          for (const f of pending) {
             console.log(`  ${chalk.yellow(f.severity)} ${chalk.dim(f.category)} ${f.filePath}:${f.line}`);
             console.log(`    ${f.body.split('\n')[0].slice(0, 100)}`);
           }
+          return;
+        }
+
+        if (pending.length === 0) {
+          console.log(chalk.dim('All findings already published — use --force to re-publish.'));
           return;
         }
 
@@ -54,17 +70,24 @@ export function registerPublishFindingCommand(program: Command): void {
         const defaultRepo = await getDefaultRepo();
 
         let published = 0;
-        for (const finding of findings) {
+        for (const finding of pending) {
           try {
             await orchestrator.publishFinding(finding, defaultRepo);
             console.log(chalk.green(`  ✓ ${finding.filePath}:${finding.line} (${finding.severity})`));
+            finding.published = true;
             published++;
           } catch (err) {
             console.error(chalk.red(`  ✗ ${finding.filePath}:${finding.line}: ${err instanceof Error ? err.message : String(err)}`));
           }
         }
+
+        // Persist published state
+        await saveFindings(filePath, findings);
+
+        const skipped = findings.length - pending.length;
         console.log('');
-        console.log(chalk.green(`Done: ${published}/${findings.length} findings published`));
+        console.log(chalk.green(`Done: ${published}/${pending.length} findings published`) +
+          (skipped > 0 ? chalk.dim(` (${skipped} already published)`) : ''));
       } catch (err) {
         handleError(err);
       }
