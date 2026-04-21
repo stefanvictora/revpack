@@ -3,38 +3,107 @@ import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 
+const DEFAULT_REPLIES_FILE = '.review-assist/outputs/replies.json';
+
+interface ReplyEntry {
+  threadId: string; // T-001 shorthand or full SHA
+  body: string;
+  resolve?: boolean;
+}
+
+async function loadRepliesJson(filePath: string): Promise<ReplyEntry[]> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath, 'utf-8');
+  } catch {
+    throw new Error(`Cannot read ${filePath} — run 'review-assist review' first to generate it`);
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error('expected array');
+    return parsed as ReplyEntry[];
+  } catch {
+    throw new Error(`${filePath} must be a JSON array of { threadId, body, resolve? } objects`);
+  }
+}
+
 export function registerPublishReplyCommand(program: Command): void {
   program
-    .command('publish-reply <ref> <threadId>')
-    .description('Publish a reply to a review thread')
-    .option('--repo <repo>', 'Repository slug (group/project)')
-    .option('--from <file>', 'Read reply body from a file')
-    .option('--body <text>', 'Reply body text')
-    .option('--resolve', 'Also resolve the thread after replying')
-    .action(async (ref: string, threadId: string, opts: { repo?: string; from?: string; body?: string; resolve?: boolean }) => {
+    .command('publish-reply [thread]')
+    .description([
+      'Publish replies to review threads.',
+      '  No argument: publish all replies from replies.json',
+      '  [thread]:   publish one thread (T-001 or full SHA)',
+    ].join('\n'))
+    .option('--from <file>', `Replies JSON file (default: ${DEFAULT_REPLIES_FILE})`)
+    .option('--body <text>', 'Inline reply body (single thread only)')
+    .option('--resolve', 'Resolve the thread(s) after replying')
+    .action(async (thread: string | undefined, opts: { from?: string; body?: string; resolve?: boolean }) => {
       try {
-        let body: string;
-        if (opts.from) {
-          body = await fs.readFile(opts.from, 'utf-8');
-        } else if (opts.body) {
-          body = opts.body;
-        } else {
-          console.error(chalk.red('Provide --body or --from <file>'));
-          process.exit(1);
-        }
-
         const orchestrator = await createOrchestrator();
-        const defaultRepo = opts.repo ?? await getDefaultRepo();
+        const defaultRepo = await getDefaultRepo();
+        const repliesFile = opts.from ?? DEFAULT_REPLIES_FILE;
 
-        await orchestrator.publishReply(ref, threadId, body, defaultRepo);
-        console.log(chalk.green(`✓ Reply posted to thread ${threadId}`));
+        if (thread) {
+          // ── Single thread ──────────────────────────────────────────────────
+          let body: string;
+          let shouldResolve = opts.resolve ?? false;
 
-        if (opts.resolve) {
-          await orchestrator.resolveThread(ref, threadId, defaultRepo);
-          console.log(chalk.green(`✓ Thread ${threadId} resolved`));
+          if (opts.body) {
+            body = opts.body;
+          } else {
+            // Look up this thread in the replies file
+            const entries = await loadRepliesJson(repliesFile);
+            const resolved = await orchestrator.resolveThreadRef(thread);
+            const entry = entries.find(
+              (e) => e.threadId === thread || e.threadId === resolved,
+            );
+            if (!entry) {
+              console.error(chalk.red(`No reply found for "${thread}" in ${repliesFile}`));
+              console.error(chalk.dim('Available: ' + entries.map((e) => e.threadId).join(', ')));
+              process.exit(1);
+            }
+            body = entry.body;
+            shouldResolve = opts.resolve ?? entry.resolve ?? false;
+          }
+
+          await orchestrator.publishReply(undefined, thread, body, defaultRepo);
+          console.log(chalk.green(`✓ Replied to ${thread}`));
+          if (shouldResolve) {
+            await orchestrator.resolveThread(undefined, thread, defaultRepo);
+            console.log(chalk.dim('  thread resolved'));
+          }
+
+        } else {
+          // ── All threads ────────────────────────────────────────────────────
+          const entries = await loadRepliesJson(repliesFile);
+          if (entries.length === 0) {
+            console.log(chalk.dim('No replies to publish.'));
+            return;
+          }
+
+          let posted = 0;
+          let resolved = 0;
+          for (const entry of entries) {
+            try {
+              await orchestrator.publishReply(undefined, entry.threadId, entry.body, defaultRepo);
+              console.log(chalk.green(`  ✓ ${entry.threadId}`));
+              posted++;
+              if (entry.resolve || opts.resolve) {
+                await orchestrator.resolveThread(undefined, entry.threadId, defaultRepo);
+                console.log(chalk.dim('    resolved'));
+                resolved++;
+              }
+            } catch (err) {
+              console.error(chalk.red(`  ✗ ${entry.threadId}: ${err instanceof Error ? err.message : String(err)}`));
+            }
+          }
+          console.log('');
+          console.log(chalk.green(`Done: ${posted} replied, ${resolved} resolved`));
         }
       } catch (err) {
         handleError(err);
       }
     });
 }
+

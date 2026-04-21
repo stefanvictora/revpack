@@ -102,6 +102,24 @@ export class WorkspaceManager {
     return fs.readFile(outputPath, 'utf-8');
   }
 
+  /**
+   * Resolve a T-NNN short reference to the full thread SHA.
+   * Returns the input unchanged if it doesn't match the T-NNN pattern.
+   */
+  async resolveThreadRef(ref: string): Promise<string> {
+    const match = ref.match(/^T-(\d{3,})$/i);
+    if (!match) return ref; // already a full ID or other format
+    const jsonPath = path.join(this.baseDir, 'threads', `${ref.toUpperCase()}.json`);
+    try {
+      const data = await fs.readFile(jsonPath, 'utf-8');
+      const thread = JSON.parse(data) as { threadId: string };
+      if (!thread.threadId) throw new Error('threadId field missing');
+      return thread.threadId;
+    } catch {
+      throw new Error(`Cannot resolve thread reference "${ref}" — no bundle entry found at ${jsonPath}`);
+    }
+  }
+
   // ─── Internal helpers ───────────────────────────────────
 
   private async writeSession(session: Session): Promise<void> {

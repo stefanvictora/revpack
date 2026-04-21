@@ -175,19 +175,30 @@ export class ReviewOrchestrator {
 
   // ─── Write operations (guarded) ─────────────────────────
 
-  async publishReply(ref: string, threadId: string, body: string, defaultRepo?: string): Promise<void> {
+  async publishReply(ref?: string, threadId?: string, body?: string, defaultRepo?: string): Promise<void> {
     const targetRef = await this.resolveRef(ref, defaultRepo);
-    await this.provider.postReply(targetRef, threadId, body);
+    if (!threadId) throw new Error('threadId is required');
+    if (!body) throw new Error('reply body is required');
+    const resolvedId = await this.workspace.resolveThreadRef(threadId);
+    await this.provider.postReply(targetRef, resolvedId, body);
   }
 
-  async resolveThread(ref: string, threadId: string, defaultRepo?: string): Promise<void> {
+  async resolveThread(ref?: string, threadId?: string, defaultRepo?: string): Promise<void> {
     const targetRef = await this.resolveRef(ref, defaultRepo);
-    await this.provider.resolveThread(targetRef, threadId);
+    if (!threadId) throw new Error('threadId is required');
+    const resolvedId = await this.workspace.resolveThreadRef(threadId);
+    await this.provider.resolveThread(targetRef, resolvedId);
   }
 
-  async updateDescription(ref: string, body: string, defaultRepo?: string): Promise<void> {
+  async updateDescription(ref?: string, body?: string, defaultRepo?: string): Promise<void> {
     const targetRef = await this.resolveRef(ref, defaultRepo);
+    if (!body) throw new Error('description body is required');
     await this.provider.updateDescription(targetRef, body);
+  }
+
+  /** Resolve a T-NNN shorthand to the full thread SHA. */
+  resolveThreadRef(ref: string): Promise<string> {
+    return this.workspace.resolveThreadRef(ref);
   }
 
   // ─── Helpers ────────────────────────────────────────────
