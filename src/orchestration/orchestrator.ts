@@ -42,7 +42,7 @@ export class ReviewOrchestrator {
   /**
    * Open: resolve ref, fetch snapshot, display summary info.
    */
-  async open(ref: string, defaultRepo?: string): Promise<ReviewTarget> {
+  async open(ref?: string, defaultRepo?: string): Promise<ReviewTarget> {
     const targetRef = await this.resolveRef(ref, defaultRepo);
     return this.provider.getTargetSnapshot(targetRef);
   }
@@ -51,7 +51,7 @@ export class ReviewOrchestrator {
    * Threads: list unresolved threads with classification.
    */
   async threads(
-    ref: string,
+    ref?: string,
     defaultRepo?: string,
     options?: { all?: boolean },
   ): Promise<{ threads: ReviewThread[]; classifications: ReturnType<ThreadClassifier['classify']>[] }> {
@@ -71,7 +71,7 @@ export class ReviewOrchestrator {
    * Prepare: create workspace bundle with full context for agent consumption.
    */
   async prepare(
-    ref: string,
+    ref?: string,
     defaultRepo?: string,
     options?: { threadIds?: string[]; checkout?: boolean },
   ): Promise<WorkspaceBundle> {
@@ -113,7 +113,7 @@ export class ReviewOrchestrator {
    * Summarize: generate walkthrough, summary, and changed files table.
    */
   async summarize(
-    ref: string,
+    ref?: string,
     defaultRepo?: string,
   ): Promise<{ summary: ReviewSummary; markdown: string }> {
     const targetRef = await this.resolveRef(ref, defaultRepo);
@@ -192,7 +192,19 @@ export class ReviewOrchestrator {
 
   // ─── Helpers ────────────────────────────────────────────
 
-  private async resolveRef(ref: string, defaultRepo?: string): Promise<ReviewTargetRef> {
+  private async resolveRef(ref?: string, defaultRepo?: string): Promise<ReviewTargetRef> {
+    // If no ref given, load the active session
+    if (!ref) {
+      const session = await this.workspace.loadSession();
+      if (!session) {
+        throw new Error(
+          'No MR/PR reference provided and no active session found in .review-assist/.\n' +
+          'Run `review-assist review <ref>` first, or pass a ref explicitly.',
+        );
+      }
+      return session.targetRef;
+    }
+
     const targetRef = await this.provider.resolveTarget(ref);
 
     // Fill in repository from default or git remote if not present in ref

@@ -4,13 +4,13 @@ import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../
 
 export function registerPrepareCommand(program: Command): void {
   program
-    .command('prepare <ref>')
+    .command('prepare [ref]')
     .description('Prepare agent-ready workspace bundle for a review target')
     .option('--json', 'Output as JSON')
     .option('--repo <repo>', 'Repository slug (group/project)')
     .option('--thread <ids...>', 'Specific thread IDs to include')
     .option('--checkout', 'Checkout the source branch before preparing')
-    .action(async (ref: string, opts: { json?: boolean; repo?: string; thread?: string[]; checkout?: boolean }) => {
+    .action(async (ref: string | undefined, opts: { json?: boolean; repo?: string; thread?: string[]; checkout?: boolean }) => {
       try {
         const orchestrator = await createOrchestrator();
         const defaultRepo = opts.repo ?? await getDefaultRepo();

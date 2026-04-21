@@ -4,11 +4,11 @@ import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../
 
 export function registerSummarizeCommand(program: Command): void {
   program
-    .command('summarize <ref>')
+    .command('summarize [ref]')
     .description('Generate a walkthrough and summary for a review target')
     .option('--json', 'Output as JSON')
     .option('--repo <repo>', 'Repository slug (group/project)')
-    .action(async (ref: string, opts: { json?: boolean; repo?: string }) => {
+    .action(async (ref: string | undefined, opts: { json?: boolean; repo?: string }) => {
       try {
         const orchestrator = await createOrchestrator();
         const defaultRepo = opts.repo ?? await getDefaultRepo();

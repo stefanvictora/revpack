@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import { registerReviewCommand } from './commands/review.js';
 import { registerOpenCommand } from './commands/open.js';
 import { registerThreadsCommand } from './commands/threads.js';
 import { registerPrepareCommand } from './commands/prepare.js';
@@ -17,6 +18,7 @@ program
   .description('CLI assistant for code review workflows')
   .version('0.1.0');
 
+registerReviewCommand(program);
 registerOpenCommand(program);
 registerThreadsCommand(program);
 registerPrepareCommand(program);

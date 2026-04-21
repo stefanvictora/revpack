@@ -5,12 +5,12 @@ import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 
 export function registerUpdateDescriptionCommand(program: Command): void {
   program
-    .command('update-description <ref>')
+    .command('update-description [ref]')
     .description('Update the MR/PR description')
     .option('--repo <repo>', 'Repository slug (group/project)')
     .option('--from <file>', 'Read description from a file')
     .option('--from-summary', 'Use the generated summary.md from the workspace bundle')
-    .action(async (ref: string, opts: { repo?: string; from?: string; fromSummary?: boolean }) => {
+    .action(async (ref: string | undefined, opts: { repo?: string; from?: string; fromSummary?: boolean }) => {
       try {
         let body: string;
         if (opts.from) {
@@ -31,7 +31,7 @@ export function registerUpdateDescriptionCommand(program: Command): void {
         const defaultRepo = opts.repo ?? await getDefaultRepo();
 
         await orchestrator.updateDescription(ref, body, defaultRepo);
-        console.log(chalk.green(`✓ Description updated for ${ref}`));
+        console.log(chalk.green(`✓ Description updated${ref ? ` for ${ref}` : ''}`));
       } catch (err) {
         handleError(err);
       }

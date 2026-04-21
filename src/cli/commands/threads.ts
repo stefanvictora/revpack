@@ -4,12 +4,12 @@ import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../
 
 export function registerThreadsCommand(program: Command): void {
   program
-    .command('threads <ref>')
+    .command('threads [ref]')
     .description('List review threads for a target')
     .option('--json', 'Output as JSON')
     .option('--all', 'Include resolved threads')
     .option('--repo <repo>', 'Repository slug (group/project)')
-    .action(async (ref: string, opts: { json?: boolean; all?: boolean; repo?: string }) => {
+    .action(async (ref: string | undefined, opts: { json?: boolean; all?: boolean; repo?: string }) => {
       try {
         const orchestrator = await createOrchestrator();
         const defaultRepo = opts.repo ?? await getDefaultRepo();

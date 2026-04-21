@@ -4,11 +4,11 @@ import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../
 
 export function registerOpenCommand(program: Command): void {
   program
-    .command('open <ref>')
+    .command('open [ref]')
     .description('Open a review target (MR/PR) and display its metadata')
     .option('--json', 'Output as JSON')
     .option('--repo <repo>', 'Repository slug (group/project)')
-    .action(async (ref: string, opts: { json?: boolean; repo?: string }) => {
+    .action(async (ref: string | undefined, opts: { json?: boolean; repo?: string }) => {
       try {
         const orchestrator = await createOrchestrator();
         const defaultRepo = opts.repo ?? await getDefaultRepo();
