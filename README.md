@@ -31,32 +31,94 @@ npx review-assist config set gitlabUrl https://gitlab.example.com
 npx review-assist config set gitlabToken glpat-xxxxxxxxxxxx
 ```
 
+## Quick Start
+
+```bash
+# 1. One-time: set up your project for review-assist
+cd your-project
+review-assist init --prompts
+
+# 2. Point at a MR — fetches everything, classifies threads, writes CONTEXT.md
+review-assist review !42 --repo group/project
+
+# 3. Use with your agent (Copilot, Claude, etc.):
+#    - Open .review-assist/CONTEXT.md and tell your agent to follow it
+#    - Or use a Copilot prompt: /review-quick
+
+# 4. After the developer pushes changes, just re-run (auto-incremental):
+review-assist review
+
+# 5. Publish results back to GitLab/GitHub:
+review-assist publish-reply !42 <threadId> --from .review-assist/outputs/replies.json
+review-assist update-description !42 --from .review-assist/outputs/summary.md
+```
+
+You can also paste a full GitLab URL instead of `!42`:
+```bash
+review-assist review https://gitlab.example.com/group/project/-/merge_requests/42
+```
+
 ## Commands
+
+### `review [ref]` — Primary workflow (recommended)
+
+Fetches MR metadata, threads, diffs, classifies findings, generates a summary, and writes a `CONTEXT.md` entry point for agents.
+
+Re-running on the same MR automatically produces an **incremental** review (only changes since last run). Thread IDs (T-001, T-002, ...) are stable across runs — they never shift when threads get resolved or new ones appear.
+
+```bash
+review-assist review !42                          # first review (full)
+review-assist review                              # re-run: auto-incremental from session
+review-assist review --full                       # discard session, start fresh
+review-assist review !42 --checkout               # also checkout the source branch
+review-assist review https://gitlab.example.com/group/project/-/merge_requests/42
+review-assist review !42 --json
+```
+
+Creates `.review-assist/`:
+```
+.review-assist/
+  CONTEXT.md              ← agent entry point (start here)
+  session.json            ← tracks MR ref + last reviewed version
+  thread-map.json         ← stable T-NNN ↔ thread SHA mapping
+  target.json
+  threads/
+    T-001.md, T-001.json  ← one per unresolved thread (stable IDs)
+  diffs/
+    latest.patch           ← full MR diff
+    incremental.patch      ← changes since last review (auto on re-run)
+  files/
+    *_snippet.txt          ← code excerpts around threads
+  instructions/
+    REVIEW.md, project-review-rules.md
+  outputs/
+    summary.md, summary.json, findings.json
+```
 
 ### `open <ref>` — View MR/PR metadata
 
 ```bash
-npx review-assist open !42
-npx review-assist open !42 --repo group/project
-npx review-assist open https://gitlab.example.com/group/project/-/merge_requests/42
-npx review-assist open !42 --json
+review-assist open !42
+review-assist open !42 --repo group/project
+review-assist open https://gitlab.example.com/group/project/-/merge_requests/42
+review-assist open !42 --json
 ```
 
 ### `threads <ref>` — List review threads
 
 ```bash
-npx review-assist threads !42              # unresolved only
-npx review-assist threads !42 --all        # all threads
-npx review-assist threads !42 --json
+review-assist threads !42              # unresolved only
+review-assist threads !42 --all        # all threads
+review-assist threads !42 --json
 ```
 
-### `prepare <ref>` — Create agent-ready workspace bundle
+### `prepare <ref>` — Create agent-ready workspace bundle (low-level)
 
 ```bash
-npx review-assist prepare !42
-npx review-assist prepare !42 --thread abc123 def456
-npx review-assist prepare !42 --checkout
-npx review-assist prepare !42 --json
+review-assist prepare !42
+review-assist prepare !42 --thread abc123 def456
+review-assist prepare !42 --checkout
+review-assist prepare !42 --json
 ```
 
 Creates a `.review-assist/` bundle:
@@ -84,31 +146,39 @@ Creates a `.review-assist/` bundle:
 ### `summarize <ref>` — Generate walkthrough & summary
 
 ```bash
-npx review-assist summarize !42
-npx review-assist summarize !42 --json
+review-assist summarize !42
+review-assist summarize !42 --json
 ```
 
 ### `publish-reply <ref> <threadId>` — Post a reply
 
 ```bash
-npx review-assist publish-reply !42 abc123 --body "Fixed, thanks!"
-npx review-assist publish-reply !42 abc123 --from reply-draft.md
-npx review-assist publish-reply !42 abc123 --from reply-draft.md --resolve
+review-assist publish-reply !42 abc123 --body "Fixed, thanks!"
+review-assist publish-reply !42 abc123 --from reply-draft.md
+review-assist publish-reply !42 abc123 --from reply-draft.md --resolve
 ```
 
 ### `update-description <ref>` — Update MR/PR description
 
 ```bash
-npx review-assist update-description !42 --from summary.md
-npx review-assist update-description !42 --from-summary
+review-assist update-description !42 --from summary.md
+review-assist update-description !42 --from-summary
+```
+
+### `init` — Set up a project for review-assist
+
+```bash
+review-assist init             # creates REVIEW.md + .review-assist/rules.md
+review-assist init --prompts   # also creates .github/prompts/ with Copilot prompts
+review-assist init --dry-run   # preview without writing
 ```
 
 ### `config` — Manage configuration
 
 ```bash
-npx review-assist config show
-npx review-assist config set <key> <value>
-npx review-assist config init
+review-assist config show
+review-assist config set <key> <value>
+review-assist config init
 ```
 
 ## Architecture
@@ -146,6 +216,7 @@ npm run dev -- open !42    # run CLI with tsx (no build needed)
 - **Phase 0** ✅ Spike — GitLab auth, MR fetch, discussions, workspace bundle
 - **Phase 1** ✅ Read-only assistant — `open`, `threads`, `prepare`, `summarize`
 - **Phase 2** ✅ Assisted replies — `publish-reply`, `update-description`
+- **Phase 2.5** ✅ Unified workflow — `review` command, CONTEXT.md, incremental support
 - **Phase 3** 🔜 Patch assistance — Generate/apply patches, run checks
-- **Phase 4** 🔜 Learnings & incremental review — Durable learnings, version tracking
+- **Phase 4** 🔜 Learnings & automation — Durable learnings, CI integration
 - **Phase 5** 🔜 Provider expansion & MCP — GitHub adapter, MCP server

@@ -130,15 +130,27 @@ export class GitLabProvider implements ReviewProvider {
     toVersion: string,
   ): Promise<ReviewDiff[]> {
     const projectId = encodeURIComponent(ref.repository);
-    const data = await this.request<GitLabVersionDetail>(
-      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/versions/${toVersion}`,
-    );
-    // GitLab diff versions endpoint returns all diffs in a version.
-    // For true incremental comparison we return the diffs from the target version.
-    // A more precise incremental would require diffing the two version trees,
-    // which is a later enhancement.
-    void fromVersion; // reserved for future use
-    return (data.diffs ?? []).map((d) => this.mapDiff(d));
+    const basePath = `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/versions`;
+
+    // Fetch diffs from both versions in parallel
+    const [fromData, toData] = await Promise.all([
+      this.request<GitLabVersionDetail>(`${basePath}/${fromVersion}`),
+      this.request<GitLabVersionDetail>(`${basePath}/${toVersion}`),
+    ]);
+
+    const fromDiffs = fromData.diffs ?? [];
+    const toDiffs = toData.diffs ?? [];
+
+    // Build a lookup of the previous version's diffs keyed by new_path
+    const fromByPath = new Map<string, string>();
+    for (const d of fromDiffs) {
+      fromByPath.set(d.new_path, d.diff ?? '');
+    }
+
+    // Return only files whose diff content changed between the two versions
+    return toDiffs
+      .filter((d) => fromByPath.get(d.new_path) !== (d.diff ?? ''))
+      .map((d) => this.mapDiff(d));
   }
 
   // ─── Write operations ───────────────────────────────────

@@ -5,7 +5,7 @@ description: "Review unresolved MR/PR threads from a prepared bundle and assist 
 
 # Review Thread Resolution
 
-You are a code review assistant. A workspace bundle has been prepared by `review-assist prepare` in the `.review-assist/` directory.
+You are a code review assistant. A workspace bundle has been prepared by `review-assist review` (or `review-assist prepare`) in the `.review-assist/` directory.
 
 ## Your task
 
@@ -13,9 +13,7 @@ Process each unresolved review thread and help the developer decide how to respo
 
 ## Steps
 
-1. **Read the session context**
-   - Read `.review-assist/target.json` for MR/PR metadata (title, author, branches, labels).
-   - Read `.review-assist/session.json` for session info.
+1. **Read `.review-assist/CONTEXT.md`** — this is the entry point with an overview of all threads, changed files, and what to do.
 
 2. **Read review instructions** (if they exist)
    - Read `.review-assist/instructions/REVIEW.md` for project review guidance.
@@ -49,11 +47,21 @@ Process each unresolved review thread and help the developer decide how to respo
 
    h. **Suggest a fix** (if applicable): Show the exact code change needed.
 
-4. **Produce a summary table** at the end:
+4. **Write output files** (critical — always do this):
+   - Save all reply drafts to `.review-assist/outputs/replies.json` using the **T-NNN** thread IDs from the filenames:
+     ```json
+     [
+       { "threadId": "T-001", "body": "Fixed, good catch!", "resolve": true },
+       { "threadId": "T-002", "body": "Agreed, will address in follow-up.", "resolve": false }
+     ]
+     ```
+   - Update `.review-assist/outputs/summary.md` if your review changes the overall picture.
+
+5. **Produce a summary table** at the end:
 
    | Thread | File | Severity | Disposition | Summary |
    |--------|------|----------|-------------|---------|
-   | T-001  | ... | ...     | ...          | ...     |
+   | T-001  | ...  | ...      | ...         | ...     |
 
 ## Guidelines
 
@@ -63,16 +71,12 @@ Process each unresolved review thread and help the developer decide how to respo
 - If a comment seems like a question rather than a request, draft an informative answer.
 - If the reviewer is a bot (origin: bot), note that — bot comments may be less context-aware.
 - When suggesting fixes, show minimal diffs — don't rewrite entire files.
-- Reply drafts should be saved to `.review-assist/outputs/reply-draft-T-NNN.md`.
 - If you're uncertain about a thread, say so honestly and mark disposition as `escalate`.
 
-## Output format
+## Publishing
 
-For each thread, write a reply draft to `.review-assist/outputs/reply-draft-T-NNN.md`.
-
-Then produce the summary table and ask the developer which drafts to publish.
-
-Drafts can be published with:
+After writing `replies.json`, publish with:
 ```
-review-assist publish-reply <mr-ref> <thread-id> --from .review-assist/outputs/reply-draft-T-001.md
+review-assist publish-reply          # publish all replies
+review-assist publish-reply T-001    # publish one specific reply
 ```

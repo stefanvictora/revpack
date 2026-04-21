@@ -13,6 +13,17 @@ import type {
 } from '../core/types.js';
 import { WorkspaceError } from '../core/errors.js';
 
+/**
+ * Persistent mapping of thread SHA → stable T-NNN short ID.
+ * Survives across review runs so IDs never shift.
+ */
+interface ThreadMap {
+  /** Next sequence number to assign (1-based). */
+  nextSeq: number;
+  /** SHA → T-NNN (e.g. "abc123..." → "T-001"). */
+  entries: Record<string, string>;
+}
+
 export class WorkspaceManager {
   private readonly baseDir: string;
 
@@ -62,10 +73,14 @@ export class WorkspaceManager {
       outputDir: path.join(this.baseDir, 'outputs'),
     };
 
+    // Assign stable T-NNN IDs (persistent across runs)
+    const threadMap = await this.assignStableThreadIds(threads);
+
     // Write bundle files
     await this.writeSession({ id: sessionId, createdAt, targetRef: target, bundlePath: this.baseDir });
     await this.writeTarget(target);
-    await this.writeThreads(threads);
+    await this.clearThreadFiles();
+    await this.writeThreads(threads, threadMap);
     await this.writeDiffs(diffs);
     await this.writeFileExcerpts(fileExcerpts);
     await this.writeInstructions(instructions);
@@ -89,6 +104,58 @@ export class WorkspaceManager {
     await this.writeJson(path.join(this.baseDir, 'session.json'), session);
   }
 
+  /**
+   * Clear the session and thread map for a fresh start (--full mode).
+   */
+  async clearSession(): Promise<void> {
+    const sessionPath = path.join(this.baseDir, 'session.json');
+    const threadMapPath = path.join(this.baseDir, 'thread-map.json');
+    for (const p of [sessionPath, threadMapPath]) {
+      try { await fs.unlink(p); } catch { /* may not exist */ }
+    }
+  }
+
+  /**
+   * Remove entries from replies.json whose T-NNN no longer maps to
+   * an active (unresolved) thread. Called on incremental runs to prevent
+   * stale replies from being published to the wrong thread.
+   */
+  async pruneStaleReplies(activeThreadIds: Set<string>): Promise<number> {
+    const repliesPath = path.join(this.baseDir, 'outputs', 'replies.json');
+    let raw: string;
+    try {
+      raw = await fs.readFile(repliesPath, 'utf-8');
+    } catch {
+      return 0; // no replies file
+    }
+
+    let entries: { threadId: string; body: string; resolve?: boolean }[];
+    try {
+      entries = JSON.parse(raw);
+      if (!Array.isArray(entries)) return 0;
+    } catch {
+      return 0;
+    }
+
+    const threadMap = await this.loadThreadMap();
+    const reverseMap = new Map<string, string>();
+    for (const [sha, shortId] of Object.entries(threadMap.entries)) {
+      reverseMap.set(shortId, sha);
+    }
+
+    const before = entries.length;
+    const kept = entries.filter((e) => {
+      const normalized = e.threadId.toUpperCase();
+      const sha = reverseMap.get(normalized) ?? e.threadId;
+      return activeThreadIds.has(sha);
+    });
+
+    if (kept.length < before) {
+      await fs.writeFile(repliesPath, JSON.stringify(kept, null, 2), 'utf-8');
+    }
+    return before - kept.length;
+  }
+
   // ─── Output helpers ─────────────────────────────────────
 
   async writeOutput(filename: string, content: string): Promise<string> {
@@ -104,23 +171,215 @@ export class WorkspaceManager {
 
   /**
    * Resolve a T-NNN short reference to the full thread SHA.
+   * Uses the authoritative thread-map.json first, falls back to file lookup.
    * Returns the input unchanged if it doesn't match the T-NNN pattern.
    */
   async resolveThreadRef(ref: string): Promise<string> {
     const match = ref.match(/^T-(\d{3,})$/i);
     if (!match) return ref; // already a full ID or other format
-    const jsonPath = path.join(this.baseDir, 'threads', `${ref.toUpperCase()}.json`);
+
+    const normalised = ref.toUpperCase();
+
+    // Primary: look up in the authoritative thread map
+    const threadMap = await this.loadThreadMap();
+    for (const [sha, shortId] of Object.entries(threadMap.entries)) {
+      if (shortId === normalised) return sha;
+    }
+
+    // Fallback: read from file (legacy bundles without thread-map.json)
+    const jsonPath = path.join(this.baseDir, 'threads', `${normalised}.json`);
     try {
       const data = await fs.readFile(jsonPath, 'utf-8');
       const thread = JSON.parse(data) as { threadId: string };
       if (!thread.threadId) throw new Error('threadId field missing');
       return thread.threadId;
     } catch {
-      throw new Error(`Cannot resolve thread reference "${ref}" — no bundle entry found at ${jsonPath}`);
+      throw new Error(`Cannot resolve thread reference "${ref}" — not found in thread-map.json or threads/ folder`);
     }
   }
 
+  /**
+   * Write CONTEXT.md — the agent entry point that explains what's in
+   * the bundle and what to do next.
+   */
+  async writeContext(
+    target: ReviewTarget,
+    threads: ReviewThread[],
+    diffs: ReviewDiff[],
+    classifications: { threadId: string; severity: string; category: string; summary: string }[],
+    options?: { incremental?: boolean; previousThreadIds?: Set<string> },
+  ): Promise<string> {
+    const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
+    const classMap = new Map(classifications.map((c) => [c.threadId, c]));
+
+    // Load the stable thread map for consistent T-NNN references
+    const threadMap = await this.loadThreadMap();
+
+    const lines: string[] = [];
+    const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
+
+    lines.push(`# Review Context`);
+    lines.push('');
+    lines.push(`**${mrType} !${target.targetId}**: ${target.title}  `);
+    lines.push(`**Author**: @${target.author}  `);
+    lines.push(`**Branch**: \`${target.sourceBranch}\` → \`${target.targetBranch}\`  `);
+    lines.push(`**Status**: ${unresolvedThreads.length} unresolved thread(s), ${diffs.length} changed file(s)  `);
+    if (target.webUrl) lines.push(`**URL**: ${target.webUrl}  `);
+    if (options?.incremental) lines.push(`**Mode**: Incremental review (changes since last review)  `);
+    lines.push('');
+
+    // What's in the bundle
+    lines.push('## Bundle Contents');
+    lines.push('');
+    lines.push('| Path | Description |');
+    lines.push('|------|-------------|');
+    lines.push('| `target.json` | MR/PR metadata |');
+    if (unresolvedThreads.length > 0) {
+      lines.push(`| \`threads/\` | ${unresolvedThreads.length} unresolved review thread(s) — read the \`.md\` files |`);
+    }
+    lines.push(`| \`diffs/latest.patch\` | Full diff (${diffs.length} file(s)) |`);
+    if (options?.incremental) {
+      lines.push('| `diffs/incremental.patch` | Changes since last review |');
+    }
+    lines.push('| `files/` | Code excerpts around thread positions |');
+    lines.push('| `instructions/` | Review guidelines and project rules (if configured) |');
+    lines.push('| `outputs/` | Write results here |');
+    lines.push('');
+
+    // Thread overview table
+    if (unresolvedThreads.length > 0) {
+      lines.push('## Unresolved Threads');
+      lines.push('');
+      lines.push('| # | File | Severity | Summary |');
+      lines.push('|---|------|----------|---------|');
+      for (const t of unresolvedThreads) {
+        const cls = classMap.get(t.threadId);
+        const prefix = threadMap.entries[t.threadId] ?? '?';
+        const isNew = options?.previousThreadIds && !options.previousThreadIds.has(t.threadId);
+        const badge = isNew ? ' **NEW**' : '';
+        const file = t.position?.filePath
+          ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
+          : '(general)';
+        lines.push(`| ${prefix}${badge} | ${file} | ${cls?.severity ?? '?'} | ${cls?.summary ?? ''} |`);
+      }
+      lines.push('');
+    }
+
+    // Changed files overview
+    lines.push('## Changed Files');
+    lines.push('');
+    for (const d of diffs) {
+      const tag = d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
+      lines.push(`- \`${d.newPath || d.oldPath}\` (${tag})`);
+    }
+    lines.push('');
+
+    // Incremental review notes
+    if (options?.incremental && options?.previousThreadIds) {
+      const newThreads = unresolvedThreads.filter((t) => !options.previousThreadIds!.has(t.threadId));
+      const carriedOver = unresolvedThreads.filter((t) => options.previousThreadIds!.has(t.threadId));
+      const resolvedCount = [...options.previousThreadIds].filter(
+        (id) => !unresolvedThreads.some((t) => t.threadId === id),
+      ).length;
+
+      lines.push('## Incremental Review Summary');
+      lines.push('');
+      if (newThreads.length > 0) {
+        lines.push(`- **${newThreads.length} new thread(s)** since last review (marked **NEW** above)`);
+      }
+      if (carriedOver.length > 0) {
+        lines.push(`- **${carriedOver.length} carried-over thread(s)** still unresolved`);
+      }
+      if (resolvedCount > 0) {
+        lines.push(`- **${resolvedCount} thread(s) resolved** since last review`);
+      }
+      lines.push('- Check `diffs/incremental.patch` for what changed since last review');
+      lines.push('- Focus on **NEW** threads — carried-over threads may already have pending replies');
+      lines.push('');
+    }
+
+    // Workflow instructions
+    lines.push('## Suggested Workflow');
+    lines.push('');
+    lines.push('1. Read `instructions/REVIEW.md` and `instructions/project-review-rules.md` if present');
+    lines.push('2. Read each thread `.md` file in `threads/`');
+    lines.push('3. Check the referenced source code and `diffs/latest.patch`');
+    lines.push('4. For each thread decide: fix code, draft a reply, or both');
+    lines.push('5. Write results to `outputs/`:');
+    lines.push('   - `outputs/replies.json` — use **T-NNN** short IDs (these are stable across runs), e.g.:');
+    lines.push('     ```json');
+    lines.push('     [{ "threadId": "T-001", "body": "Fixed!", "resolve": true }]');
+    lines.push('     ```');
+    lines.push('   - `outputs/summary.md` — Walkthrough summary for the MR description');
+    lines.push('');
+    lines.push('Publish results back to GitLab/GitHub:');
+    lines.push('```');
+    lines.push(`review-assist publish-reply          # publish all replies`);
+    lines.push(`review-assist publish-reply T-001    # publish one specific reply`);
+    lines.push(`review-assist update-description --from-summary`);
+    lines.push('```');
+    lines.push('```');
+
+    const content = lines.join('\n');
+    const contextPath = path.join(this.baseDir, 'CONTEXT.md');
+    await fs.writeFile(contextPath, content, 'utf-8');
+    return contextPath;
+  }
+
   // ─── Internal helpers ───────────────────────────────────
+
+  // ─── Thread map management ──────────────────────────────
+
+  private async loadThreadMap(): Promise<ThreadMap> {
+    const mapPath = path.join(this.baseDir, 'thread-map.json');
+    try {
+      const data = await fs.readFile(mapPath, 'utf-8');
+      return JSON.parse(data) as ThreadMap;
+    } catch {
+      return { nextSeq: 1, entries: {} };
+    }
+  }
+
+  private async saveThreadMap(map: ThreadMap): Promise<void> {
+    await this.writeJson(path.join(this.baseDir, 'thread-map.json'), map);
+  }
+
+  /**
+   * Assign stable T-NNN IDs to threads.
+   * Existing threads keep their ID from previous runs.
+   * New threads get the next available sequence number.
+   */
+  private async assignStableThreadIds(threads: ReviewThread[]): Promise<ThreadMap> {
+    const existing = await this.loadThreadMap();
+
+    for (const t of threads) {
+      if (!existing.entries[t.threadId]) {
+        const shortId = `T-${String(existing.nextSeq).padStart(3, '0')}`;
+        existing.entries[t.threadId] = shortId;
+        existing.nextSeq++;
+      }
+    }
+
+    await this.saveThreadMap(existing);
+    return existing;
+  }
+
+  /**
+   * Remove all files from the threads/ directory before rewriting.
+   */
+  private async clearThreadFiles(): Promise<void> {
+    const threadsDir = path.join(this.baseDir, 'threads');
+    try {
+      const files = await fs.readdir(threadsDir);
+      await Promise.all(
+        files.map((f) => fs.unlink(path.join(threadsDir, f))),
+      );
+    } catch {
+      // Directory may not exist yet
+    }
+  }
+
+  // ─── Write helpers ──────────────────────────────────────
 
   private async writeSession(session: Session): Promise<void> {
     await this.writeJson(path.join(this.baseDir, 'session.json'), session);
@@ -130,10 +389,9 @@ export class WorkspaceManager {
     await this.writeJson(path.join(this.baseDir, 'target.json'), target);
   }
 
-  private async writeThreads(threads: ReviewThread[]): Promise<void> {
-    for (let i = 0; i < threads.length; i++) {
-      const thread = threads[i];
-      const prefix = `T-${String(i + 1).padStart(3, '0')}`;
+  private async writeThreads(threads: ReviewThread[], threadMap: ThreadMap): Promise<void> {
+    for (const thread of threads) {
+      const prefix = threadMap.entries[thread.threadId] ?? `T-${String(threadMap.nextSeq++).padStart(3, '0')}`;
 
       // JSON version
       await this.writeJson(path.join(this.baseDir, 'threads', `${prefix}.json`), thread);
@@ -151,6 +409,16 @@ export class WorkspaceManager {
     }).join('\n');
 
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'latest.patch'), patchContent, 'utf-8');
+  }
+
+  async writeIncrementalDiff(diffs: ReviewDiff[]): Promise<void> {
+    await this.ensureDir(path.join(this.baseDir, 'diffs'));
+    const patchContent = diffs.map((d) => {
+      const header = `diff --git a/${d.oldPath} b/${d.newPath}`;
+      return `${header}\n${d.diff}`;
+    }).join('\n');
+
+    await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), patchContent, 'utf-8');
   }
 
   private async writeFileExcerpts(excerpts: FileExcerpt[]): Promise<void> {

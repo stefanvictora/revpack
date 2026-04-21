@@ -160,4 +160,73 @@ describe('WorkspaceManager', () => {
     const session = await manager.loadSession();
     expect(session).toBeNull();
   });
+
+  it('assigns stable T-NNN IDs that persist across runs', async () => {
+    const thread1 = makeThread();
+    const thread2 = { ...makeThread(), threadId: 'thread-xyz', comments: thread1.comments };
+
+    // First run: two threads
+    await manager.createBundle(makeTarget(), [thread1, thread2], [], [], tmpDir);
+
+    const threadDir = path.join(tmpDir, '.review-assist', 'threads');
+    const files1 = (await fs.readdir(threadDir)).sort();
+    expect(files1).toContain('T-001.json');
+    expect(files1).toContain('T-002.json');
+
+    // Verify the mapping file exists
+    const mapPath = path.join(tmpDir, '.review-assist', 'thread-map.json');
+    const map1 = JSON.parse(await fs.readFile(mapPath, 'utf-8'));
+    expect(map1.entries['thread-abc']).toBe('T-001');
+    expect(map1.entries['thread-xyz']).toBe('T-002');
+    expect(map1.nextSeq).toBe(3);
+
+    // Second run: thread1 resolved, thread2 remains, thread3 is new
+    const thread3 = { ...makeThread(), threadId: 'thread-new', comments: thread1.comments };
+    await manager.createBundle(makeTarget(), [thread2, thread3], [], [], tmpDir);
+
+    // thread2 keeps T-002, thread3 gets T-003 (not T-001!)
+    const map2 = JSON.parse(await fs.readFile(mapPath, 'utf-8'));
+    expect(map2.entries['thread-abc']).toBe('T-001'); // still in map
+    expect(map2.entries['thread-xyz']).toBe('T-002');
+    expect(map2.entries['thread-new']).toBe('T-003');
+    expect(map2.nextSeq).toBe(4);
+
+    // Only current threads have files
+    const files2 = (await fs.readdir(threadDir)).filter(f => f.endsWith('.json')).sort();
+    expect(files2).toContain('T-002.json');
+    expect(files2).toContain('T-003.json');
+    expect(files2).not.toContain('T-001.json'); // old thread cleaned up
+  });
+
+  it('resolves T-NNN from thread-map.json', async () => {
+    await manager.createBundle(makeTarget(), [makeThread()], [], [], tmpDir);
+
+    const resolved = await manager.resolveThreadRef('T-001');
+    expect(resolved).toBe('thread-abc');
+  });
+
+  it('passes through non-T-NNN refs unchanged', async () => {
+    const resolved = await manager.resolveThreadRef('abc123def');
+    expect(resolved).toBe('abc123def');
+  });
+
+  it('prunes stale replies on incremental runs', async () => {
+    await manager.createBundle(makeTarget(), [makeThread()], [], [], tmpDir);
+
+    // Write a replies.json with two entries
+    const repliesPath = path.join(tmpDir, '.review-assist', 'outputs', 'replies.json');
+    await fs.writeFile(repliesPath, JSON.stringify([
+      { threadId: 'T-001', body: 'reply1', resolve: true },
+      { threadId: 'T-999', body: 'stale reply', resolve: false },
+    ]), 'utf-8');
+
+    // Prune with only thread-abc active
+    const activeIds = new Set(['thread-abc']);
+    const pruned = await manager.pruneStaleReplies(activeIds);
+    expect(pruned).toBe(1);
+
+    const remaining = JSON.parse(await fs.readFile(repliesPath, 'utf-8'));
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].threadId).toBe('T-001');
+  });
 });

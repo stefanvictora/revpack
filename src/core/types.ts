@@ -230,4 +230,6 @@ export interface Session {
   targetRef: ReviewTargetRef;
   bundlePath: string;
   lastReviewedVersionId?: string;
+  /** Thread SHAs seen in the last review run (for tracking new vs. carried-over threads). */
+  knownThreadIds?: string[];
 }
