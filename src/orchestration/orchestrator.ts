@@ -67,7 +67,7 @@ export class ReviewOrchestrator {
     // Check for existing session (for auto-incremental)
     let existingSession = await this.workspace.loadSession();
 
-    // --full: clear previous session and thread map for a clean start
+    // --full: clear previous session for a clean start
     if (options?.full && existingSession) {
       await this.workspace.clearSession();
       existingSession = null;
@@ -76,19 +76,31 @@ export class ReviewOrchestrator {
     const isIncremental = !!(existingSession?.lastReviewedVersionId);
 
     // Fetch all data in parallel
-    const [target, allThreads, diffs, versions] = await Promise.all([
+    const [target, rawThreads, diffs, versions] = await Promise.all([
       this.provider.getTargetSnapshot(targetRef),
-      this.provider.listUnresolvedThreads(targetRef),
+      this.provider.listAllThreads(targetRef),
       this.provider.getLatestDiff(targetRef),
       this.provider.getDiffVersions(targetRef),
     ]);
 
+    // Filter out system-only threads (activity log entries like "added 5 commits")
+    const allThreads = rawThreads.filter(
+      (t) => !t.comments.every((c) => c.system),
+    );
+
+    // Build position-based thread index (T-001, T-002, ... from creation order)
+    const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
+
+    // Only non-resolved threads go into the bundle (both resolvable discussions and general comments)
+    const activeThreads = allThreads.filter((t) => !t.resolved);
+
     // Create the bundle
     const bundle = await this.workspace.createBundle(
       target,
-      allThreads,
+      activeThreads,
       diffs,
       versions,
+      threadIndex,
     );
 
     // Incremental diff if applicable
@@ -108,23 +120,23 @@ export class ReviewOrchestrator {
 
     // Prune stale replies from previous runs (incremental safety)
     if (isIncremental) {
-      const activeIds = new Set(allThreads.map((t) => t.threadId));
-      const pruned = await this.workspace.pruneStaleReplies(activeIds);
+      const activeIds = new Set(activeThreads.map((t) => t.threadId));
+      const pruned = await this.workspace.pruneStaleReplies(activeIds, threadIndex);
       if (pruned > 0) {
         // Will be surfaced in the CLI output
       }
     }
 
-    // Classify all threads
-    const classifications = allThreads
+    // Classify resolvable unresolved threads
+    const classifications = activeThreads
       .filter((t) => t.resolvable)
       .map((t) => this.classifier.classify(t));
 
     // Generate findings
-    const findings = this.classifyThreads(allThreads, target);
+    const findings = this.classifyThreads(activeThreads, target);
 
     // Generate summary
-    const summary = this.summaryGen.generateSummary(target, diffs, allThreads);
+    const summary = this.summaryGen.generateSummary(target, diffs, activeThreads);
     const summaryMarkdown = this.summaryGen.generateMarkdown(summary);
 
     // Write outputs
@@ -138,7 +150,7 @@ export class ReviewOrchestrator {
       : undefined;
     const contextPath = await this.workspace.writeContext(
       target,
-      allThreads,
+      activeThreads,
       diffs,
       classifications.map((c) => ({
         threadId: c.threadId,
@@ -146,6 +158,7 @@ export class ReviewOrchestrator {
         category: c.category,
         summary: c.summary,
       })),
+      threadIndex,
       { incremental: isIncremental, previousThreadIds },
     );
 
@@ -157,7 +170,7 @@ export class ReviewOrchestrator {
       targetRef,
       bundlePath: this.workspace.bundlePath,
       lastReviewedVersionId: latestVersionId,
-      knownThreadIds: allThreads.map((t) => t.threadId),
+      knownThreadIds: activeThreads.map((t) => t.threadId),
     });
 
     // Check local branch sync status against the MR head commit
@@ -273,7 +286,7 @@ export class ReviewOrchestrator {
   }
 
   /** Resolve a T-NNN shorthand to the full thread SHA. */
-  resolveThreadRef(ref: string): Promise<string> {
+  async resolveThreadRef(ref: string): Promise<string> {
     return this.workspace.resolveThreadRef(ref);
   }
 

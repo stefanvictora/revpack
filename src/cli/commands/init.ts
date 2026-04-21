@@ -31,7 +31,6 @@ const REVIEW_CONFIG_FILES: InitFile[] = [
       '# review-assist runtime output (not committed)',
       'session.json',
       'target.json',
-      'thread-map.json',
       'threads/',
       'diffs/',
       'outputs/',
@@ -61,7 +60,7 @@ const PROMPT_FILES: InitFile[] = [
   {
     target: path.join('.github', 'prompts', 'review-quick.prompt.md'),
     source: path.join('prompts', 'review-quick.prompt.md'),
-    label: 'Copilot prompt: quick review',
+    label: 'Copilot prompt: full review (threads + code + summary)',
   },
 ];
 

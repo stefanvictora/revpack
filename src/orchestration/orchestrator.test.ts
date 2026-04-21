@@ -242,6 +242,66 @@ describe('ReviewOrchestrator', () => {
       await expect(orchestrator.review(undefined, 'group/project'))
         .rejects.toThrow('Could not determine which MR to review');
     });
+
+    it('excludes system-only threads from bundle and index', async () => {
+      const systemThread: ReviewThread = {
+        provider: 'gitlab',
+        targetRef,
+        threadId: 'system-thread-1',
+        resolved: false,
+        resolvable: false,
+        comments: [
+          {
+            id: 'sys-1',
+            body: 'added 5 commits',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: true,
+          },
+        ],
+      };
+      const generalComment: ReviewThread = {
+        provider: 'gitlab',
+        targetRef,
+        threadId: 'general-comment-1',
+        resolved: false,
+        resolvable: false,
+        comments: [
+          {
+            id: 'gen-1',
+            body: 'Great work on this MR overall!',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+
+      // Provider returns: system thread, real thread, general comment
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
+        .mockResolvedValue([systemThread, mockThread, generalComment]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.review('!42', 'group/project');
+
+      // Bundle should have 2 threads: mockThread + generalComment (not system)
+      expect(result.bundle.threads).toHaveLength(2);
+      expect(result.bundle.threads.map((t) => t.threadId)).toEqual(['thread-1', 'general-comment-1']);
+
+      // Thread files: T-001 = mockThread (index 0 after filtering), T-002 = generalComment
+      const threadDir = path.join(tmpDir, '.review-assist', 'threads');
+      const files = (await fs.readdir(threadDir)).filter(f => f.endsWith('.json')).sort();
+      expect(files).toEqual(['T-001.json', 'T-002.json']);
+
+      const t1 = JSON.parse(await fs.readFile(path.join(threadDir, 'T-001.json'), 'utf-8'));
+      expect(t1.threadId).toBe('thread-1');
+      const t2 = JSON.parse(await fs.readFile(path.join(threadDir, 'T-002.json'), 'utf-8'));
+      expect(t2.threadId).toBe('general-comment-1');
+    });
   });
 
   describe('publishFinding', () => {

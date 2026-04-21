@@ -12,15 +12,11 @@ import type {
 import { WorkspaceError } from '../core/errors.js';
 
 /**
- * Persistent mapping of thread SHA → stable T-NNN short ID.
- * Survives across review runs so IDs never shift.
+ * Map from thread SHA → stable T-NNN short ID.
+ * Derived from position in the provider's all-threads list
+ * (which is ordered by creation date and never reorders).
  */
-interface ThreadMap {
-  /** Next sequence number to assign (1-based). */
-  nextSeq: number;
-  /** SHA → T-NNN (e.g. "abc123..." → "T-001"). */
-  entries: Record<string, string>;
-}
+export type ThreadIndex = Map<string, string>;
 
 export class WorkspaceManager {
   private readonly baseDir: string;
@@ -35,11 +31,24 @@ export class WorkspaceManager {
 
   // ─── Bundle creation ────────────────────────────────────
 
+  /**
+   * Build a ThreadIndex from the provider's full thread list.
+   * Position in the list determines the T-NNN ID (1-based).
+   */
+  static buildThreadIndex(allThreads: ReviewThread[]): ThreadIndex {
+    const index: ThreadIndex = new Map();
+    for (let i = 0; i < allThreads.length; i++) {
+      index.set(allThreads[i].threadId, `T-${String(i + 1).padStart(3, '0')}`);
+    }
+    return index;
+  }
+
   async createBundle(
     target: ReviewTarget,
     threads: ReviewThread[],
     diffs: ReviewDiff[],
     versions: ReviewVersion[],
+    threadIndex: ThreadIndex,
   ): Promise<WorkspaceBundle> {
     const sessionId = randomUUID();
     const createdAt = new Date().toISOString();
@@ -60,14 +69,11 @@ export class WorkspaceManager {
       outputDir: path.join(this.baseDir, 'outputs'),
     };
 
-    // Assign stable T-NNN IDs (persistent across runs)
-    const threadMap = await this.assignStableThreadIds(threads);
-
     // Write bundle files
     await this.writeSession({ id: sessionId, createdAt, targetRef: target, bundlePath: this.baseDir });
     await this.writeTarget(target);
     await this.clearThreadFiles();
-    await this.writeThreads(threads, threadMap);
+    await this.writeThreads(threads, threadIndex);
     await this.writeDiffs(diffs);
 
     return bundle;
@@ -90,14 +96,11 @@ export class WorkspaceManager {
   }
 
   /**
-   * Clear the session and thread map for a fresh start (--full mode).
+   * Clear the session for a fresh start (--full mode).
    */
   async clearSession(): Promise<void> {
     const sessionPath = path.join(this.baseDir, 'session.json');
-    const threadMapPath = path.join(this.baseDir, 'thread-map.json');
-    for (const p of [sessionPath, threadMapPath]) {
-      try { await fs.unlink(p); } catch { /* may not exist */ }
-    }
+    try { await fs.unlink(sessionPath); } catch { /* may not exist */ }
   }
 
   /**
@@ -105,7 +108,7 @@ export class WorkspaceManager {
    * an active (unresolved) thread. Called on incremental runs to prevent
    * stale replies from being published to the wrong thread.
    */
-  async pruneStaleReplies(activeThreadIds: Set<string>): Promise<number> {
+  async pruneStaleReplies(activeThreadIds: Set<string>, threadIndex: ThreadIndex): Promise<number> {
     const repliesPath = path.join(this.baseDir, 'outputs', 'replies.json');
     let raw: string;
     try {
@@ -122,16 +125,16 @@ export class WorkspaceManager {
       return 0;
     }
 
-    const threadMap = await this.loadThreadMap();
-    const reverseMap = new Map<string, string>();
-    for (const [sha, shortId] of Object.entries(threadMap.entries)) {
-      reverseMap.set(shortId, sha);
-    }
-
     const before = entries.length;
+    // Build reverse map: T-NNN → SHA
+    const reverseIndex = new Map<string, string>();
+    for (const [sha, shortId] of threadIndex) {
+      reverseIndex.set(shortId, sha);
+    }
     const kept = entries.filter((e) => {
       const normalized = e.threadId.toUpperCase();
-      const sha = reverseMap.get(normalized) ?? e.threadId;
+      // Resolve T-NNN → SHA using the reverse index, fall back to raw ID
+      const sha = reverseIndex.get(normalized) ?? e.threadId;
       return activeThreadIds.has(sha);
     });
 
@@ -156,22 +159,23 @@ export class WorkspaceManager {
 
   /**
    * Resolve a T-NNN short reference to the full thread SHA.
-   * Uses the authoritative thread-map.json first, falls back to file lookup.
+   * Uses the provided thread index if available, falls back to reading thread JSON files on disk.
    * Returns the input unchanged if it doesn't match the T-NNN pattern.
    */
-  async resolveThreadRef(ref: string): Promise<string> {
+  async resolveThreadRef(ref: string, threadIndex?: ThreadIndex): Promise<string> {
     const match = ref.match(/^T-(\d{3,})$/i);
     if (!match) return ref; // already a full ID or other format
 
     const normalised = ref.toUpperCase();
 
-    // Primary: look up in the authoritative thread map
-    const threadMap = await this.loadThreadMap();
-    for (const [sha, shortId] of Object.entries(threadMap.entries)) {
-      if (shortId === normalised) return sha;
+    // Look up in the thread index (reverse: shortId → SHA)
+    if (threadIndex) {
+      for (const [sha, shortId] of threadIndex) {
+        if (shortId === normalised) return sha;
+      }
     }
 
-    // Fallback: read from file (legacy bundles without thread-map.json)
+    // Fallback: read the thread JSON file from disk
     const jsonPath = path.join(this.baseDir, 'threads', `${normalised}.json`);
     try {
       const data = await fs.readFile(jsonPath, 'utf-8');
@@ -179,7 +183,7 @@ export class WorkspaceManager {
       if (!thread.threadId) throw new Error('threadId field missing');
       return thread.threadId;
     } catch {
-      throw new Error(`Cannot resolve thread reference "${ref}" — not found in thread-map.json or threads/ folder`);
+      throw new Error(`Cannot resolve thread reference "${ref}" — not found in thread index or threads/ folder`);
     }
   }
 
@@ -192,13 +196,12 @@ export class WorkspaceManager {
     threads: ReviewThread[],
     diffs: ReviewDiff[],
     classifications: { threadId: string; severity: string; category: string; summary: string }[],
+    threadIndex: ThreadIndex,
     options?: { incremental?: boolean; previousThreadIds?: Set<string> },
   ): Promise<string> {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
+    const generalComments = threads.filter((t) => !t.resolvable && !t.comments.every((c) => c.system));
     const classMap = new Map(classifications.map((c) => [c.threadId, c]));
-
-    // Load the stable thread map for consistent T-NNN references
-    const threadMap = await this.loadThreadMap();
 
     const lines: string[] = [];
     const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
@@ -219,8 +222,9 @@ export class WorkspaceManager {
     lines.push('| Path | Description |');
     lines.push('|------|-------------|');
     lines.push('| `target.json` | MR/PR metadata |');
-    if (unresolvedThreads.length > 0) {
-      lines.push(`| \`threads/\` | ${unresolvedThreads.length} unresolved review thread(s) — read the \`.md\` files |`);
+    const threadFileCount = unresolvedThreads.length + generalComments.length;
+    if (threadFileCount > 0) {
+      lines.push(`| \`threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
     }
     lines.push(`| \`diffs/latest.patch\` | Full diff (${diffs.length} file(s)) |`);
     if (options?.incremental) {
@@ -237,13 +241,29 @@ export class WorkspaceManager {
       lines.push('|---|------|----------|---------|');
       for (const t of unresolvedThreads) {
         const cls = classMap.get(t.threadId);
-        const prefix = threadMap.entries[t.threadId] ?? '?';
+        const prefix = threadIndex.get(t.threadId) ?? '?';
         const isNew = options?.previousThreadIds && !options.previousThreadIds.has(t.threadId);
         const badge = isNew ? ' **NEW**' : '';
         const file = t.position?.filePath
           ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
           : '(general)';
         lines.push(`| ${prefix}${badge} | ${file} | ${cls?.severity ?? '?'} | ${cls?.summary ?? ''} |`);
+      }
+      lines.push('');
+    }
+
+    // General (non-resolvable) comments for context
+    if (generalComments.length > 0) {
+      lines.push('## General Comments');
+      lines.push('');
+      lines.push('These are non-resolvable comments (general notes, not tied to specific code review threads).');
+      lines.push('They may provide useful context but do not require a reply.');
+      lines.push('');
+      for (const t of generalComments) {
+        const prefix = threadIndex.get(t.threadId) ?? '?';
+        const firstComment = t.comments.find((c) => !c.system);
+        const snippet = firstComment?.body.split('\n')[0].slice(0, 120) ?? '';
+        lines.push(`- **${prefix}** (@${firstComment?.author ?? '?'}): ${snippet}`);
       }
       lines.push('');
     }
@@ -319,42 +339,6 @@ export class WorkspaceManager {
 
   // ─── Internal helpers ───────────────────────────────────
 
-  // ─── Thread map management ──────────────────────────────
-
-  private async loadThreadMap(): Promise<ThreadMap> {
-    const mapPath = path.join(this.baseDir, 'thread-map.json');
-    try {
-      const data = await fs.readFile(mapPath, 'utf-8');
-      return JSON.parse(data) as ThreadMap;
-    } catch {
-      return { nextSeq: 1, entries: {} };
-    }
-  }
-
-  private async saveThreadMap(map: ThreadMap): Promise<void> {
-    await this.writeJson(path.join(this.baseDir, 'thread-map.json'), map);
-  }
-
-  /**
-   * Assign stable T-NNN IDs to threads.
-   * Existing threads keep their ID from previous runs.
-   * New threads get the next available sequence number.
-   */
-  private async assignStableThreadIds(threads: ReviewThread[]): Promise<ThreadMap> {
-    const existing = await this.loadThreadMap();
-
-    for (const t of threads) {
-      if (!existing.entries[t.threadId]) {
-        const shortId = `T-${String(existing.nextSeq).padStart(3, '0')}`;
-        existing.entries[t.threadId] = shortId;
-        existing.nextSeq++;
-      }
-    }
-
-    await this.saveThreadMap(existing);
-    return existing;
-  }
-
   /**
    * Remove all files from the threads/ directory before rewriting.
    */
@@ -380,9 +364,9 @@ export class WorkspaceManager {
     await this.writeJson(path.join(this.baseDir, 'target.json'), target);
   }
 
-  private async writeThreads(threads: ReviewThread[], threadMap: ThreadMap): Promise<void> {
+  private async writeThreads(threads: ReviewThread[], threadIndex: ThreadIndex): Promise<void> {
     for (const thread of threads) {
-      const prefix = threadMap.entries[thread.threadId] ?? `T-${String(threadMap.nextSeq++).padStart(3, '0')}`;
+      const prefix = threadIndex.get(thread.threadId) ?? `T-${String(threads.indexOf(thread) + 1).padStart(3, '0')}`;
 
       // JSON version
       await this.writeJson(path.join(this.baseDir, 'threads', `${prefix}.json`), thread);

@@ -68,7 +68,7 @@ review-assist review https://gitlab.example.com/group/project/-/merge_requests/4
 
 Fetches MR metadata, threads, diffs, classifies findings, generates a summary, and writes a `CONTEXT.md` entry point for agents.
 
-Re-running on the same MR automatically produces an **incremental** review (only changes since last run). Thread IDs (T-001, T-002, ...) are stable across runs — they never shift when threads get resolved or new ones appear.
+Re-running on the same MR automatically produces an **incremental** review (only changes since last run). Thread IDs (T-001, T-002, ...) are derived from position in the provider's all-threads list (creation order), so they stay stable as long as existing threads aren't deleted.
 
 **Auto-detection**: When no `ref` is given and no session exists, `review` looks up the current git branch and finds any open MR sourced from it — no need to pass `!42` manually.
 
@@ -87,7 +87,6 @@ Creates `.review-assist/`:
 .review-assist/
   CONTEXT.md              ← agent entry point (start here)
   session.json            ← tracks MR ref + last reviewed version
-  thread-map.json         ← stable T-NNN ↔ thread SHA mapping
   target.json
   threads/
     T-001.md, T-001.json  ← one per unresolved thread (stable IDs)
@@ -176,6 +175,7 @@ Five layers:
 ### Key design decisions
 
 - **Threads, not comments** — Core model is thread-oriented for cross-provider portability
+- **Position-based thread IDs** — T-NNN IDs derived from position in the provider's all-threads list (creation order), no separate mapping file needed
 - **Canonical finding schema** — Structured JSON output with severity, confidence, status, disposition
 - **Agent-ready bundles** — Context packaged for LLM consumption, not raw API dumps
 - **Read-first, write-guarded** — No auto-push/auto-post; write operations require explicit commands

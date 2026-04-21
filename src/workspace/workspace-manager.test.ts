@@ -70,8 +70,20 @@ describe('WorkspaceManager', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
+  /** Helper: build index and create bundle in one call */
+  async function createBundle(
+    m: WorkspaceManager,
+    target: ReviewTarget,
+    threads: ReviewThread[],
+    diffs: ReviewDiff[] = [],
+    versions: ReviewVersion[] = [],
+  ) {
+    const threadIndex = WorkspaceManager.buildThreadIndex(threads);
+    return { bundle: await m.createBundle(target, threads, diffs, versions, threadIndex), threadIndex };
+  }
+
   it('creates bundle directory structure', async () => {
-    const bundle = await manager.createBundle(makeTarget(), [makeThread()], [makeDiff()], []);
+    const { bundle } = await createBundle(manager, makeTarget(), [makeThread()], [makeDiff()]);
 
     expect(bundle.sessionId).toBeTruthy();
     expect(bundle.target.targetId).toBe('42');
@@ -89,7 +101,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes session.json with correct structure', async () => {
-    await manager.createBundle(makeTarget(), [], [], []);
+    await createBundle(manager, makeTarget(), []);
 
     const sessionPath = path.join(tmpDir, '.review-assist', 'session.json');
     const session = JSON.parse(await fs.readFile(sessionPath, 'utf-8'));
@@ -100,7 +112,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes target.json', async () => {
-    await manager.createBundle(makeTarget(), [], [], []);
+    await createBundle(manager, makeTarget(), []);
 
     const targetPath = path.join(tmpDir, '.review-assist', 'target.json');
     const target = JSON.parse(await fs.readFile(targetPath, 'utf-8'));
@@ -110,7 +122,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes thread JSON and markdown files', async () => {
-    await manager.createBundle(makeTarget(), [makeThread()], [], []);
+    await createBundle(manager, makeTarget(), [makeThread()]);
 
     const threadDir = path.join(tmpDir, '.review-assist', 'threads');
     const files = await fs.readdir(threadDir);
@@ -128,7 +140,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes latest.patch', async () => {
-    await manager.createBundle(makeTarget(), [], [makeDiff()], []);
+    await createBundle(manager, makeTarget(), [], [makeDiff()]);
 
     const patchPath = path.join(tmpDir, '.review-assist', 'diffs', 'latest.patch');
     const patch = await fs.readFile(patchPath, 'utf-8');
@@ -138,7 +150,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes output files', async () => {
-    await manager.createBundle(makeTarget(), [], [], []);
+    await createBundle(manager, makeTarget(), []);
     const outputPath = await manager.writeOutput('test.md', '# Test');
 
     expect(outputPath).toContain('outputs');
@@ -147,7 +159,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('loads session from disk', async () => {
-    await manager.createBundle(makeTarget(), [], [], []);
+    await createBundle(manager, makeTarget(), []);
     const session = await manager.loadSession();
 
     expect(session).toBeTruthy();
@@ -159,45 +171,50 @@ describe('WorkspaceManager', () => {
     expect(session).toBeNull();
   });
 
-  it('assigns stable T-NNN IDs that persist across runs', async () => {
+  it('buildThreadIndex derives T-NNN from position', () => {
+    const thread1 = { ...makeThread(), threadId: 'aaa' };
+    const thread2 = { ...makeThread(), threadId: 'bbb' };
+    const thread3 = { ...makeThread(), threadId: 'ccc' };
+
+    const index = WorkspaceManager.buildThreadIndex([thread1, thread2, thread3]);
+    expect(index.get('aaa')).toBe('T-001');
+    expect(index.get('bbb')).toBe('T-002');
+    expect(index.get('ccc')).toBe('T-003');
+    expect(index.size).toBe(3);
+  });
+
+  it('derives T-NNN IDs from position in all-threads list', async () => {
     const thread1 = makeThread();
     const thread2 = { ...makeThread(), threadId: 'thread-xyz', comments: thread1.comments };
 
-    // First run: two threads
-    await manager.createBundle(makeTarget(), [thread1, thread2], [], []);
+    // Two threads → T-001 and T-002 based on position
+    await createBundle(manager, makeTarget(), [thread1, thread2]);
 
     const threadDir = path.join(tmpDir, '.review-assist', 'threads');
-    const files1 = (await fs.readdir(threadDir)).sort();
-    expect(files1).toContain('T-001.json');
-    expect(files1).toContain('T-002.json');
+    const files = (await fs.readdir(threadDir)).sort();
+    expect(files).toContain('T-001.json');
+    expect(files).toContain('T-002.json');
 
-    // Verify the mapping file exists
+    // No thread-map.json file should exist
     const mapPath = path.join(tmpDir, '.review-assist', 'thread-map.json');
-    const map1 = JSON.parse(await fs.readFile(mapPath, 'utf-8'));
-    expect(map1.entries['thread-abc']).toBe('T-001');
-    expect(map1.entries['thread-xyz']).toBe('T-002');
-    expect(map1.nextSeq).toBe(3);
+    expect(await fileExists(mapPath)).toBe(false);
 
-    // Second run: thread1 resolved, thread2 remains, thread3 is new
+    // Second run with different threads: positions are recalculated
     const thread3 = { ...makeThread(), threadId: 'thread-new', comments: thread1.comments };
-    await manager.createBundle(makeTarget(), [thread2, thread3], [], []);
+    await createBundle(manager, makeTarget(), [thread2, thread3]);
 
-    // thread2 keeps T-002, thread3 gets T-003 (not T-001!)
-    const map2 = JSON.parse(await fs.readFile(mapPath, 'utf-8'));
-    expect(map2.entries['thread-abc']).toBe('T-001'); // still in map
-    expect(map2.entries['thread-xyz']).toBe('T-002');
-    expect(map2.entries['thread-new']).toBe('T-003');
-    expect(map2.nextSeq).toBe(4);
-
-    // Only current threads have files
     const files2 = (await fs.readdir(threadDir)).filter(f => f.endsWith('.json')).sort();
-    expect(files2).toContain('T-002.json');
-    expect(files2).toContain('T-003.json');
-    expect(files2).not.toContain('T-001.json'); // old thread cleaned up
+    // thread2 is now at position 0 → T-001, thread3 at position 1 → T-002
+    expect(files2).toEqual(['T-001.json', 'T-002.json']);
+
+    const t1 = JSON.parse(await fs.readFile(path.join(threadDir, 'T-001.json'), 'utf-8'));
+    expect(t1.threadId).toBe('thread-xyz');
+    const t2 = JSON.parse(await fs.readFile(path.join(threadDir, 'T-002.json'), 'utf-8'));
+    expect(t2.threadId).toBe('thread-new');
   });
 
-  it('resolves T-NNN from thread-map.json', async () => {
-    await manager.createBundle(makeTarget(), [makeThread()], [], []);
+  it('resolves T-NNN from thread JSON files on disk', async () => {
+    await createBundle(manager, makeTarget(), [makeThread()]);
 
     const resolved = await manager.resolveThreadRef('T-001');
     expect(resolved).toBe('thread-abc');
@@ -209,7 +226,8 @@ describe('WorkspaceManager', () => {
   });
 
   it('prunes stale replies on incremental runs', async () => {
-    await manager.createBundle(makeTarget(), [makeThread()], [], []);
+    const threads = [makeThread()];
+    const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
     // Write a replies.json with two entries
     const repliesPath = path.join(tmpDir, '.review-assist', 'outputs', 'replies.json');
@@ -220,7 +238,7 @@ describe('WorkspaceManager', () => {
 
     // Prune with only thread-abc active
     const activeIds = new Set(['thread-abc']);
-    const pruned = await manager.pruneStaleReplies(activeIds);
+    const pruned = await manager.pruneStaleReplies(activeIds, threadIndex);
     expect(pruned).toBe(1);
 
     const remaining = JSON.parse(await fs.readFile(repliesPath, 'utf-8'));
@@ -229,24 +247,20 @@ describe('WorkspaceManager', () => {
   });
 
   it('returns 0 when pruning with no replies file', async () => {
-    await manager.createBundle(makeTarget(), [], [], []);
-    const pruned = await manager.pruneStaleReplies(new Set());
+    await createBundle(manager, makeTarget(), []);
+    const pruned = await manager.pruneStaleReplies(new Set(), new Map());
     expect(pruned).toBe(0);
   });
 
-  it('clears session and thread map', async () => {
-    await manager.createBundle(makeTarget(), [makeThread()], [], []);
+  it('clears session file', async () => {
+    await createBundle(manager, makeTarget(), [makeThread()]);
 
-    // Both files exist
     const sessionPath = path.join(tmpDir, '.review-assist', 'session.json');
-    const mapPath = path.join(tmpDir, '.review-assist', 'thread-map.json');
     expect(await fileExists(sessionPath)).toBe(true);
-    expect(await fileExists(mapPath)).toBe(true);
 
     await manager.clearSession();
 
     expect(await fileExists(sessionPath)).toBe(false);
-    expect(await fileExists(mapPath)).toBe(false);
   });
 
   it('clearSession is safe when files do not exist', async () => {
@@ -255,7 +269,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes incremental diff patch', async () => {
-    await manager.createBundle(makeTarget(), [], [], []);
+    await createBundle(manager, makeTarget(), []);
 
     const incrementalDiff: ReviewDiff = {
       oldPath: 'src/foo.ts',
@@ -275,13 +289,15 @@ describe('WorkspaceManager', () => {
 
   describe('writeContext', () => {
     it('writes CONTEXT.md with MR metadata', async () => {
-      await manager.createBundle(makeTarget(), [makeThread()], [makeDiff()], []);
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads, [makeDiff()]);
 
       const contextPath = await manager.writeContext(
         makeTarget(),
-        [makeThread()],
+        threads,
         [makeDiff()],
         [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
+        threadIndex,
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
@@ -293,13 +309,15 @@ describe('WorkspaceManager', () => {
     });
 
     it('includes thread overview table', async () => {
-      await manager.createBundle(makeTarget(), [makeThread()], [], []);
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
       const contextPath = await manager.writeContext(
         makeTarget(),
-        [makeThread()],
+        threads,
         [],
         [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
+        threadIndex,
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
@@ -318,13 +336,14 @@ describe('WorkspaceManager', () => {
         oldPath: 'src/new-file.ts',
       };
 
-      await manager.createBundle(makeTarget(), [], [makeDiff(), newFileDiff], []);
+      const { threadIndex } = await createBundle(manager, makeTarget(), [], [makeDiff(), newFileDiff]);
 
       const contextPath = await manager.writeContext(
         makeTarget(),
         [],
         [makeDiff(), newFileDiff],
         [],
+        threadIndex,
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
@@ -336,16 +355,18 @@ describe('WorkspaceManager', () => {
     it('marks incremental mode and NEW threads', async () => {
       const thread1 = makeThread();
       const thread2 = { ...makeThread(), threadId: 'thread-new' };
-      await manager.createBundle(makeTarget(), [thread1, thread2], [], []);
+      const allThreads = [thread1, thread2];
+      const { threadIndex } = await createBundle(manager, makeTarget(), allThreads);
 
       const contextPath = await manager.writeContext(
         makeTarget(),
-        [thread1, thread2],
+        allThreads,
         [],
         [
           { threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Old thread' },
           { threadId: 'thread-new', severity: 'low', category: 'general', summary: 'New thread' },
         ],
+        threadIndex,
         {
           incremental: true,
           previousThreadIds: new Set(['thread-abc']),
@@ -361,15 +382,54 @@ describe('WorkspaceManager', () => {
     });
 
     it('includes workflow instructions', async () => {
-      await manager.createBundle(makeTarget(), [], [], []);
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
 
-      const contextPath = await manager.writeContext(makeTarget(), [], [], []);
+      const contextPath = await manager.writeContext(makeTarget(), [], [], [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Suggested Workflow');
       expect(content).toContain('REVIEW.md');
       expect(content).toContain('replies.json');
       expect(content).toContain('T-NNN');
+    });
+
+    it('shows general comments section for non-resolvable human threads', async () => {
+      const resolvableThread = makeThread();
+      const generalComment: ReviewThread = {
+        ...makeThread(),
+        threadId: 'general-1',
+        resolvable: false,
+        comments: [
+          {
+            id: 'gen-1',
+            body: 'Great work on this MR overall!',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+
+      const allThreads = [resolvableThread, generalComment];
+      const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
+      await manager.createBundle(makeTarget(), allThreads, [], [], threadIndex);
+
+      const contextPath = await manager.writeContext(
+        makeTarget(),
+        allThreads,
+        [],
+        [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
+        threadIndex,
+      );
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Unresolved Threads');
+      expect(content).toContain('T-001');
+      expect(content).toContain('## General Comments');
+      expect(content).toContain('T-002');
+      expect(content).toContain('Great work on this MR overall!');
     });
   });
 });
