@@ -431,6 +431,157 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('T-002');
       expect(content).toContain('Great work on this MR overall!');
     });
+
+    it('shows Previous Actions section when publishedActions are provided', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+
+      const contextPath = await manager.writeContext(
+        makeTarget(),
+        threads,
+        [],
+        [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
+        threadIndex,
+        {
+          publishedActions: [
+            { type: 'reply', threadId: 'T-001', detail: 'Fixed, good catch!', publishedAt: '2026-01-01T12:00:00Z' },
+            { type: 'finding', threadId: 'new-thread-id', filePath: 'src/auth.ts', line: 42, detail: 'high correctness: Unsafe token', publishedAt: '2026-01-01T12:01:00Z', createdThreadId: 'new-thread-id' },
+          ],
+        },
+      );
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Previous Actions (this session)');
+      expect(content).toContain('Reply');
+      expect(content).toContain('T-001');
+      expect(content).toContain('Fixed, good catch!');
+      expect(content).toContain('Finding');
+      expect(content).toContain('src/auth.ts:42');
+    });
+
+    it('tags SELF on threads created by published findings', async () => {
+      const selfThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'self-thread-sha',
+        position: { filePath: 'src/auth.ts', newLine: 42 },
+        comments: [{
+          id: 'self-note',
+          body: 'Unsafe token comparison',
+          author: 'bot',
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+          origin: 'bot',
+          system: false,
+        }],
+      };
+      const threads = [makeThread(), selfThread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(threads);
+      await manager.createBundle(makeTarget(), threads, [], [], threadIndex);
+
+      const contextPath = await manager.writeContext(
+        makeTarget(),
+        threads,
+        [],
+        [
+          { threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' },
+          { threadId: 'self-thread-sha', severity: 'high', category: 'correctness', summary: 'Unsafe token' },
+        ],
+        threadIndex,
+        {
+          publishedActions: [
+            { type: 'finding', threadId: 'self-thread-sha', filePath: 'src/auth.ts', line: 42, detail: 'Unsafe token', publishedAt: '2026-01-01T12:00:00Z', createdThreadId: 'self-thread-sha' },
+          ],
+        },
+      );
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('T-002 **SELF**');
+      // T-001 should NOT be tagged SELF
+      expect(content).not.toContain('T-001 **SELF**');
+    });
+
+    it('tags REPLIED on threads that had replies published', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+
+      const contextPath = await manager.writeContext(
+        makeTarget(),
+        threads,
+        [],
+        [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
+        threadIndex,
+        {
+          publishedActions: [
+            { type: 'reply', threadId: 'T-001', detail: 'Fixed!', publishedAt: '2026-01-01T12:00:00Z' },
+          ],
+        },
+      );
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('T-001 **REPLIED**');
+    });
+
+    it('omits Previous Actions section when no actions exist', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
+
+      const contextPath = await manager.writeContext(makeTarget(), [], [], [], threadIndex, {
+        publishedActions: [],
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).not.toContain('## Previous Actions (this session)');
+    });
+  });
+
+  describe('appendPublishedAction', () => {
+    it('appends action to existing session', async () => {
+      await createBundle(manager, makeTarget(), []);
+
+      const appended = await manager.appendPublishedAction({
+        type: 'reply',
+        threadId: 'T-001',
+        detail: 'Fixed!',
+        publishedAt: '2026-01-01T12:00:00Z',
+      });
+      expect(appended).toBe(true);
+
+      const session = await manager.loadSession();
+      expect(session!.publishedActions).toHaveLength(1);
+      expect(session!.publishedActions![0].threadId).toBe('T-001');
+    });
+
+    it('accumulates multiple actions', async () => {
+      await createBundle(manager, makeTarget(), []);
+
+      await manager.appendPublishedAction({
+        type: 'reply',
+        threadId: 'T-001',
+        detail: 'First',
+        publishedAt: '2026-01-01T12:00:00Z',
+      });
+      await manager.appendPublishedAction({
+        type: 'finding',
+        threadId: 'new-id',
+        filePath: 'src/app.ts',
+        line: 10,
+        detail: 'Second',
+        publishedAt: '2026-01-01T12:01:00Z',
+        createdThreadId: 'new-id',
+      });
+
+      const session = await manager.loadSession();
+      expect(session!.publishedActions).toHaveLength(2);
+    });
+
+    it('returns false when no session exists', async () => {
+      const result = await manager.appendPublishedAction({
+        type: 'reply',
+        threadId: 'T-001',
+        detail: 'No session',
+        publishedAt: '2026-01-01T12:00:00Z',
+      });
+      expect(result).toBe(false);
+    });
   });
 });
 

@@ -43,24 +43,14 @@ const REVIEW_CONFIG_FILES: InitFile[] = [
 
 const PROMPT_FILES: InitFile[] = [
   {
-    target: path.join('.github', 'prompts', 'review-threads.prompt.md'),
-    source: path.join('prompts', 'review-threads.prompt.md'),
-    label: 'Copilot prompt: address existing threads',
-  },
-  {
-    target: path.join('.github', 'prompts', 'review-code.prompt.md'),
-    source: path.join('prompts', 'review-code.prompt.md'),
-    label: 'Copilot prompt: proactive code review',
+    target: path.join('.github', 'prompts', 'review.prompt.md'),
+    source: path.join('prompts', 'review.prompt.md'),
+    label: 'Copilot prompt: full code review (threads + new issues + fixes)',
   },
   {
     target: path.join('.github', 'prompts', 'review-summarize.prompt.md'),
     source: path.join('prompts', 'review-summarize.prompt.md'),
-    label: 'Copilot prompt: summarize MR',
-  },
-  {
-    target: path.join('.github', 'prompts', 'review-quick.prompt.md'),
-    source: path.join('prompts', 'review-quick.prompt.md'),
-    label: 'Copilot prompt: full review (threads + code + summary)',
+    label: 'Copilot prompt: generate MR summary',
   },
 ];
 

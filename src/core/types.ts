@@ -228,6 +228,23 @@ export interface WorkspaceBundle {
 
 // ─── Session ─────────────────────────────────────────────
 
+export type PublishedActionType = 'reply' | 'finding' | 'resolve';
+
+export interface PublishedAction {
+  type: PublishedActionType;
+  /** T-NNN short ID (for replies/resolves) or created thread ID (for findings). */
+  threadId: string;
+  /** For findings: the file path and line that was published. */
+  filePath?: string;
+  line?: number;
+  /** Short description (truncated body or severity+category). */
+  detail: string;
+  /** When the action was published. */
+  publishedAt: string;
+  /** For findings: the thread SHA returned by the provider after creation. */
+  createdThreadId?: string;
+}
+
 export interface Session {
   id: string;
   createdAt: string;
@@ -236,4 +253,6 @@ export interface Session {
   lastReviewedVersionId?: string;
   /** Thread SHAs seen in the last review run (for tracking new vs. carried-over threads). */
   knownThreadIds?: string[];
+  /** Actions published via CLI since this session started. */
+  publishedActions?: PublishedAction[];
 }

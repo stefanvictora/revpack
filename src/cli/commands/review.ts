@@ -57,6 +57,19 @@ export function registerReviewCommand(program: Command): void {
         };
         console.log('');
 
+        // Incremental change summary
+        if (incremental) {
+          const parts: string[] = [];
+          if (result.newThreadCount > 0) parts.push(`${result.newThreadCount} new thread(s)`);
+          if (result.resolvedSinceLastReview > 0) parts.push(`${result.resolvedSinceLastReview} resolved`);
+          if (result.prunedReplies > 0) parts.push(`${result.prunedReplies} stale replies pruned`);
+          if (result.publishedActionCount > 0) parts.push(`${result.publishedActionCount} prior action(s) tracked`);
+          if (parts.length > 0) {
+            console.log(`  ${chalk.dim('Changes:')}     ${parts.join(', ')}`);
+            console.log('');
+          }
+        }
+
         // Findings by severity
         if (findings.length > 0) {
           const bySeverity = new Map<string, number>();
@@ -90,7 +103,7 @@ export function registerReviewCommand(program: Command): void {
         // Next steps
         console.log(chalk.dim('Next steps:'));
         console.log(chalk.dim('  • Open .review-assist/CONTEXT.md and point your agent at it'));
-        console.log(chalk.dim('  • Or use a Copilot prompt: /review-quick, /review-threads, or /review-code'));
+        console.log(chalk.dim('  • Or use a Copilot prompt: /review or /review-summarize'));
         if (incremental) {
           console.log(chalk.dim('  • Re-run `review-assist review` to pick up new changes'));
           console.log(chalk.dim('  • Use --full to discard session and start fresh'));

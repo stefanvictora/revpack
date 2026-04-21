@@ -8,6 +8,7 @@ import type {
   ReviewVersion,
   WorkspaceBundle,
   Session,
+  PublishedAction,
 } from '../core/types.js';
 import { WorkspaceError } from '../core/errors.js';
 
@@ -104,6 +105,19 @@ export class WorkspaceManager {
   }
 
   /**
+   * Append a published action to the current session.
+   * Returns false if no session exists.
+   */
+  async appendPublishedAction(action: PublishedAction): Promise<boolean> {
+    const session = await this.loadSession();
+    if (!session) return false;
+    session.publishedActions = session.publishedActions ?? [];
+    session.publishedActions.push(action);
+    await this.saveSession(session);
+    return true;
+  }
+
+  /**
    * Remove entries from replies.json whose T-NNN no longer maps to
    * an active (unresolved) thread. Called on incremental runs to prevent
    * stale replies from being published to the wrong thread.
@@ -197,11 +211,35 @@ export class WorkspaceManager {
     diffs: ReviewDiff[],
     classifications: { threadId: string; severity: string; category: string; summary: string }[],
     threadIndex: ThreadIndex,
-    options?: { incremental?: boolean; previousThreadIds?: Set<string> },
+    options?: {
+      incremental?: boolean;
+      previousThreadIds?: Set<string>;
+      publishedActions?: PublishedAction[];
+    },
   ): Promise<string> {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
     const generalComments = threads.filter((t) => !t.resolvable && !t.comments.every((c) => c.system));
     const classMap = new Map(classifications.map((c) => [c.threadId, c]));
+
+    // Build set of self-authored thread SHAs (findings we published earlier)
+    const selfThreadIds = new Set<string>();
+    if (options?.publishedActions) {
+      for (const a of options.publishedActions) {
+        if (a.type === 'finding' && a.createdThreadId) {
+          selfThreadIds.add(a.createdThreadId);
+        }
+      }
+    }
+
+    // Build set of thread SHAs that were replied to / resolved
+    const repliedThreadIds = new Set<string>();
+    if (options?.publishedActions) {
+      for (const a of options.publishedActions) {
+        if (a.type === 'reply' || a.type === 'resolve') {
+          repliedThreadIds.add(a.threadId);
+        }
+      }
+    }
 
     const lines: string[] = [];
     const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
@@ -243,11 +281,17 @@ export class WorkspaceManager {
         const cls = classMap.get(t.threadId);
         const prefix = threadIndex.get(t.threadId) ?? '?';
         const isNew = options?.previousThreadIds && !options.previousThreadIds.has(t.threadId);
-        const badge = isNew ? ' **NEW**' : '';
+        const isSelf = selfThreadIds.has(t.threadId);
+        const isReplied = repliedThreadIds.has(prefix) || repliedThreadIds.has(t.threadId);
+        const badges: string[] = [];
+        if (isNew && !isSelf) badges.push('**NEW**');
+        if (isSelf) badges.push('**SELF**');
+        if (isReplied) badges.push('**REPLIED**');
+        const badgeStr = badges.length > 0 ? ' ' + badges.join(' ') : '';
         const file = t.position?.filePath
           ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
           : '(general)';
-        lines.push(`| ${prefix}${badge} | ${file} | ${cls?.severity ?? '?'} | ${cls?.summary ?? ''} |`);
+        lines.push(`| ${prefix}${badgeStr} | ${file} | ${cls?.severity ?? '?'} | ${cls?.summary ?? ''} |`);
       }
       lines.push('');
     }
@@ -298,6 +342,25 @@ export class WorkspaceManager {
       }
       lines.push('- Check `diffs/incremental.patch` for what changed since last review');
       lines.push('- Focus on **NEW** threads — carried-over threads may already have pending replies');
+      lines.push('- Threads marked **SELF** were published by you in a prior iteration — skip unless still unresolved after your fix');
+      lines.push('- Threads marked **REPLIED** already have a reply from a prior iteration');
+      lines.push('');
+    }
+
+    // Previous actions — tell the agent what it already did
+    if (options?.publishedActions && options.publishedActions.length > 0) {
+      lines.push('## Previous Actions (this session)');
+      lines.push('');
+      lines.push('These actions were published by `review-assist` in prior iterations of this session.');
+      lines.push('Threads marked **SELF** above were created by your findings. Do not re-raise the same issues.');
+      lines.push('');
+      lines.push('| Action | Target | Detail |');
+      lines.push('|--------|--------|--------|');
+      for (const a of options.publishedActions) {
+        const actionLabel = a.type === 'reply' ? 'Reply' : a.type === 'finding' ? 'Finding' : 'Resolve';
+        const target = a.filePath ? `${a.filePath}:${a.line ?? '?'}` : a.threadId;
+        lines.push(`| ${actionLabel} | ${target} | ${a.detail.slice(0, 100)} |`);
+      }
       lines.push('');
     }
 
@@ -320,7 +383,8 @@ export class WorkspaceManager {
     lines.push('     ```');
     lines.push('   - `outputs/summary.md` — Walkthrough summary for the MR description');
     lines.push('');
-    lines.push('**Important**: When creating new findings, check existing threads first to avoid duplicates.');
+    lines.push('**Important**: Check existing threads and the Previous Actions table before creating new findings.');
+    lines.push('Do not re-raise issues that are already tracked or were published by you (**SELF** threads).');
     lines.push('Only raise issues you are confident about. For trivial issues, fix the code directly.');
     lines.push('');
     lines.push('Publish results back to GitLab/GitHub:');

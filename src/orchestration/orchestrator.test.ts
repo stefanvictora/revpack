@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ReviewOrchestrator } from '../orchestration/orchestrator.js';
+import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
 import type { ReviewProvider } from '../providers/provider.js';
 import type { ReviewTarget, ReviewThread, ReviewDiff, ReviewVersion, ReviewTargetRef } from '../core/types.js';
@@ -241,6 +242,54 @@ describe('ReviewOrchestrator', () => {
 
       await expect(orchestrator.review(undefined, 'group/project'))
         .rejects.toThrow('Could not determine which MR to review');
+    });
+
+    it('returns incremental stats on second run', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      // First run
+      const first = await orchestrator.review('!42', 'group/project');
+      expect(first.prunedReplies).toBe(0);
+      expect(first.resolvedSinceLastReview).toBe(0);
+      expect(first.newThreadCount).toBe(0);
+      expect(first.publishedActionCount).toBe(0);
+
+      // Add a new thread for second run
+      const newThread: ReviewThread = {
+        ...mockThread,
+        threadId: 'thread-new',
+      };
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
+        .mockResolvedValue([mockThread, newThread]);
+
+      const second = await orchestrator.review('!42', 'group/project');
+      expect(second.incremental).toBe(true);
+      expect(second.newThreadCount).toBe(1);
+    });
+
+    it('preserves publishedActions across review runs', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      // First run
+      await orchestrator.review('!42', 'group/project');
+
+      // Simulate publishing a reply (write directly to session)
+      const ws = new WorkspaceManager(tmpDir);
+      await ws.appendPublishedAction({
+        type: 'reply',
+        threadId: 'T-001',
+        detail: 'Fixed!',
+        publishedAt: '2026-01-01T12:00:00Z',
+      });
+
+      // Second run should carry over the action
+      const second = await orchestrator.review('!42', 'group/project');
+      expect(second.publishedActionCount).toBe(1);
+
+      // Session should still have the action
+      const session = await ws.loadSession();
+      expect(session!.publishedActions).toHaveLength(1);
+      expect(session!.publishedActions![0].type).toBe('reply');
     });
 
     it('excludes system-only threads from bundle and index', async () => {

@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
+import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 
 const DEFAULT_REPLIES_FILE = '.review-assist/outputs/replies.json';
@@ -86,10 +87,25 @@ export function registerPublishReplyCommand(program: Command): void {
             console.log(chalk.dim('  thread resolved'));
           }
 
-          // Mark as published
+          // Mark as published and record in session
+          const ws = new WorkspaceManager(process.cwd());
           if (matchedEntry && entries) {
             matchedEntry.published = true;
             await saveRepliesJson(repliesFile, entries);
+          }
+          await ws.appendPublishedAction({
+            type: 'reply',
+            threadId: thread,
+            detail: body.split('\n')[0].slice(0, 80),
+            publishedAt: new Date().toISOString(),
+          });
+          if (shouldResolve) {
+            await ws.appendPublishedAction({
+              type: 'resolve',
+              threadId: thread,
+              detail: 'Thread resolved',
+              publishedAt: new Date().toISOString(),
+            });
           }
 
         } else {
@@ -108,16 +124,29 @@ export function registerPublishReplyCommand(program: Command): void {
 
           let posted = 0;
           let resolved = 0;
+          const ws = new WorkspaceManager(process.cwd());
           for (const entry of pending) {
             try {
               await orchestrator.publishReply(undefined, entry.threadId, entry.body, defaultRepo);
               console.log(chalk.green(`  ✓ ${entry.threadId}`));
               posted++;
               entry.published = true;
+              await ws.appendPublishedAction({
+                type: 'reply',
+                threadId: entry.threadId,
+                detail: entry.body.split('\n')[0].slice(0, 80),
+                publishedAt: new Date().toISOString(),
+              });
               if (entry.resolve || opts.resolve) {
                 await orchestrator.resolveThread(undefined, entry.threadId, defaultRepo);
                 console.log(chalk.dim('    resolved'));
                 resolved++;
+                await ws.appendPublishedAction({
+                  type: 'resolve',
+                  threadId: entry.threadId,
+                  detail: 'Thread resolved',
+                  publishedAt: new Date().toISOString(),
+                });
               }
             } catch (err) {
               console.error(chalk.red(`  ✗ ${entry.threadId}: ${err instanceof Error ? err.message : String(err)}`));

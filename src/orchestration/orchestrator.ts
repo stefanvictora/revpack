@@ -29,6 +29,14 @@ export interface ReviewResult {
   incremental: boolean;
   /** Whether the local branch HEAD matches the MR head commit. */
   localBranchStatus?: 'up-to-date' | 'behind' | 'ahead' | 'unknown';
+  /** Number of replies pruned from stale threads (incremental only). */
+  prunedReplies: number;
+  /** Number of threads resolved since last review (incremental only). */
+  resolvedSinceLastReview: number;
+  /** Number of new threads since last review (incremental only). */
+  newThreadCount: number;
+  /** Number of published actions carried over from the session. */
+  publishedActionCount: number;
 }
 
 /**
@@ -119,12 +127,26 @@ export class ReviewOrchestrator {
     }
 
     // Prune stale replies from previous runs (incremental safety)
+    let prunedReplies = 0;
     if (isIncremental) {
       const activeIds = new Set(activeThreads.map((t) => t.threadId));
-      const pruned = await this.workspace.pruneStaleReplies(activeIds, threadIndex);
-      if (pruned > 0) {
-        // Will be surfaced in the CLI output
-      }
+      prunedReplies = await this.workspace.pruneStaleReplies(activeIds, threadIndex);
+    }
+
+    // Compute incremental stats
+    const previousThreadIdSet = isIncremental && existingSession?.knownThreadIds
+      ? new Set(existingSession.knownThreadIds)
+      : undefined;
+
+    let resolvedSinceLastReview = 0;
+    let newThreadCount = 0;
+    if (previousThreadIdSet) {
+      resolvedSinceLastReview = [...previousThreadIdSet].filter(
+        (id) => !activeThreads.some((t) => t.threadId === id),
+      ).length;
+      newThreadCount = activeThreads.filter(
+        (t) => t.resolvable && !t.resolved && !previousThreadIdSet.has(t.threadId),
+      ).length;
     }
 
     // Classify resolvable unresolved threads
@@ -145,9 +167,7 @@ export class ReviewOrchestrator {
     await this.workspace.writeOutput('findings.json', JSON.stringify(findings, null, 2));
 
     // Write CONTEXT.md — the agent entry point
-    const previousThreadIds = isIncremental && existingSession?.knownThreadIds
-      ? new Set(existingSession.knownThreadIds)
-      : undefined;
+    const publishedActions = existingSession?.publishedActions ?? [];
     const contextPath = await this.workspace.writeContext(
       target,
       activeThreads,
@@ -159,7 +179,7 @@ export class ReviewOrchestrator {
         summary: c.summary,
       })),
       threadIndex,
-      { incremental: isIncremental, previousThreadIds },
+      { incremental: isIncremental, previousThreadIds: previousThreadIdSet, publishedActions },
     );
 
     // Update session with latest version for future incremental runs
@@ -171,6 +191,7 @@ export class ReviewOrchestrator {
       bundlePath: this.workspace.bundlePath,
       lastReviewedVersionId: latestVersionId,
       knownThreadIds: activeThreads.map((t) => t.threadId),
+      publishedActions,
     });
 
     // Check local branch sync status against the MR head commit
@@ -199,6 +220,10 @@ export class ReviewOrchestrator {
       summaryMarkdown,
       incremental: isIncremental,
       localBranchStatus,
+      prunedReplies,
+      resolvedSinceLastReview,
+      newThreadCount,
+      publishedActionCount: publishedActions.length,
     };
   }
 

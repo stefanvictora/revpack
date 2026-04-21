@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import type { NewFinding } from '../../core/types.js';
+import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 
 const DEFAULT_FINDINGS_FILE = '.review-assist/outputs/new-findings.json';
@@ -68,14 +69,24 @@ export function registerPublishFindingCommand(program: Command): void {
 
         const orchestrator = await createOrchestrator();
         const defaultRepo = await getDefaultRepo();
+        const ws = new WorkspaceManager(process.cwd());
 
         let published = 0;
         for (const finding of pending) {
           try {
-            await orchestrator.publishFinding(finding, defaultRepo);
+            const createdThreadId = await orchestrator.publishFinding(finding, defaultRepo);
             console.log(chalk.green(`  ✓ ${finding.filePath}:${finding.line} (${finding.severity})`));
             finding.published = true;
             published++;
+            await ws.appendPublishedAction({
+              type: 'finding',
+              threadId: createdThreadId,
+              filePath: finding.filePath,
+              line: finding.line,
+              detail: `${finding.severity} ${finding.category}: ${finding.body.split('\n')[0].slice(0, 60)}`,
+              publishedAt: new Date().toISOString(),
+              createdThreadId,
+            });
           } catch (err) {
             console.error(chalk.red(`  ✗ ${finding.filePath}:${finding.line}: ${err instanceof Error ? err.message : String(err)}`));
           }
