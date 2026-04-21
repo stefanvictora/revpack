@@ -102,25 +102,6 @@ describe('ReviewOrchestrator', () => {
     });
   });
 
-  describe('threads', () => {
-    it('lists unresolved threads by default', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir });
-      const result = await orchestrator.threads('!42', 'group/project');
-
-      expect(mockProvider.listUnresolvedThreads).toHaveBeenCalled();
-      expect(result.threads).toHaveLength(1);
-      expect(result.classifications).toHaveLength(1);
-    });
-
-    it('lists all threads when --all is set', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir });
-      const result = await orchestrator.threads('!42', 'group/project', { all: true });
-
-      expect(mockProvider.listAllThreads).toHaveBeenCalled();
-      expect(result.threads).toHaveLength(1);
-    });
-  });
-
   describe('classifyThreads', () => {
     it('classifies threads into findings', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir });

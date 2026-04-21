@@ -2,10 +2,7 @@
 
 import { Command } from 'commander';
 import { registerReviewCommand } from './commands/review.js';
-import { registerOpenCommand } from './commands/open.js';
-import { registerThreadsCommand } from './commands/threads.js';
-import { registerPrepareCommand } from './commands/prepare.js';
-import { registerSummarizeCommand } from './commands/summarize.js';
+import { registerStatusCommand } from './commands/status.js';
 import { registerPublishReplyCommand } from './commands/publish-reply.js';
 import { registerUpdateDescriptionCommand } from './commands/update-description.js';
 import { registerConfigCommand } from './commands/config.js';
@@ -19,10 +16,7 @@ program
   .version('0.1.0');
 
 registerReviewCommand(program);
-registerOpenCommand(program);
-registerThreadsCommand(program);
-registerPrepareCommand(program);
-registerSummarizeCommand(program);
+registerStatusCommand(program);
 registerPublishReplyCommand(program);
 registerUpdateDescriptionCommand(program);
 registerConfigCommand(program);

@@ -204,22 +204,7 @@ export interface WorkspaceBundle {
   threads: ReviewThread[];
   diffs: ReviewDiff[];
   versions: ReviewVersion[];
-  fileExcerpts: FileExcerpt[];
-  instructions: BundleInstructions;
   outputDir: string;
-}
-
-export interface FileExcerpt {
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  content: string;
-}
-
-export interface BundleInstructions {
-  reviewMd?: string;
-  claudeMd?: string;
-  projectRules?: string;
 }
 
 // ─── Session ─────────────────────────────────────────────

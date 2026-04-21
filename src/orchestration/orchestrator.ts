@@ -57,7 +57,7 @@ export class ReviewOrchestrator {
   async review(
     ref?: string,
     defaultRepo?: string,
-    options?: { full?: boolean; checkout?: boolean },
+    options?: { full?: boolean },
   ): Promise<ReviewResult> {
     const targetRef = await this.resolveRef(ref, defaultRepo);
 
@@ -72,13 +72,6 @@ export class ReviewOrchestrator {
 
     const isIncremental = !!(existingSession?.lastReviewedVersionId);
 
-    // Optionally checkout the source branch
-    if (options?.checkout) {
-      const target = await this.provider.getTargetSnapshot(targetRef);
-      await this.git.fetch();
-      await this.git.checkout(target.sourceBranch);
-    }
-
     // Fetch all data in parallel
     const [target, allThreads, diffs, versions] = await Promise.all([
       this.provider.getTargetSnapshot(targetRef),
@@ -87,15 +80,12 @@ export class ReviewOrchestrator {
       this.provider.getDiffVersions(targetRef),
     ]);
 
-    const workingDir = this.workspace.bundlePath.replace(/[/\\].review-assist$/, '');
-
     // Create the bundle
     const bundle = await this.workspace.createBundle(
       target,
       allThreads,
       diffs,
       versions,
-      workingDir,
     );
 
     // Incremental diff if applicable
@@ -179,98 +169,11 @@ export class ReviewOrchestrator {
   }
 
   /**
-   * Open: resolve ref, fetch snapshot, display summary info.
+   * Status: resolve ref, fetch snapshot, display summary info.
    */
   async open(ref?: string, defaultRepo?: string): Promise<ReviewTarget> {
     const targetRef = await this.resolveRef(ref, defaultRepo);
     return this.provider.getTargetSnapshot(targetRef);
-  }
-
-  /**
-   * Threads: list unresolved threads with classification.
-   */
-  async threads(
-    ref?: string,
-    defaultRepo?: string,
-    options?: { all?: boolean },
-  ): Promise<{ threads: ReviewThread[]; classifications: ReturnType<ThreadClassifier['classify']>[] }> {
-    const targetRef = await this.resolveRef(ref, defaultRepo);
-    const threads = options?.all
-      ? await this.provider.listAllThreads(targetRef)
-      : await this.provider.listUnresolvedThreads(targetRef);
-
-    const classifications = threads
-      .filter((t) => t.resolvable)
-      .map((t) => this.classifier.classify(t));
-
-    return { threads, classifications };
-  }
-
-  /**
-   * Prepare: create workspace bundle with full context for agent consumption.
-   */
-  async prepare(
-    ref?: string,
-    defaultRepo?: string,
-    options?: { threadIds?: string[]; checkout?: boolean },
-  ): Promise<WorkspaceBundle> {
-    const targetRef = await this.resolveRef(ref, defaultRepo);
-
-    // Optionally checkout the source branch
-    if (options?.checkout) {
-      const target = await this.provider.getTargetSnapshot(targetRef);
-      await this.git.fetch();
-      await this.git.checkout(target.sourceBranch);
-    }
-
-    // Fetch all data in parallel
-    const [target, allThreads, diffs, versions] = await Promise.all([
-      this.provider.getTargetSnapshot(targetRef),
-      this.provider.listUnresolvedThreads(targetRef),
-      this.provider.getLatestDiff(targetRef),
-      this.provider.getDiffVersions(targetRef),
-    ]);
-
-    // Filter threads if specific IDs requested
-    const threads = options?.threadIds
-      ? allThreads.filter((t) => options.threadIds!.includes(t.threadId))
-      : allThreads;
-
-    const workingDir = this.workspace.bundlePath.replace(/[/\\].review-assist$/, '');
-    const bundle = await this.workspace.createBundle(
-      target,
-      threads,
-      diffs,
-      versions,
-      workingDir,
-    );
-
-    return bundle;
-  }
-
-  /**
-   * Summarize: generate walkthrough, summary, and changed files table.
-   */
-  async summarize(
-    ref?: string,
-    defaultRepo?: string,
-  ): Promise<{ summary: ReviewSummary; markdown: string }> {
-    const targetRef = await this.resolveRef(ref, defaultRepo);
-
-    const [target, threads, diffs] = await Promise.all([
-      this.provider.getTargetSnapshot(targetRef),
-      this.provider.listAllThreads(targetRef),
-      this.provider.getLatestDiff(targetRef),
-    ]);
-
-    const summary = this.summaryGen.generateSummary(target, diffs, threads);
-    const markdown = this.summaryGen.generateMarkdown(summary);
-
-    // Write outputs
-    await this.workspace.writeOutput('summary.json', JSON.stringify(summary, null, 2));
-    await this.workspace.writeOutput('summary.md', markdown);
-
-    return { summary, markdown };
   }
 
   /**

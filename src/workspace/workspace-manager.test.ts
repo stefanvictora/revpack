@@ -71,7 +71,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('creates bundle directory structure', async () => {
-    const bundle = await manager.createBundle(makeTarget(), [makeThread()], [makeDiff()], [], tmpDir);
+    const bundle = await manager.createBundle(makeTarget(), [makeThread()], [makeDiff()], []);
 
     expect(bundle.sessionId).toBeTruthy();
     expect(bundle.target.targetId).toBe('42');
@@ -85,13 +85,11 @@ describe('WorkspaceManager', () => {
     expect(entries).toContain('target.json');
     expect(entries).toContain('threads');
     expect(entries).toContain('diffs');
-    expect(entries).toContain('files');
-    expect(entries).toContain('instructions');
     expect(entries).toContain('outputs');
   });
 
   it('writes session.json with correct structure', async () => {
-    await manager.createBundle(makeTarget(), [], [], [], tmpDir);
+    await manager.createBundle(makeTarget(), [], [], []);
 
     const sessionPath = path.join(tmpDir, '.review-assist', 'session.json');
     const session = JSON.parse(await fs.readFile(sessionPath, 'utf-8'));
@@ -102,7 +100,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes target.json', async () => {
-    await manager.createBundle(makeTarget(), [], [], [], tmpDir);
+    await manager.createBundle(makeTarget(), [], [], []);
 
     const targetPath = path.join(tmpDir, '.review-assist', 'target.json');
     const target = JSON.parse(await fs.readFile(targetPath, 'utf-8'));
@@ -112,7 +110,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes thread JSON and markdown files', async () => {
-    await manager.createBundle(makeTarget(), [makeThread()], [], [], tmpDir);
+    await manager.createBundle(makeTarget(), [makeThread()], [], []);
 
     const threadDir = path.join(tmpDir, '.review-assist', 'threads');
     const files = await fs.readdir(threadDir);
@@ -130,7 +128,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes latest.patch', async () => {
-    await manager.createBundle(makeTarget(), [], [makeDiff()], [], tmpDir);
+    await manager.createBundle(makeTarget(), [], [makeDiff()], []);
 
     const patchPath = path.join(tmpDir, '.review-assist', 'diffs', 'latest.patch');
     const patch = await fs.readFile(patchPath, 'utf-8');
@@ -140,7 +138,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('writes output files', async () => {
-    await manager.createBundle(makeTarget(), [], [], [], tmpDir);
+    await manager.createBundle(makeTarget(), [], [], []);
     const outputPath = await manager.writeOutput('test.md', '# Test');
 
     expect(outputPath).toContain('outputs');
@@ -149,7 +147,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('loads session from disk', async () => {
-    await manager.createBundle(makeTarget(), [], [], [], tmpDir);
+    await manager.createBundle(makeTarget(), [], [], []);
     const session = await manager.loadSession();
 
     expect(session).toBeTruthy();
@@ -166,7 +164,7 @@ describe('WorkspaceManager', () => {
     const thread2 = { ...makeThread(), threadId: 'thread-xyz', comments: thread1.comments };
 
     // First run: two threads
-    await manager.createBundle(makeTarget(), [thread1, thread2], [], [], tmpDir);
+    await manager.createBundle(makeTarget(), [thread1, thread2], [], []);
 
     const threadDir = path.join(tmpDir, '.review-assist', 'threads');
     const files1 = (await fs.readdir(threadDir)).sort();
@@ -182,7 +180,7 @@ describe('WorkspaceManager', () => {
 
     // Second run: thread1 resolved, thread2 remains, thread3 is new
     const thread3 = { ...makeThread(), threadId: 'thread-new', comments: thread1.comments };
-    await manager.createBundle(makeTarget(), [thread2, thread3], [], [], tmpDir);
+    await manager.createBundle(makeTarget(), [thread2, thread3], [], []);
 
     // thread2 keeps T-002, thread3 gets T-003 (not T-001!)
     const map2 = JSON.parse(await fs.readFile(mapPath, 'utf-8'));
@@ -199,7 +197,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('resolves T-NNN from thread-map.json', async () => {
-    await manager.createBundle(makeTarget(), [makeThread()], [], [], tmpDir);
+    await manager.createBundle(makeTarget(), [makeThread()], [], []);
 
     const resolved = await manager.resolveThreadRef('T-001');
     expect(resolved).toBe('thread-abc');
@@ -211,7 +209,7 @@ describe('WorkspaceManager', () => {
   });
 
   it('prunes stale replies on incremental runs', async () => {
-    await manager.createBundle(makeTarget(), [makeThread()], [], [], tmpDir);
+    await manager.createBundle(makeTarget(), [makeThread()], [], []);
 
     // Write a replies.json with two entries
     const repliesPath = path.join(tmpDir, '.review-assist', 'outputs', 'replies.json');

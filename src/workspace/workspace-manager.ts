@@ -7,8 +7,6 @@ import type {
   ReviewDiff,
   ReviewVersion,
   WorkspaceBundle,
-  FileExcerpt,
-  BundleInstructions,
   Session,
 } from '../core/types.js';
 import { WorkspaceError } from '../core/errors.js';
@@ -42,7 +40,6 @@ export class WorkspaceManager {
     threads: ReviewThread[],
     diffs: ReviewDiff[],
     versions: ReviewVersion[],
-    repoDir: string,
   ): Promise<WorkspaceBundle> {
     const sessionId = randomUUID();
     const createdAt = new Date().toISOString();
@@ -51,15 +48,7 @@ export class WorkspaceManager {
     await this.ensureDir(this.baseDir);
     await this.ensureDir(path.join(this.baseDir, 'threads'));
     await this.ensureDir(path.join(this.baseDir, 'diffs'));
-    await this.ensureDir(path.join(this.baseDir, 'files'));
-    await this.ensureDir(path.join(this.baseDir, 'instructions'));
     await this.ensureDir(path.join(this.baseDir, 'outputs'));
-
-    // Collect file excerpts from thread positions
-    const fileExcerpts = await this.collectFileExcerpts(threads, repoDir);
-
-    // Load instructions from repo if present
-    const instructions = await this.loadInstructions(repoDir);
 
     const bundle: WorkspaceBundle = {
       sessionId,
@@ -68,8 +57,6 @@ export class WorkspaceManager {
       threads,
       diffs,
       versions,
-      fileExcerpts,
-      instructions,
       outputDir: path.join(this.baseDir, 'outputs'),
     };
 
@@ -82,8 +69,6 @@ export class WorkspaceManager {
     await this.clearThreadFiles();
     await this.writeThreads(threads, threadMap);
     await this.writeDiffs(diffs);
-    await this.writeFileExcerpts(fileExcerpts);
-    await this.writeInstructions(instructions);
 
     return bundle;
   }
@@ -241,8 +226,6 @@ export class WorkspaceManager {
     if (options?.incremental) {
       lines.push('| `diffs/incremental.patch` | Changes since last review |');
     }
-    lines.push('| `files/` | Code excerpts around thread positions |');
-    lines.push('| `instructions/` | Review guidelines and project rules (if configured) |');
     lines.push('| `outputs/` | Write results here |');
     lines.push('');
 
@@ -301,8 +284,8 @@ export class WorkspaceManager {
     // Workflow instructions
     lines.push('## Suggested Workflow');
     lines.push('');
-    lines.push('1. Read `instructions/REVIEW.md` and `instructions/project-review-rules.md` if present');
-    lines.push('2. Read each thread `.md` file in `threads/`');
+    lines.push('1. Read `REVIEW.md` and `.review-assist/rules.md` in the repo root if present');
+    lines.push('2. Read each thread `.md` file in `.review-assist/threads/`');
     lines.push('3. Check the referenced source code and `diffs/latest.patch`');
     lines.push('4. For each thread decide: fix code, draft a reply, or both');
     lines.push('5. Write results to `outputs/`:');
@@ -419,89 +402,6 @@ export class WorkspaceManager {
     }).join('\n');
 
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), patchContent, 'utf-8');
-  }
-
-  private async writeFileExcerpts(excerpts: FileExcerpt[]): Promise<void> {
-    for (const excerpt of excerpts) {
-      const safeName = excerpt.filePath.replace(/[/\\]/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '_');
-      const filename = `${safeName}_L${excerpt.startLine}-L${excerpt.endLine}.txt`;
-      await fs.writeFile(
-        path.join(this.baseDir, 'files', filename),
-        `// ${excerpt.filePath}:${excerpt.startLine}-${excerpt.endLine}\n${excerpt.content}`,
-        'utf-8',
-      );
-    }
-  }
-
-  private async writeInstructions(instructions: BundleInstructions): Promise<void> {
-    if (instructions.claudeMd) {
-      await fs.writeFile(
-        path.join(this.baseDir, 'instructions', 'CLAUDE.md'),
-        instructions.claudeMd,
-        'utf-8',
-      );
-    }
-    if (instructions.reviewMd) {
-      await fs.writeFile(
-        path.join(this.baseDir, 'instructions', 'REVIEW.md'),
-        instructions.reviewMd,
-        'utf-8',
-      );
-    }
-    if (instructions.projectRules) {
-      await fs.writeFile(
-        path.join(this.baseDir, 'instructions', 'project-review-rules.md'),
-        instructions.projectRules,
-        'utf-8',
-      );
-    }
-  }
-
-  private async collectFileExcerpts(
-    threads: ReviewThread[],
-    repoDir: string,
-  ): Promise<FileExcerpt[]> {
-    const excerpts: FileExcerpt[] = [];
-    const seen = new Set<string>();
-
-    for (const thread of threads) {
-      if (!thread.position?.filePath) continue;
-      const { filePath, newLine } = thread.position;
-      const line = newLine ?? 1;
-      const contextLines = 30;
-      const startLine = Math.max(1, line - contextLines);
-      const endLine = line + contextLines;
-      const key = `${filePath}:${startLine}-${endLine}`;
-
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      try {
-        const fullPath = path.join(repoDir, filePath);
-        const content = await fs.readFile(fullPath, 'utf-8');
-        const lines = content.split('\n');
-        const excerpt = lines.slice(startLine - 1, endLine).join('\n');
-        excerpts.push({ filePath, startLine, endLine: Math.min(endLine, lines.length), content: excerpt });
-      } catch {
-        // File may not exist in working tree (deleted file, etc.)
-      }
-    }
-
-    return excerpts;
-  }
-
-  private async loadInstructions(repoDir: string): Promise<BundleInstructions> {
-    const instructions: BundleInstructions = {};
-
-    const claudeMdPath = path.join(repoDir, 'CLAUDE.md');
-    const reviewMdPath = path.join(repoDir, 'REVIEW.md');
-    const rulesPath = path.join(repoDir, '.review-assist', 'rules.md');
-
-    try { instructions.claudeMd = await fs.readFile(claudeMdPath, 'utf-8'); } catch { /* not present */ }
-    try { instructions.reviewMd = await fs.readFile(reviewMdPath, 'utf-8'); } catch { /* not present */ }
-    try { instructions.projectRules = await fs.readFile(rulesPath, 'utf-8'); } catch { /* not present */ }
-
-    return instructions;
   }
 
   private threadToMarkdown(thread: ReviewThread, prefix: string): string {
