@@ -177,6 +177,25 @@ export interface Learning {
   active: boolean;
 }
 
+// ─── New Finding (agent-generated) ───────────────────────
+
+/**
+ * A new finding created by an agent during proactive code review.
+ * Written to outputs/new-findings.json for publishing via `publish-finding`.
+ */
+export interface NewFinding {
+  /** File path relative to repo root. */
+  filePath: string;
+  /** Line number in the new version of the file. */
+  line: number;
+  /** The review comment body (markdown). */
+  body: string;
+  /** Severity for prioritization. */
+  severity: Severity;
+  /** Category tag. */
+  category: string;
+}
+
 // ─── Review Summary ──────────────────────────────────────
 
 export interface ReviewSummary {

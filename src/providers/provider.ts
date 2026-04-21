@@ -7,6 +7,18 @@ import type {
 } from '../core/types.js';
 
 /**
+ * Position for creating a new discussion thread on a diff.
+ */
+export interface NewThreadPosition {
+  /** File path (new_path in the diff). */
+  filePath: string;
+  /** Line number in the new version of the file. */
+  newLine: number;
+  /** Optional: line in the old version (for removed lines). */
+  oldLine?: number;
+}
+
+/**
  * Provider-neutral interface for forge operations.
  * Implementations: GitLabProvider, (future) GitHubProvider.
  */
@@ -18,6 +30,9 @@ export interface ReviewProvider {
 
   /** List open review targets (MRs/PRs) for the configured repository. */
   listOpenReviewTargets(repo: string): Promise<ReviewTarget[]>;
+
+  /** Find open MR/PR(s) for a given source branch name. */
+  findTargetByBranch(repo: string, branchName: string): Promise<ReviewTarget[]>;
 
   /** Fetch full metadata snapshot for a target. */
   getTargetSnapshot(ref: ReviewTargetRef): Promise<ReviewTarget>;
@@ -45,4 +60,7 @@ export interface ReviewProvider {
 
   /** Update the target description body. */
   updateDescription(ref: ReviewTargetRef, body: string): Promise<void>;
+
+  /** Create a new discussion thread on the MR/PR diff. */
+  createThread(ref: ReviewTargetRef, body: string, position?: NewThreadPosition): Promise<string>;
 }

@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ReviewOrchestrator } from '../orchestration/orchestrator.js';
+import { GitHelper } from '../workspace/git-helper.js';
 import type { ReviewProvider } from '../providers/provider.js';
 import type { ReviewTarget, ReviewThread, ReviewDiff, ReviewVersion, ReviewTargetRef } from '../core/types.js';
 
@@ -72,6 +73,7 @@ function createMockProvider(): ReviewProvider {
     providerType: 'gitlab',
     resolveTarget: vi.fn().mockResolvedValue(targetRef),
     listOpenReviewTargets: vi.fn().mockResolvedValue([mockTarget]),
+    findTargetByBranch: vi.fn().mockResolvedValue([mockTarget]),
     getTargetSnapshot: vi.fn().mockResolvedValue(mockTarget),
     listUnresolvedThreads: vi.fn().mockResolvedValue([mockThread]),
     listAllThreads: vi.fn().mockResolvedValue([mockThread]),
@@ -81,6 +83,7 @@ function createMockProvider(): ReviewProvider {
     postReply: vi.fn().mockResolvedValue(undefined),
     resolveThread: vi.fn().mockResolvedValue(undefined),
     updateDescription: vi.fn().mockResolvedValue(undefined),
+    createThread: vi.fn().mockResolvedValue('new-thread-id'),
   };
 }
 
@@ -237,7 +240,114 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
       await expect(orchestrator.review(undefined, 'group/project'))
-        .rejects.toThrow('No MR/PR reference provided');
+        .rejects.toThrow('Could not determine which MR to review');
+    });
+  });
+
+  describe('publishFinding', () => {
+    it('calls provider.createThread with position', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      // Need a session for resolveRef to work without explicit ref
+      await orchestrator.review('!42', 'group/project');
+
+      const finding = {
+        filePath: 'src/app.ts',
+        line: 42,
+        body: 'Potential null dereference here',
+        severity: 'high' as const,
+        category: 'correctness',
+      };
+
+      const threadId = await orchestrator.publishFinding(finding, 'group/project');
+      expect(threadId).toBe('new-thread-id');
+      expect(mockProvider.createThread).toHaveBeenCalledWith(
+        expect.objectContaining({ targetId: '42' }),
+        'Potential null dereference here',
+        { filePath: 'src/app.ts', newLine: 42 },
+      );
+    });
+  });
+
+  describe('resolveRef auto-detect from branch', () => {
+    let deriveSlugSpy: ReturnType<typeof vi.spyOn>;
+    let currentBranchSpy: ReturnType<typeof vi.spyOn>;
+
+    afterEach(() => {
+      deriveSlugSpy?.mockRestore();
+      currentBranchSpy?.mockRestore();
+    });
+
+    it('auto-detects MR when a single open MR matches the current branch', async () => {
+      deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/test');
+      (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([mockTarget]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.review(undefined, undefined);
+
+      expect(mockProvider.findTargetByBranch).toHaveBeenCalledWith('group/project', 'feature/test');
+      expect(result.bundle.target.targetId).toBe('42');
+    });
+
+    it('throws descriptive error when multiple MRs match the branch', async () => {
+      deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/test');
+
+      const secondTarget: ReviewTarget = { ...mockTarget, targetId: '99' };
+      (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([mockTarget, secondTarget]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.review(undefined, undefined))
+        .rejects.toThrow('Multiple open MRs found for branch "feature/test": !42, !99');
+    });
+
+    it('throws when no MR found for the current branch', async () => {
+      deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/orphan');
+      (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.review(undefined, undefined))
+        .rejects.toThrow('Could not determine which MR to review');
+    });
+
+    it('falls through to error on detached HEAD', async () => {
+      deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('HEAD');
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.review(undefined, undefined))
+        .rejects.toThrow('Could not determine which MR to review');
+      expect(mockProvider.findTargetByBranch).not.toHaveBeenCalled();
+    });
+
+    it('uses defaultRepo when deriveRepoSlug fails', async () => {
+      deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockRejectedValue(new Error('not a git repo'));
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/test');
+      (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([mockTarget]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.review(undefined, 'group/project');
+
+      expect(mockProvider.findTargetByBranch).toHaveBeenCalledWith('group/project', 'feature/test');
+      expect(result.bundle.target.targetId).toBe('42');
+    });
+
+    it('prefers session over auto-detect', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      // First run creates session
+      await orchestrator.review('!42', 'group/project');
+
+      // Spy after session is created — should not be called
+      deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug');
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch');
+
+      // Second run should use session, not auto-detect
+      const result = await orchestrator.review(undefined, 'group/project');
+      expect(result.bundle.target.targetId).toBe('42');
+      expect(mockProvider.findTargetByBranch).not.toHaveBeenCalled();
     });
   });
 });

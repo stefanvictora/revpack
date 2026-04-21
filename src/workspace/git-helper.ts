@@ -52,6 +52,22 @@ export class GitHelper {
     return stdout.trim();
   }
 
+  /** Check if a commit is an ancestor of HEAD (i.e. HEAD includes that commit). */
+  async isAncestor(commitSha: string): Promise<boolean> {
+    try {
+      await exec('git', ['merge-base', '--is-ancestor', commitSha, 'HEAD'], { cwd: this.cwd });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Check if HEAD matches the given commit. */
+  async isAtCommit(commitSha: string): Promise<boolean> {
+    const head = await this.headSha();
+    return head === commitSha;
+  }
+
   /** Check if working tree is clean. */
   async isClean(): Promise<boolean> {
     const { stdout } = await exec('git', ['status', '--porcelain'], { cwd: this.cwd });

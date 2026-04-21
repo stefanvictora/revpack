@@ -1,6 +1,6 @@
 # review-assist
 
-CLI assistant for code review workflows — fetch MR/PR threads, prepare agent-ready context, assist resolution, generate summaries.
+CLI assistant for code review workflows — fetch MR/PR threads, prepare agent-ready context, assist resolution, generate summaries, and enable agent-driven proactive review.
 
 ## Setup
 
@@ -41,6 +41,9 @@ review-assist init --prompts
 # 2. Point at a MR — fetches everything, classifies threads, writes CONTEXT.md
 review-assist review !42 --repo group/project
 
+# Or just run from a feature branch — auto-detects the open MR:
+review-assist review
+
 # 3. Use with your agent (Copilot, Claude, etc.):
 #    - Open .review-assist/CONTEXT.md and tell your agent to follow it
 #    - Or use a Copilot prompt: /review-quick
@@ -50,6 +53,7 @@ review-assist review
 
 # 5. Publish results back to GitLab/GitHub:
 review-assist publish-reply
+review-assist publish-finding
 review-assist update-description --from-summary
 ```
 
@@ -66,15 +70,17 @@ Fetches MR metadata, threads, diffs, classifies findings, generates a summary, a
 
 Re-running on the same MR automatically produces an **incremental** review (only changes since last run). Thread IDs (T-001, T-002, ...) are stable across runs — they never shift when threads get resolved or new ones appear.
 
+**Auto-detection**: When no `ref` is given and no session exists, `review` looks up the current git branch and finds any open MR sourced from it — no need to pass `!42` manually.
+
 ```bash
 review-assist review !42                          # first review (full)
-review-assist review                              # re-run: auto-incremental from session
+review-assist review                              # re-run: auto-incremental (or auto-detect from branch)
 review-assist review --full                       # discard session, start fresh
 review-assist review https://gitlab.example.com/group/project/-/merge_requests/42
 review-assist review !42 --json
 ```
 
-Output shows MR state (opened/merged/closed), last updated date, thread counts, and warns if the MR is already merged or closed.
+Output shows MR state (opened/merged/closed), last updated date, thread counts, **local branch sync status** (up-to-date / behind / ahead of MR head), and warns if the MR is already merged or closed or if the local branch is behind.
 
 Creates `.review-assist/`:
 ```
@@ -90,6 +96,7 @@ Creates `.review-assist/`:
     incremental.patch      ← changes since last review (auto on re-run)
   outputs/
     summary.md, summary.json, findings.json
+    new-findings.json     ← agent-created issues for proactive review
 ```
 
 ### `status [ref]` — View MR/PR status
@@ -111,6 +118,23 @@ review-assist publish-reply T-001                      # publish one thread
 review-assist publish-reply T-001 --body "Fixed!"      # inline reply
 review-assist publish-reply T-001 --resolve            # reply and resolve
 review-assist publish-reply --from custom-replies.json # custom file
+```
+
+### `publish-finding` — Create new discussion threads
+
+Publishes agent-generated findings as new discussion threads on the MR. Reads from `outputs/new-findings.json` by default.
+
+```bash
+review-assist publish-finding                     # publish all findings
+review-assist publish-finding --from custom.json  # use a different file
+review-assist publish-finding --dry-run           # preview without posting
+```
+
+Expected format for `new-findings.json`:
+```json
+[
+  { "filePath": "src/app.ts", "line": 42, "body": "Potential null dereference", "severity": "high", "category": "correctness" }
+]
 ```
 
 ### `update-description [ref]` — Update MR/PR description
@@ -176,6 +200,7 @@ npm run dev -- review !42    # run CLI with tsx (no build needed)
 - **Phase 1** ✅ Read-only assistant — `status`, `review`
 - **Phase 2** ✅ Assisted replies — `publish-reply`, `update-description`
 - **Phase 2.5** ✅ Unified workflow — `review` command, CONTEXT.md, incremental support
+- **Phase 2.7** ✅ Auto-detect & proactive review — Branch auto-detect, sync status, `publish-finding`
 - **Phase 3** 🔜 Patch assistance — Generate/apply patches, run checks
 - **Phase 4** 🔜 Learnings & automation — Durable learnings, CI integration
 - **Phase 5** 🔜 Provider expansion & MCP — GitHub adapter, MCP server

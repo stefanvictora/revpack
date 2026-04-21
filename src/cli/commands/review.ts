@@ -26,6 +26,7 @@ export function registerReviewCommand(program: Command): void {
             title: result.bundle.target.title,
             state: result.bundle.target.state,
             incremental: result.incremental,
+            localBranchStatus: result.localBranchStatus,
             threadCount: result.bundle.threads.length,
             findingCount: result.findings.length,
             diffCount: result.bundle.diffs.length,
@@ -48,6 +49,12 @@ export function registerReviewCommand(program: Command): void {
         console.log(`  ${chalk.dim('Threads:')}     ${bundle.threads.length} unresolved`);
         console.log(`  ${chalk.dim('Files:')}       ${bundle.diffs.length} changed`);
         console.log(`  ${chalk.dim('Versions:')}    ${bundle.versions.length}`);
+
+        // Branch sync status
+        if (result.localBranchStatus && result.localBranchStatus !== 'unknown') {
+          const syncLabel = getBranchSyncLabel(result.localBranchStatus);
+          console.log(`  ${chalk.dim('Local:')}       ${syncLabel}`);
+        };
         console.log('');
 
         // Findings by severity
@@ -75,11 +82,15 @@ export function registerReviewCommand(program: Command): void {
           console.log(chalk.yellow('  ⚠ This MR is closed'));
           console.log('');
         }
+        if (result.localBranchStatus === 'behind') {
+          console.log(chalk.yellow('  ⚠ Local branch is behind the MR — consider pulling'));
+          console.log('');
+        }
 
         // Next steps
         console.log(chalk.dim('Next steps:'));
         console.log(chalk.dim('  • Open .review-assist/CONTEXT.md and point your agent at it'));
-        console.log(chalk.dim('  • Or use a Copilot prompt: /review-threads or /review-quick'));
+        console.log(chalk.dim('  • Or use a Copilot prompt: /review-quick, /review-threads, or /review-code'));
         if (incremental) {
           console.log(chalk.dim('  • Re-run `review-assist review` to pick up new changes'));
           console.log(chalk.dim('  • Use --full to discard session and start fresh'));
@@ -99,6 +110,15 @@ function getStateColor(state: string): (text: string) => string {
     case 'closed': return chalk.red;
     case 'locked': return chalk.yellow;
     default: return chalk.white;
+  }
+}
+
+function getBranchSyncLabel(status: string): string {
+  switch (status) {
+    case 'up-to-date': return chalk.green('up-to-date with MR');
+    case 'behind': return chalk.yellow('behind MR head');
+    case 'ahead': return chalk.cyan('ahead of MR head');
+    default: return status;
   }
 }
 

@@ -31,10 +31,9 @@ const REVIEW_CONFIG_FILES: InitFile[] = [
       '# review-assist runtime output (not committed)',
       'session.json',
       'target.json',
+      'thread-map.json',
       'threads/',
       'diffs/',
-      'files/',
-      'instructions/',
       'outputs/',
       '',
       '# rules.md IS tracked — do not ignore it',
@@ -47,7 +46,12 @@ const PROMPT_FILES: InitFile[] = [
   {
     target: path.join('.github', 'prompts', 'review-threads.prompt.md'),
     source: path.join('prompts', 'review-threads.prompt.md'),
-    label: 'Copilot prompt: review threads',
+    label: 'Copilot prompt: address existing threads',
+  },
+  {
+    target: path.join('.github', 'prompts', 'review-code.prompt.md'),
+    source: path.join('prompts', 'review-code.prompt.md'),
+    label: 'Copilot prompt: proactive code review',
   },
   {
     target: path.join('.github', 'prompts', 'review-summarize.prompt.md'),

@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { Agent } from 'undici';
-import type { ReviewProvider } from '../provider.js';
+import type { ReviewProvider, NewThreadPosition } from '../provider.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
@@ -83,6 +83,15 @@ export class GitLabProvider implements ReviewProvider {
     const data = await this.request<GitLabMR[]>(
       `/api/v4/projects/${projectId}/merge_requests`,
       { params: { state: 'opened', per_page: '50' } },
+    );
+    return data.map((mr) => this.mapMR(repo, mr));
+  }
+
+  async findTargetByBranch(repo: string, branchName: string): Promise<ReviewTarget[]> {
+    const projectId = encodeURIComponent(repo);
+    const data = await this.request<GitLabMR[]>(
+      `/api/v4/projects/${projectId}/merge_requests`,
+      { params: { state: 'opened', source_branch: branchName, per_page: '10' } },
     );
     return data.map((mr) => this.mapMR(repo, mr));
   }
@@ -177,6 +186,37 @@ export class GitLabProvider implements ReviewProvider {
       `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`,
       { method: 'PUT', body: { description: body } },
     );
+  }
+
+  async createThread(ref: ReviewTargetRef, body: string, position?: NewThreadPosition): Promise<string> {
+    const projectId = encodeURIComponent(ref.repository);
+
+    // Build the request body
+    const reqBody: Record<string, unknown> = { body };
+
+    if (position) {
+      // For diff-positioned threads, GitLab requires the position object
+      // with SHA refs from the MR's diff_refs
+      const mr = await this.request<GitLabMR>(
+        `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`,
+      );
+      reqBody.position = {
+        position_type: 'text',
+        base_sha: mr.diff_refs?.base_sha,
+        head_sha: mr.diff_refs?.head_sha,
+        start_sha: mr.diff_refs?.start_sha,
+        new_path: position.filePath,
+        old_path: position.filePath,
+        new_line: position.newLine,
+        ...(position.oldLine ? { old_line: position.oldLine } : {}),
+      };
+    }
+
+    const result = await this.request<GitLabDiscussion>(
+      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/discussions`,
+      { method: 'POST', body: reqBody },
+    );
+    return result.id;
   }
 
   // ─── HTTP layer ─────────────────────────────────────────

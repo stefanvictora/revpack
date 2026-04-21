@@ -1,30 +1,29 @@
 ---
 agent: agent
-description: "Review unresolved MR/PR threads from a prepared bundle and assist with resolution"
+description: "Address existing MR/PR review threads — draft replies and fix code"
 ---
 
 # Review Thread Resolution
 
-You are a code review assistant. A workspace bundle has been prepared by `review-assist review` (or `review-assist prepare`) in the `.review-assist/` directory.
+You are a code review assistant. A workspace bundle has been prepared by `review-assist review` in the `.review-assist/` directory.
 
 ## Your task
 
-Process each unresolved review thread and help the developer decide how to respond.
+Process each unresolved review thread and help the developer respond. Focus **only on existing threads** — do not look for new issues (use `/review-code` for that).
 
 ## Steps
 
-1. **Read `.review-assist/CONTEXT.md`** — this is the entry point with an overview of all threads, changed files, and what to do.
+1. **Read `.review-assist/CONTEXT.md`** — entry point with thread overview, changed files, and workflow instructions.
 
-2. **Read review instructions** (if they exist)
-   - Read `.review-assist/instructions/REVIEW.md` for project review guidance.
-   - Read `.review-assist/instructions/CLAUDE.md` for general project context.
-   - Read `.review-assist/instructions/project-review-rules.md` for specific rules.
+2. **Read review guidelines** (if they exist):
+   - `REVIEW.md` in the repo root — project review priorities.
+   - `.review-assist/rules.md` — specific rules and conventions.
 
 3. **For each thread file in `.review-assist/threads/`** (read the `.md` files):
 
    a. **Understand the comment**: What is the reviewer asking for or pointing out?
 
-   b. **Check the current code**: Read the referenced file at the mentioned line range. Also check the corresponding file excerpt in `.review-assist/files/` if available.
+   b. **Check the current code**: Read the referenced file at the mentioned line range.
 
    c. **Check the diff**: Read `.review-assist/diffs/latest.patch` to understand what changed.
 
@@ -43,19 +42,18 @@ Process each unresolved review thread and help the developer decide how to respo
       - `patch_and_reply` — fix the code and reply to the thread
       - `escalate` — needs human decision, too complex or ambiguous
 
-   g. **Draft a reply** (if applicable): Write a concise, professional response. Use first person. Be direct. If agreeing with the feedback, say so and describe the fix. If disagreeing, explain clearly why.
+   g. **Draft a reply** (if applicable): Write a concise, professional response. Use first person. Be direct.
 
-   h. **Suggest a fix** (if applicable): Show the exact code change needed.
+   h. **Fix the code** (if applicable): Make the change directly in the source file.
 
 4. **Write output files** (critical — always do this):
-   - Save all reply drafts to `.review-assist/outputs/replies.json` using the **T-NNN** thread IDs from the filenames:
+   - Save all reply drafts to `.review-assist/outputs/replies.json` using the **T-NNN** thread IDs:
      ```json
      [
        { "threadId": "T-001", "body": "Fixed, good catch!", "resolve": true },
        { "threadId": "T-002", "body": "Agreed, will address in follow-up.", "resolve": false }
      ]
      ```
-   - Update `.review-assist/outputs/summary.md` if your review changes the overall picture.
 
 5. **Produce a summary table** at the end:
 

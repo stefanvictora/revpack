@@ -6,6 +6,7 @@ import type {
   WorkspaceBundle,
   Finding,
   ReviewSummary,
+  NewFinding,
 } from '../core/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
@@ -26,6 +27,8 @@ export interface ReviewResult {
   contextPath: string;
   summaryMarkdown: string;
   incremental: boolean;
+  /** Whether the local branch HEAD matches the MR head commit. */
+  localBranchStatus?: 'up-to-date' | 'behind' | 'ahead' | 'unknown';
 }
 
 /**
@@ -157,6 +160,23 @@ export class ReviewOrchestrator {
       knownThreadIds: allThreads.map((t) => t.threadId),
     });
 
+    // Check local branch sync status against the MR head commit
+    let localBranchStatus: ReviewResult['localBranchStatus'] = 'unknown';
+    try {
+      const mrHeadSha = target.diffRefs.headSha;
+      if (mrHeadSha) {
+        const isAtHead = await this.git.isAtCommit(mrHeadSha);
+        if (isAtHead) {
+          localBranchStatus = 'up-to-date';
+        } else {
+          const isAncestor = await this.git.isAncestor(mrHeadSha);
+          localBranchStatus = isAncestor ? 'ahead' : 'behind';
+        }
+      }
+    } catch {
+      // Not a git repo or other error — leave as unknown
+    }
+
     return {
       bundle,
       summary,
@@ -165,6 +185,7 @@ export class ReviewOrchestrator {
       contextPath,
       summaryMarkdown,
       incremental: isIncremental,
+      localBranchStatus,
     };
   }
 
@@ -238,6 +259,19 @@ export class ReviewOrchestrator {
     await this.provider.updateDescription(targetRef, body);
   }
 
+  /**
+   * Publish a new finding as a discussion thread on the MR/PR.
+   * Returns the created thread ID.
+   */
+  async publishFinding(finding: NewFinding, defaultRepo?: string): Promise<string> {
+    const targetRef = await this.resolveRef(undefined, defaultRepo);
+    return this.provider.createThread(
+      targetRef,
+      finding.body,
+      { filePath: finding.filePath, newLine: finding.line },
+    );
+  }
+
   /** Resolve a T-NNN shorthand to the full thread SHA. */
   resolveThreadRef(ref: string): Promise<string> {
     return this.workspace.resolveThreadRef(ref);
@@ -246,28 +280,57 @@ export class ReviewOrchestrator {
   // ─── Helpers ────────────────────────────────────────────
 
   private async resolveRef(ref?: string, defaultRepo?: string): Promise<ReviewTargetRef> {
-    // If no ref given, load the active session
-    if (!ref) {
-      const session = await this.workspace.loadSession();
-      if (!session) {
-        throw new Error(
-          'No MR/PR reference provided and no active session found in .review-assist/.\n' +
-          'Run `review-assist review <ref>` first, or pass a ref explicitly.',
-        );
+    // 1. Explicit ref provided — parse it
+    if (ref) {
+      const targetRef = await this.provider.resolveTarget(ref);
+
+      if (!targetRef.repository && defaultRepo) {
+        targetRef.repository = defaultRepo;
       }
+      if (!targetRef.repository) {
+        targetRef.repository = await this.git.deriveRepoSlug();
+      }
+
+      return targetRef;
+    }
+
+    // 2. Existing session — resume from it
+    const session = await this.workspace.loadSession();
+    if (session) {
       return session.targetRef;
     }
 
-    const targetRef = await this.provider.resolveTarget(ref);
-
-    // Fill in repository from default or git remote if not present in ref
-    if (!targetRef.repository && defaultRepo) {
-      targetRef.repository = defaultRepo;
+    // 3. Auto-detect MR from current git branch
+    let repo = defaultRepo;
+    if (!repo) {
+      try { repo = await this.git.deriveRepoSlug(); } catch { /* not a git repo */ }
     }
-    if (!targetRef.repository) {
-      targetRef.repository = await this.git.deriveRepoSlug();
+    if (repo) {
+      try {
+        const branch = await this.git.currentBranch();
+        if (branch && branch !== 'HEAD') { // HEAD means detached
+          const targets = await this.provider.findTargetByBranch(repo, branch);
+          if (targets.length === 1) {
+            return targets[0]; // ReviewTarget extends ReviewTargetRef
+          }
+          if (targets.length > 1) {
+            const ids = targets.map((t) => `!${t.targetId}`).join(', ');
+            throw new Error(
+              `Multiple open MRs found for branch "${branch}": ${ids}\n` +
+              'Specify one explicitly: `review-assist review !<id>`',
+            );
+          }
+        }
+      } catch (err) {
+        // If it's our "multiple MRs" error, re-throw; otherwise fall through
+        if (err instanceof Error && err.message.includes('Multiple open MRs')) throw err;
+      }
     }
 
-    return targetRef;
+    throw new Error(
+      'Could not determine which MR to review.\n' +
+      'No ref provided, no active session, and no open MR found for the current branch.\n' +
+      'Run `review-assist review !<id>` to specify one explicitly.',
+    );
   }
 }

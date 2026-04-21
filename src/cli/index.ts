@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import { registerReviewCommand } from './commands/review.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerPublishReplyCommand } from './commands/publish-reply.js';
+import { registerPublishFindingCommand } from './commands/publish-finding.js';
 import { registerUpdateDescriptionCommand } from './commands/update-description.js';
 import { registerConfigCommand } from './commands/config.js';
 import { registerInitCommand } from './commands/init.js';
@@ -18,6 +19,7 @@ program
 registerReviewCommand(program);
 registerStatusCommand(program);
 registerPublishReplyCommand(program);
+registerPublishFindingCommand(program);
 registerUpdateDescriptionCommand(program);
 registerConfigCommand(program);
 registerInitCommand(program);
