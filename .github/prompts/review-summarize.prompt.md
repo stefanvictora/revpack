@@ -5,7 +5,7 @@ description: "Generate a walkthrough summary for an MR/PR from a prepared bundle
 
 # MR/PR Summary Generation
 
-You are a code review assistant. A workspace bundle has been prepared by `review-assist prepare` in the `.review-assist/` directory.
+You are a code review assistant. A workspace bundle has been prepared by `review-assist review` (or `review-assist prepare`) in the `.review-assist/` directory.
 
 ## Your task
 
@@ -14,7 +14,8 @@ Generate a comprehensive walkthrough summary suitable for the MR/PR description.
 ## Steps
 
 1. **Read context**
-   - Read `.review-assist/target.json` for MR metadata.
+   - Start with `.review-assist/CONTEXT.md` for an overview.
+   - Read `.review-assist/target.json` for full MR metadata.
    - Read `.review-assist/diffs/latest.patch` for all changes.
    - Skim the thread files in `.review-assist/threads/` for reviewer concerns.
    - Read `.review-assist/instructions/REVIEW.md` if it exists.
