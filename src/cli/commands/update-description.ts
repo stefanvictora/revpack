@@ -3,8 +3,8 @@ import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 
-const MARKER_START = '<!-- review-assist:start -->';
-const MARKER_END = '<!-- review-assist:end -->';
+export const MARKER_START = '<!-- review-assist:start -->';
+export const MARKER_END = '<!-- review-assist:end -->';
 
 export function registerUpdateDescriptionCommand(program: Command): void {
   program
@@ -56,7 +56,7 @@ export function registerUpdateDescriptionCommand(program: Command): void {
  * If markers exist, replaces the content between them.
  * If no markers exist, appends a new marked section.
  */
-function mergeWithMarkers(existing: string, newContent: string): string {
+export function mergeWithMarkers(existing: string, newContent: string): string {
   const markedSection = `${MARKER_START}\n${newContent.trim()}\n${MARKER_END}`;
 
   const startIdx = existing.indexOf(MARKER_START);

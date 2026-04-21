@@ -49,8 +49,8 @@ review-assist review !42 --repo group/project
 review-assist review
 
 # 5. Publish results back to GitLab/GitHub:
-review-assist publish-reply !42 <threadId> --from .review-assist/outputs/replies.json
-review-assist update-description !42 --from .review-assist/outputs/summary.md
+review-assist publish-reply
+review-assist update-description --from-summary
 ```
 
 You can also paste a full GitLab URL instead of `!42`:
@@ -70,10 +70,11 @@ Re-running on the same MR automatically produces an **incremental** review (only
 review-assist review !42                          # first review (full)
 review-assist review                              # re-run: auto-incremental from session
 review-assist review --full                       # discard session, start fresh
-review-assist review !42 --checkout               # also checkout the source branch
 review-assist review https://gitlab.example.com/group/project/-/merge_requests/42
 review-assist review !42 --json
 ```
+
+Output shows MR state (opened/merged/closed), last updated date, thread counts, and warns if the MR is already merged or closed.
 
 Creates `.review-assist/`:
 ```
@@ -87,82 +88,39 @@ Creates `.review-assist/`:
   diffs/
     latest.patch           ← full MR diff
     incremental.patch      ← changes since last review (auto on re-run)
-  files/
-    *_snippet.txt          ← code excerpts around threads
-  instructions/
-    REVIEW.md, project-review-rules.md
   outputs/
     summary.md, summary.json, findings.json
 ```
 
-### `open <ref>` — View MR/PR metadata
+### `status [ref]` — View MR/PR status
+
+Shows MR state, author, branches, dates, labels, URL, and description.
 
 ```bash
-review-assist open !42
-review-assist open !42 --repo group/project
-review-assist open https://gitlab.example.com/group/project/-/merge_requests/42
-review-assist open !42 --json
+review-assist status !42
+review-assist status !42 --repo group/project
+review-assist status https://gitlab.example.com/group/project/-/merge_requests/42
+review-assist status !42 --json
 ```
 
-### `threads <ref>` — List review threads
+### `publish-reply [thread]` — Post replies
 
 ```bash
-review-assist threads !42              # unresolved only
-review-assist threads !42 --all        # all threads
-review-assist threads !42 --json
+review-assist publish-reply                            # publish all from replies.json
+review-assist publish-reply T-001                      # publish one thread
+review-assist publish-reply T-001 --body "Fixed!"      # inline reply
+review-assist publish-reply T-001 --resolve            # reply and resolve
+review-assist publish-reply --from custom-replies.json # custom file
 ```
 
-### `prepare <ref>` — Create agent-ready workspace bundle (low-level)
+### `update-description [ref]` — Update MR/PR description
+
+Uses HTML comment markers (`<!-- review-assist:start -->` / `<!-- review-assist:end -->`) to append or update a section in the description without overwriting the original.
 
 ```bash
-review-assist prepare !42
-review-assist prepare !42 --thread abc123 def456
-review-assist prepare !42 --checkout
-review-assist prepare !42 --json
-```
-
-Creates a `.review-assist/` bundle:
-
-```
-.review-assist/
-  session.json
-  target.json
-  threads/
-    T-001.json
-    T-001.md
-  diffs/
-    latest.patch
-  files/
-    src_main_..._snippet.txt
-  instructions/
-    CLAUDE.md
-    REVIEW.md
-    project-review-rules.md
-  outputs/
-    summary.md
-    summary.json
-```
-
-### `summarize <ref>` — Generate walkthrough & summary
-
-```bash
-review-assist summarize !42
-review-assist summarize !42 --json
-```
-
-### `publish-reply <ref> <threadId>` — Post a reply
-
-```bash
-review-assist publish-reply !42 abc123 --body "Fixed, thanks!"
-review-assist publish-reply !42 abc123 --from reply-draft.md
-review-assist publish-reply !42 abc123 --from reply-draft.md --resolve
-```
-
-### `update-description <ref>` — Update MR/PR description
-
-```bash
-review-assist update-description !42 --from summary.md
-review-assist update-description !42 --from-summary
+review-assist update-description --from-summary     # append/update from summary.md
+review-assist update-description --from custom.md   # append/update from any file
+review-assist update-description --from-summary --replace  # replace entire description
 ```
 
 ### `init` — Set up a project for review-assist
@@ -197,7 +155,8 @@ Five layers:
 - **Canonical finding schema** — Structured JSON output with severity, confidence, status, disposition
 - **Agent-ready bundles** — Context packaged for LLM consumption, not raw API dumps
 - **Read-first, write-guarded** — No auto-push/auto-post; write operations require explicit commands
-- **MCP-compatible naming** — Internal concepts map cleanly to future MCP resources/prompts/tools
+- **Marker-based description updates** — Preserves original MR description; review-assist content lives in a marked section
+- **No file copies in bundle** — Instruction files (REVIEW.md, rules.md) and source code are read directly from the repo, not copied into the bundle
 
 ## Tests
 
@@ -208,13 +167,13 @@ npm test
 ## Development
 
 ```bash
-npm run dev -- open !42    # run CLI with tsx (no build needed)
+npm run dev -- review !42    # run CLI with tsx (no build needed)
 ```
 
 ## Roadmap
 
 - **Phase 0** ✅ Spike — GitLab auth, MR fetch, discussions, workspace bundle
-- **Phase 1** ✅ Read-only assistant — `open`, `threads`, `prepare`, `summarize`
+- **Phase 1** ✅ Read-only assistant — `status`, `review`
 - **Phase 2** ✅ Assisted replies — `publish-reply`, `update-description`
 - **Phase 2.5** ✅ Unified workflow — `review` command, CONTEXT.md, incremental support
 - **Phase 3** 🔜 Patch assistance — Generate/apply patches, run checks
