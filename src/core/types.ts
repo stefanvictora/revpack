@@ -201,7 +201,6 @@ export interface NewFinding {
 export interface ReviewSummary {
   targetRef: ReviewTargetRef;
   generatedAt: string;
-  walkthrough: string;
   highLevelSummary: string;
   changedFilesSummary: FileSummary[];
   unresolvedThreadCount: number;

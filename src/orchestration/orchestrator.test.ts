@@ -85,6 +85,9 @@ function createMockProvider(): ReviewProvider {
     resolveThread: vi.fn().mockResolvedValue(undefined),
     updateDescription: vi.fn().mockResolvedValue(undefined),
     createThread: vi.fn().mockResolvedValue('new-thread-id'),
+    findNoteByMarker: vi.fn().mockResolvedValue(null),
+    createNote: vi.fn().mockResolvedValue('note-1'),
+    updateNote: vi.fn().mockResolvedValue(undefined),
   };
 }
 

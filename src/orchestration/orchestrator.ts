@@ -315,6 +315,29 @@ export class ReviewOrchestrator {
     return this.workspace.resolveThreadRef(ref);
   }
 
+  /** Review comment marker for finding/updating the synced comment. */
+  static readonly REVIEW_COMMENT_MARKER = '<!-- review-assist:review-comment -->';
+
+  /**
+   * Create or update the synced review comment on the MR/PR.
+   * This is a standalone note (not a discussion thread) that gets
+   * updated in-place on each sync.
+   */
+  async syncReviewComment(body: string, defaultRepo?: string): Promise<{ created: boolean }> {
+    const targetRef = await this.resolveRef(undefined, defaultRepo);
+    const marker = ReviewOrchestrator.REVIEW_COMMENT_MARKER;
+    const fullBody = `${marker}\n${body}`;
+
+    const existingNoteId = await this.provider.findNoteByMarker(targetRef, marker);
+    if (existingNoteId) {
+      await this.provider.updateNote(targetRef, existingNoteId, fullBody);
+      return { created: false };
+    } else {
+      await this.provider.createNote(targetRef, fullBody);
+      return { created: true };
+    }
+  }
+
   // ─── Helpers ────────────────────────────────────────────
 
   private async resolveRef(ref?: string, defaultRepo?: string): Promise<ReviewTargetRef> {

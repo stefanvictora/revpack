@@ -381,7 +381,8 @@ export class WorkspaceManager {
     lines.push('     ```json');
     lines.push('     [{ "filePath": "src/app.ts", "line": 42, "body": "Potential null dereference", "severity": "high", "category": "correctness" }]');
     lines.push('     ```');
-    lines.push('   - `outputs/summary.md` — Walkthrough summary for the MR description');
+    lines.push('   - `outputs/summary.md` — Changelog-style summary for the MR description (categorized by area: Bug Fixes, Improvements, New Features, Tests, Documentation, Chores). Do NOT include a file list or code walkthrough.');
+    lines.push('   - `outputs/review-notes.md` — Your review notes for the synced MR comment (what you reviewed, what you found, what you fixed). This is updated each iteration.');
     lines.push('');
     lines.push('**Important**: Check existing threads and the Previous Actions table before creating new findings.');
     lines.push('Do not re-raise issues that are already tracked or were published by you (**SELF** threads).');
@@ -389,10 +390,11 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('Publish results back to GitLab/GitHub:');
     lines.push('```');
-    lines.push(`review-assist publish-reply          # publish all replies`);
-    lines.push(`review-assist publish-reply T-001    # publish one specific reply`);
-    lines.push(`review-assist publish-finding        # publish new findings as threads`);
-    lines.push(`review-assist update-description --from-summary`);
+    lines.push(`review-assist publish-reply            # publish all replies (removes published entries)`);
+    lines.push(`review-assist publish-reply T-001      # publish one specific reply`);
+    lines.push(`review-assist publish-finding          # publish new findings (removes published entries)`);
+    lines.push(`review-assist update-description --from-summary   # update MR description`);
+    lines.push(`review-assist sync-review-comment      # create/update review comment on the MR`);
     lines.push('```');
 
     const content = lines.join('\n');
@@ -474,11 +476,17 @@ export class WorkspaceManager {
     lines.push('## Comments');
     lines.push('');
     for (const comment of thread.comments) {
-      if (comment.system) continue;
-      lines.push(`### ${comment.author} (${comment.origin}) — ${comment.createdAt}`);
-      lines.push('');
-      lines.push(comment.body);
-      lines.push('');
+      if (comment.system) {
+        // System comments (e.g. "changed this line in version 5") — shown dimmed
+        lines.push(`> **System** — ${comment.createdAt}`);
+        lines.push(`> ${comment.body}`);
+        lines.push('');
+      } else {
+        lines.push(`### ${comment.author} (${comment.origin}) — ${comment.createdAt}`);
+        lines.push('');
+        lines.push(comment.body);
+        lines.push('');
+      }
       lines.push('---');
       lines.push('');
     }

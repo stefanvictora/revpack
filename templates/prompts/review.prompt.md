@@ -78,7 +78,22 @@ You are a code review assistant. A workspace bundle has been prepared by `review
      ]
      ```
 
-   - `outputs/summary.md` — walkthrough summary for the MR description.
+   - `outputs/summary.md` — Changelog-style summary for the MR description. Categorize changes by area:
+     - **Bug Fixes** — issues that were fixed
+     - **Improvements** — enhancements to existing functionality
+     - **New Features** — new capabilities added
+     - **Tests** — test additions or changes
+     - **Documentation** — docs changes
+     - **Chores** — config, deps, CI, refactoring
+     
+     Do NOT include a file list, code walkthrough, or review-specific details. Write for someone reading the MR description.
+
+   - `outputs/review-notes.md` — Your review notes for the synced MR comment. Include:
+     - What you reviewed in this iteration
+     - Issues found and their status (fixed, flagged, escalated)
+     - Summary of code changes you made
+     
+     This gets synced as a single updatable comment on the MR via `sync-review-comment`.
 
 6. **Present a summary table** to the developer:
 
@@ -96,7 +111,8 @@ You are a code review assistant. A workspace bundle has been prepared by `review
    ```
    review-assist publish-reply            # publish thread replies
    review-assist publish-finding          # publish new findings as MR threads
-   review-assist update-description --from-summary
+   review-assist update-description --from-summary   # update MR description
+   review-assist sync-review-comment      # create/update review comment on MR
    ```
 
 ## Finding quality bar

@@ -1,6 +1,6 @@
 ---
 agent: agent
-description: "Generate a walkthrough summary for an MR/PR from a prepared bundle"
+description: "Generate a changelog-style summary for an MR/PR description"
 ---
 
 # MR/PR Summary Generation
@@ -9,7 +9,7 @@ You are a code review assistant. A workspace bundle has been prepared by `review
 
 ## Your task
 
-Generate a comprehensive walkthrough summary suitable for the MR/PR description.
+Generate a changelog-style summary suitable for the MR/PR description.
 
 ## Steps
 
@@ -17,43 +17,43 @@ Generate a comprehensive walkthrough summary suitable for the MR/PR description.
    - Start with `.review-assist/CONTEXT.md` for an overview.
    - Read `.review-assist/target.json` for full MR metadata.
    - Read `.review-assist/diffs/latest.patch` for all changes.
-   - Skim the thread files in `.review-assist/threads/` for reviewer concerns.
    - Read `REVIEW.md` and `.review-assist/rules.md` if they exist.
 
-2. **Analyze the changes** and produce a summary with these sections:
+2. **Analyze the changes** and produce a summary categorized by area of change:
 
-### Summary section
-2-3 sentences describing what this MR does and why. Focus on the business/user impact, not implementation details.
+   - **Bug Fixes** — issues that were fixed
+   - **Improvements** — enhancements to existing functionality
+   - **New Features** — new capabilities added
+   - **Tests** — test additions or changes
+   - **Documentation** — docs changes
+   - **Chores** — config, deps, CI, refactoring
 
-### Walkthrough section
-A narrative description of the changes, organized logically (not file-by-file). Group related changes together. Explain the "what" and "why", not the "how" — readers can see the diff.
+   Only include categories that apply. Each bullet should describe a meaningful behavioral change, not list individual files.
 
-### Changed files table
+3. **Write output** to `.review-assist/outputs/summary.md`:
+   ```markdown
+   * **Bug Fixes**
+     * Fixed null dereference in user authentication flow
+   * **Improvements**
+     * Simplified error handling in API middleware
+   * **New Features**
+     * Added OAuth2 login support
+   ```
 
-| File | Change | Description |
-|------|--------|-------------|
-| `path/to/file` | modified | Brief description |
-
-### Review status
-- Number of unresolved threads and their severity breakdown.
-- Key open concerns (if any).
-
-3. **Write output**
-   - Save the full markdown summary to `.review-assist/outputs/summary.md`.
-   - Present it to the developer for review before publishing.
+4. Present it to the developer for review before publishing.
 
 ## Guidelines
 
-- Write for someone who hasn't seen the code — the summary should make sense standalone.
-- Don't list every line change. Focus on meaningful behavioral changes.
-- If there are test changes, mention what's being tested and why.
-- If there are config/infra changes, call them out explicitly.
-- Keep it under 500 words unless the MR is very large.
-- Use the project's own terminology if visible in the code or instructions.
+- Write for someone who hasn't seen the code — each bullet should make sense standalone.
+- Focus on **what changed and why**, not how. Readers can see the diff.
+- Do NOT include a file list or code walkthrough.
+- Do NOT include review-specific details (threads, findings) — those go in `review-notes.md`.
+- Keep it concise: one bullet per meaningful change.
+- Use the project's own terminology if visible in the code.
 
 ## Publishing
 
-After the developer approves, publish with:
+After the developer approves:
 ```
 review-assist update-description --from-summary
 ```

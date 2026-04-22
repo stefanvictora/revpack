@@ -219,6 +219,32 @@ export class GitLabProvider implements ReviewProvider {
     return result.id;
   }
 
+  async findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<string | null> {
+    const projectId = encodeURIComponent(ref.repository);
+    const notes = await this.requestPaginated<GitLabNote>(
+      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/notes`,
+    );
+    const match = notes.find((n) => n.body.startsWith(marker));
+    return match ? String(match.id) : null;
+  }
+
+  async createNote(ref: ReviewTargetRef, body: string): Promise<string> {
+    const projectId = encodeURIComponent(ref.repository);
+    const result = await this.request<GitLabNote>(
+      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/notes`,
+      { method: 'POST', body: { body } },
+    );
+    return String(result.id);
+  }
+
+  async updateNote(ref: ReviewTargetRef, noteId: string, body: string): Promise<void> {
+    const projectId = encodeURIComponent(ref.repository);
+    await this.request(
+      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/notes/${noteId}`,
+      { method: 'PUT', body: { body } },
+    );
+  }
+
   // ─── HTTP layer ─────────────────────────────────────────
 
   private async request<T>(path: string, options?: GitLabRequestOptions): Promise<T> {

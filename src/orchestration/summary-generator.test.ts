@@ -68,7 +68,7 @@ describe('SummaryGenerator', () => {
     expect(summary.changedFilesSummary).toHaveLength(2);
     expect(summary.unresolvedThreadCount).toBe(1);
     expect(summary.resolvedThreadCount).toBe(1);
-    expect(summary.walkthrough).toContain('2 file(s)');
+    expect(summary.highLevelSummary).toContain('2 changed file(s)');
     expect(summary.highLevelSummary).toContain('!42');
   });
 
@@ -80,11 +80,11 @@ describe('SummaryGenerator', () => {
     const summary = gen.generateSummary(target, diffs, threads);
     const md = gen.generateMarkdown(summary);
 
-    expect(md).toContain('## Summary');
-    expect(md).toContain('## Walkthrough');
-    expect(md).toContain('## Changed Files');
-    expect(md).toContain('## Review Status');
-    expect(md).toContain('| `src/auth.ts`');
+    expect(md).toContain('<!-- review-assist:summary -->');
+    expect(md).toContain('## Summary by review-assist');
+    expect(md).toContain('* **Changes**');
+    expect(md).toContain('`src/auth.ts`');
+    expect(md).toContain('<!-- end of review-assist:summary -->');
   });
 
   it('categorizes file changes correctly', () => {

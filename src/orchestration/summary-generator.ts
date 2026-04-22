@@ -7,9 +7,9 @@ import type {
 } from '../core/types.js';
 
 /**
- * Generates review summary artifacts (walkthrough, high-level summary,
- * changed files table). This is a deterministic/structural generator;
- * LLM-based summarization can be layered on top.
+ * Generates review summary artifacts. The summary.md is a changelog-style
+ * description for the MR/PR description body (not a code walkthrough).
+ * The agent is expected to enhance this with meaningful descriptions.
  */
 export class SummaryGenerator {
   generateSummary(
@@ -23,61 +23,51 @@ export class SummaryGenerator {
     return {
       targetRef: target,
       generatedAt: new Date().toISOString(),
-      walkthrough: this.buildWalkthrough(target, diffs),
-      highLevelSummary: this.buildHighLevelSummary(target, diffs, unresolvedThreads),
+      highLevelSummary: this.buildHighLevelSummary(target, diffs),
       changedFilesSummary: this.buildFileSummaries(diffs),
       unresolvedThreadCount: unresolvedThreads.length,
       resolvedThreadCount: resolvedThreads.length,
     };
   }
 
+  /**
+   * Generate the summary.md content — a changelog-style description
+   * suitable for the MR/PR description.
+   */
   generateMarkdown(summary: ReviewSummary): string {
     const lines: string[] = [];
 
-    lines.push('## Summary');
+    lines.push('<!-- review-assist:summary -->');
+    lines.push('## Summary by review-assist');
     lines.push('');
-    lines.push(summary.highLevelSummary);
-    lines.push('');
-    lines.push('## Walkthrough');
-    lines.push('');
-    lines.push(summary.walkthrough);
-    lines.push('');
-    lines.push('## Changed Files');
-    lines.push('');
-    lines.push('| File | Change | Summary |');
-    lines.push('|------|--------|---------|');
-    for (const file of summary.changedFilesSummary) {
-      lines.push(`| \`${file.filePath}\` | ${file.changeType} | ${file.summary} |`);
+
+    // Group files by change category
+    const added = summary.changedFilesSummary.filter((f) => f.changeType === 'added');
+    const modified = summary.changedFilesSummary.filter((f) => f.changeType === 'modified');
+    const deleted = summary.changedFilesSummary.filter((f) => f.changeType === 'deleted');
+    const renamed = summary.changedFilesSummary.filter((f) => f.changeType === 'renamed');
+
+    // Placeholder categories — the agent should fill these in with meaningful descriptions
+    if (modified.length > 0 || added.length > 0) {
+      lines.push('* **Changes**');
+      for (const f of [...modified, ...added]) {
+        lines.push(`  * \`${f.filePath}\` (${f.changeType})`);
+      }
+    }
+    if (deleted.length > 0) {
+      lines.push('* **Removed**');
+      for (const f of deleted) {
+        lines.push(`  * \`${f.filePath}\``);
+      }
+    }
+    if (renamed.length > 0) {
+      lines.push('* **Renamed**');
+      for (const f of renamed) {
+        lines.push(`  * \`${f.filePath}\``);
+      }
     }
     lines.push('');
-    lines.push('## Review Status');
-    lines.push('');
-    lines.push(`- Unresolved threads: **${summary.unresolvedThreadCount}**`);
-    lines.push(`- Resolved threads: **${summary.resolvedThreadCount}**`);
-    lines.push('');
-    lines.push(`---`);
-    lines.push(`*Generated at ${summary.generatedAt}*`);
-
-    return lines.join('\n');
-  }
-
-  private buildWalkthrough(target: ReviewTarget, diffs: ReviewDiff[]): string {
-    const lines: string[] = [];
-    lines.push(
-      `This MR "${target.title}" changes ${diffs.length} file(s) ` +
-      `from \`${target.sourceBranch}\` into \`${target.targetBranch}\`.`,
-    );
-    lines.push('');
-
-    const added = diffs.filter((d) => d.newFile);
-    const deleted = diffs.filter((d) => d.deletedFile);
-    const renamed = diffs.filter((d) => d.renamedFile);
-    const modified = diffs.filter((d) => !d.newFile && !d.deletedFile && !d.renamedFile);
-
-    if (added.length) lines.push(`- **Added**: ${added.map((d) => `\`${d.newPath}\``).join(', ')}`);
-    if (deleted.length) lines.push(`- **Deleted**: ${deleted.map((d) => `\`${d.oldPath}\``).join(', ')}`);
-    if (renamed.length) lines.push(`- **Renamed**: ${renamed.map((d) => `\`${d.oldPath}\` → \`${d.newPath}\``).join(', ')}`);
-    if (modified.length) lines.push(`- **Modified**: ${modified.map((d) => `\`${d.newPath}\``).join(', ')}`);
+    lines.push('<!-- end of review-assist:summary -->');
 
     return lines.join('\n');
   }
@@ -85,14 +75,13 @@ export class SummaryGenerator {
   private buildHighLevelSummary(
     target: ReviewTarget,
     diffs: ReviewDiff[],
-    unresolvedThreads: ReviewThread[],
   ): string {
     const parts: string[] = [];
     parts.push(
       `MR !${target.targetId} by @${target.author}: "${target.title}".`,
     );
     parts.push(
-      `${diffs.length} changed file(s), ${unresolvedThreads.length} unresolved thread(s).`,
+      `${diffs.length} changed file(s).`,
     );
     if (target.labels.length) {
       parts.push(`Labels: ${target.labels.join(', ')}.`);

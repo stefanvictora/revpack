@@ -6,6 +6,7 @@ import { registerStatusCommand } from './commands/status.js';
 import { registerPublishReplyCommand } from './commands/publish-reply.js';
 import { registerPublishFindingCommand } from './commands/publish-finding.js';
 import { registerUpdateDescriptionCommand } from './commands/update-description.js';
+import { registerSyncReviewCommentCommand } from './commands/sync-review-comment.js';
 import { registerConfigCommand } from './commands/config.js';
 import { registerInitCommand } from './commands/init.js';
 
@@ -21,6 +22,7 @@ registerStatusCommand(program);
 registerPublishReplyCommand(program);
 registerPublishFindingCommand(program);
 registerUpdateDescriptionCommand(program);
+registerSyncReviewCommentCommand(program);
 registerConfigCommand(program);
 registerInitCommand(program);
 
