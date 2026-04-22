@@ -75,4 +75,7 @@ export interface ReviewProvider {
 
   /** Update an existing standalone note on the MR/PR. */
   updateNote(ref: ReviewTargetRef, noteId: string, body: string): Promise<void>;
+
+  /** Get the HTTPS clone URL for a repository. */
+  getCloneUrl(repo: string): string;
 }

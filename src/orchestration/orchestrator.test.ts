@@ -88,6 +88,7 @@ function createMockProvider(): ReviewProvider {
     findNoteByMarker: vi.fn().mockResolvedValue(null),
     createNote: vi.fn().mockResolvedValue('note-1'),
     updateNote: vi.fn().mockResolvedValue(undefined),
+    getCloneUrl: vi.fn().mockReturnValue('https://gitlab.example.com/group/project.git'),
   };
 }
 
@@ -459,4 +460,106 @@ describe('ReviewOrchestrator', () => {
       expect(mockProvider.findTargetByBranch).not.toHaveBeenCalled();
     });
   });
+
+  describe('reset', () => {
+    it('clears session only by default', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.review('!42', 'group/project');
+
+      const sessionPath = path.join(tmpDir, '.review-assist', 'session.json');
+      expect(await fileExists(sessionPath)).toBe(true);
+
+      await orchestrator.reset();
+      expect(await fileExists(sessionPath)).toBe(false);
+
+      // Bundle directory should still exist
+      const bundleDir = path.join(tmpDir, '.review-assist');
+      expect(await fileExists(bundleDir)).toBe(true);
+    });
+
+    it('removes entire bundle with --full', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.review('!42', 'group/project');
+
+      const bundleDir = path.join(tmpDir, '.review-assist');
+      expect(await fileExists(bundleDir)).toBe(true);
+
+      await orchestrator.reset({ full: true });
+      expect(await fileExists(bundleDir)).toBe(false);
+    });
+  });
+
+  describe('checkBranchMismatch', () => {
+    let currentBranchSpy: ReturnType<typeof vi.spyOn>;
+
+    afterEach(() => {
+      currentBranchSpy?.mockRestore();
+    });
+
+    it('returns null when no session exists', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.checkBranchMismatch();
+      expect(result).toBeNull();
+    });
+
+    it('returns null when branch matches', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.review('!42', 'group/project');
+
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/test');
+      const result = await orchestrator.checkBranchMismatch();
+      expect(result).toBeNull();
+    });
+
+    it('returns mismatch info when branch differs', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.review('!42', 'group/project');
+
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('other-branch');
+      const result = await orchestrator.checkBranchMismatch();
+      expect(result).toEqual({
+        currentBranch: 'other-branch',
+        expectedBranch: 'feature/test',
+        targetId: '42',
+      });
+    });
+  });
+
+  describe('branch mismatch in resolveRef', () => {
+    let currentBranchSpy: ReturnType<typeof vi.spyOn>;
+
+    afterEach(() => {
+      currentBranchSpy?.mockRestore();
+    });
+
+    it('throws when resuming session on wrong branch', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.review('!42', 'group/project');
+
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('wrong-branch');
+
+      await expect(orchestrator.review(undefined, 'group/project'))
+        .rejects.toThrow('Branch mismatch');
+    });
+
+    it('does not throw when explicit ref is provided even on wrong branch', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.review('!42', 'group/project');
+
+      currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('wrong-branch');
+
+      // Explicit ref bypasses session branch check
+      const result = await orchestrator.review('!42', 'group/project');
+      expect(result.bundle.target.targetId).toBe('42');
+    });
+  });
 });
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}

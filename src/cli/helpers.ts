@@ -18,6 +18,19 @@ export async function createOrchestrator(): Promise<ReviewOrchestrator> {
 }
 
 /**
+ * Create an orchestrator targeting a specific directory (e.g. after clone).
+ */
+export async function createOrchestratorAt(workingDir: string): Promise<ReviewOrchestrator> {
+  const config = await loadConfig();
+  const provider = createProvider(config);
+  return new ReviewOrchestrator({
+    provider,
+    workingDir,
+    bundleDirName: config.bundleDir,
+  });
+}
+
+/**
  * Get default repository from config or git.
  */
 export async function getDefaultRepo(): Promise<string | undefined> {

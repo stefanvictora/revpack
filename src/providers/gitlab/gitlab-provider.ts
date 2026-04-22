@@ -245,6 +245,10 @@ export class GitLabProvider implements ReviewProvider {
     );
   }
 
+  getCloneUrl(repo: string): string {
+    return `${this.baseUrl}/${repo}.git`;
+  }
+
   // ─── HTTP layer ─────────────────────────────────────────
 
   private async request<T>(path: string, options?: GitLabRequestOptions): Promise<T> {

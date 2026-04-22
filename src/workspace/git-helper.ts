@@ -4,7 +4,32 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 
 export class GitHelper {
-  constructor(private readonly cwd: string) {}
+  readonly cwd: string;
+
+  constructor(cwd: string) {
+    this.cwd = cwd;
+  }
+
+  /**
+   * Shallow-clone a repository into a new directory.
+   * Creates `<parentDir>/<dirName>` (like `git clone` derives from the URL).
+   * Returns the absolute path of the cloned directory.
+   */
+  static async clone(
+    cloneUrl: string,
+    branch: string,
+    parentDir: string,
+    dirName?: string,
+  ): Promise<string> {
+    const args = ['clone', '--depth', '1', '--branch', branch, cloneUrl];
+    if (dirName) args.push(dirName);
+    await exec('git', args, { cwd: parentDir });
+
+    // Determine the actual directory name (git uses the repo name from the URL)
+    const resolvedName = dirName ?? cloneUrl.replace(/\.git$/, '').split('/').pop()!;
+    const { resolve } = await import('node:path');
+    return resolve(parentDir, resolvedName);
+  }
 
   /** Get current branch name. */
   async currentBranch(): Promise<string> {
@@ -33,6 +58,32 @@ export class GitHelper {
   /** Checkout a branch or ref. */
   async checkout(ref: string): Promise<void> {
     await exec('git', ['checkout', ref], { cwd: this.cwd });
+  }
+
+  /** Switch to a branch, creating a tracking branch if needed. */
+  async switchBranch(branch: string, remote = 'origin'): Promise<void> {
+    try {
+      // Try switching to existing local branch first
+      await exec('git', ['switch', branch], { cwd: this.cwd });
+    } catch {
+      // Branch doesn't exist locally — create tracking branch from remote
+      await exec('git', ['switch', '-c', branch, '--track', `${remote}/${branch}`], { cwd: this.cwd });
+    }
+  }
+
+  /** Fetch a specific branch from remote. */
+  async fetchBranch(branch: string, remote = 'origin'): Promise<void> {
+    await exec('git', ['fetch', remote, branch], { cwd: this.cwd });
+  }
+
+  /** Check if we're inside a git repository. */
+  async isGitRepo(): Promise<boolean> {
+    try {
+      await exec('git', ['rev-parse', '--git-dir'], { cwd: this.cwd });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Fetch latest from remote. */

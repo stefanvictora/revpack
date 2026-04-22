@@ -3,6 +3,8 @@
 import { Command } from 'commander';
 import { registerReviewCommand } from './commands/review.js';
 import { registerStatusCommand } from './commands/status.js';
+import { registerCheckoutCommand } from './commands/checkout.js';
+import { registerResetCommand } from './commands/reset.js';
 import { registerPublishReplyCommand } from './commands/publish-reply.js';
 import { registerPublishFindingCommand } from './commands/publish-finding.js';
 import { registerUpdateDescriptionCommand } from './commands/update-description.js';
@@ -19,6 +21,8 @@ program
 
 registerReviewCommand(program);
 registerStatusCommand(program);
+registerCheckoutCommand(program);
+registerResetCommand(program);
 registerPublishReplyCommand(program);
 registerPublishFindingCommand(program);
 registerUpdateDescriptionCommand(program);

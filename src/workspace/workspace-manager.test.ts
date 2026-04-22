@@ -531,6 +531,26 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).not.toContain('## Previous Actions (this session)');
     });
+
+    it('includes MR description when present', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
+
+      const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff()], [], threadIndex);
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## MR Description');
+      expect(content).toContain('A test merge request');
+    });
+
+    it('omits MR description section when empty', async () => {
+      const target = { ...makeTarget(), description: '' };
+      const { threadIndex } = await createBundle(manager, target, []);
+
+      const contextPath = await manager.writeContext(target, [], [makeDiff()], [], threadIndex);
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).not.toContain('## MR Description');
+    });
   });
 
   describe('appendPublishedAction', () => {

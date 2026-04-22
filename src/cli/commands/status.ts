@@ -7,11 +7,10 @@ export function registerStatusCommand(program: Command): void {
     .command('status [ref]')
     .description('Show current review status for a MR/PR')
     .option('--json', 'Output as JSON')
-    .option('--repo <repo>', 'Repository slug (group/project)')
-    .action(async (ref: string | undefined, opts: { json?: boolean; repo?: string }) => {
+    .action(async (ref: string | undefined, opts: { json?: boolean }) => {
       try {
         const orchestrator = await createOrchestrator();
-        const defaultRepo = opts.repo ?? await getDefaultRepo();
+        const defaultRepo = await getDefaultRepo();
         const target = await orchestrator.open(ref, defaultRepo);
 
         if (opts.json) {
@@ -33,6 +32,14 @@ export function registerStatusCommand(program: Command): void {
           console.log(`  ${chalk.dim('Labels:')}    ${target.labels.join(', ')}`);
         }
         console.log(`  ${chalk.dim('URL:')}       ${target.webUrl}`);
+
+        // Branch mismatch warning
+        const mismatch = await orchestrator.checkBranchMismatch();
+        if (mismatch) {
+          console.log('');
+          console.log(chalk.yellow(`  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but session targets "${mismatch.expectedBranch}" (!${mismatch.targetId})`));
+          console.log(chalk.yellow(`    Run \`review-assist reset\` to clear, or \`review-assist checkout !${mismatch.targetId}\` to switch.`));
+        }
 
         if (target.description) {
           console.log('');

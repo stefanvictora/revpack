@@ -35,6 +35,13 @@ export interface ReviewResult {
   publishedActionCount: number;
 }
 
+export interface CheckoutResult {
+  branch: string;
+  target: ReviewTarget;
+  /** Set when a fresh clone was performed (no existing git repo). */
+  clonedTo?: string;
+}
+
 /**
  * Central orchestrator that coordinates provider, workspace, and
  * classification into coherent review workflows.
@@ -222,6 +229,79 @@ export class ReviewOrchestrator {
   }
 
   /**
+   * Check if the current git branch matches the active session's target.
+   * Returns null if no session or no git info available.
+   */
+  async checkBranchMismatch(): Promise<{ currentBranch: string; expectedBranch: string; targetId: string } | null> {
+    const session = await this.workspace.loadSession();
+    if (!session) return null;
+    try {
+      const currentBranch = await this.git.currentBranch();
+      if (!currentBranch || currentBranch === 'HEAD') return null;
+      const target = await this.provider.getTargetSnapshot(session.targetRef);
+      if (currentBranch !== target.sourceBranch) {
+        return { currentBranch, expectedBranch: target.sourceBranch, targetId: session.targetRef.targetId };
+      }
+    } catch {
+      // Can't check — not a git repo or API error
+    }
+    return null;
+  }
+
+  /**
+   * Reset: clear the active session and optionally the entire bundle.
+   */
+  async reset(options?: { full?: boolean }): Promise<void> {
+    if (options?.full) {
+      await this.workspace.removeBundle();
+    } else {
+      await this.workspace.clearSession();
+    }
+  }
+
+  /**
+   * Checkout: fetch the MR source branch and switch to it.
+   * If we're not inside a git repo, performs a shallow clone instead.
+   */
+  async checkout(ref: string, defaultRepo?: string): Promise<CheckoutResult> {
+    const targetRef = await this.resolveRef(ref, defaultRepo);
+    const target = await this.provider.getTargetSnapshot(targetRef);
+
+    const inRepo = await this.git.isGitRepo();
+
+    if (!inRepo) {
+      // No git repo — shallow clone into a sub-directory (like `git clone`)
+      const cloneUrl = this.provider.getCloneUrl(targetRef.repository);
+      const clonedDir = await GitHelper.clone(
+        cloneUrl,
+        target.sourceBranch,
+        this.git.cwd,
+      );
+      return { branch: target.sourceBranch, target, clonedTo: clonedDir };
+    }
+
+    // Existing repo — require clean tree, then fetch + switch
+    const isClean = await this.git.isClean();
+    if (!isClean) {
+      throw new Error(
+        'Working tree has uncommitted changes. Commit or stash them before switching branches.',
+      );
+    }
+
+    // Fetch the source branch and switch to it
+    await this.git.fetchBranch(target.sourceBranch);
+    await this.git.switchBranch(target.sourceBranch);
+
+    // Clear any stale session for a different target
+    const existingSession = await this.workspace.loadSession();
+    if (existingSession && existingSession.targetRef.targetId !== targetRef.targetId) {
+      await this.workspace.clearSession();
+    }
+
+    return { branch: target.sourceBranch, target };
+  }
+
+  /**
    * Classify threads and produce findings (without LLM — heuristic only).
    */
   classifyThreads(threads: ReviewThread[], target: ReviewTarget): Finding[] {
@@ -341,9 +421,24 @@ export class ReviewOrchestrator {
       return targetRef;
     }
 
-    // 2. Existing session — resume from it
+    // 2. Existing session — but validate branch match first
     const session = await this.workspace.loadSession();
     if (session) {
+      // If we can determine the current branch, check it matches the session's target
+      try {
+        const currentBranch = await this.git.currentBranch();
+        const target = await this.provider.getTargetSnapshot(session.targetRef);
+        if (currentBranch && currentBranch !== 'HEAD' && currentBranch !== target.sourceBranch) {
+          throw new Error(
+            `Branch mismatch: current branch "${currentBranch}" does not match ` +
+            `the session's MR source branch "${target.sourceBranch}" (!${session.targetRef.targetId}).\n` +
+            `Run \`review-assist reset\` to clear the stale session, or switch to "${target.sourceBranch}".`,
+          );
+        }
+      } catch (err) {
+        // Re-throw branch mismatch errors; ignore git failures (not a repo, etc.)
+        if (err instanceof Error && err.message.includes('Branch mismatch')) throw err;
+      }
       return session.targetRef;
     }
 

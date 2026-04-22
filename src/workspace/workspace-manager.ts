@@ -105,6 +105,17 @@ export class WorkspaceManager {
   }
 
   /**
+   * Remove the entire bundle directory (.review-assist/).
+   */
+  async removeBundle(): Promise<void> {
+    try {
+      await fs.rm(this.baseDir, { recursive: true, force: true });
+    } catch {
+      // May not exist
+    }
+  }
+
+  /**
    * Append a published action to the current session.
    * Returns false if no session exists.
    */
@@ -253,6 +264,14 @@ export class WorkspaceManager {
     if (target.webUrl) lines.push(`**URL**: ${target.webUrl}  `);
     if (options?.incremental) lines.push(`**Mode**: Incremental review (changes since last review)  `);
     lines.push('');
+
+    // MR description — important context for the reviewer
+    if (target.description?.trim()) {
+      lines.push('## MR Description');
+      lines.push('');
+      lines.push(target.description.trim());
+      lines.push('');
+    }
 
     // What's in the bundle
     lines.push('## Bundle Contents');

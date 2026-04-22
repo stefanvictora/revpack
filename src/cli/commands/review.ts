@@ -5,14 +5,13 @@ import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../
 export function registerReviewCommand(program: Command): void {
   program
     .command('review [ref]')
-    .description('Review a MR/PR: fetch context, classify threads, generate summary, write CONTEXT.md')
+    .description('Review a MR/PR: fetch context, classify threads, write CONTEXT.md')
     .option('--json', 'Output as JSON')
-    .option('--repo <repo>', 'Repository slug (group/project)')
     .option('--full', 'Force a full review, ignoring previous session state')
-    .action(async (ref: string | undefined, opts: { json?: boolean; repo?: string; full?: boolean }) => {
+    .action(async (ref: string | undefined, opts: { json?: boolean; full?: boolean }) => {
       try {
         const orchestrator = await createOrchestrator();
-        const defaultRepo = opts.repo ?? await getDefaultRepo();
+        const defaultRepo = await getDefaultRepo();
 
         const result = await orchestrator.review(ref, defaultRepo, {
           full: opts.full,
