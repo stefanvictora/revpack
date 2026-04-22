@@ -7,11 +7,7 @@ import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 
 const DEFAULT_FINDINGS_FILE = '.review-assist/outputs/new-findings.json';
 
-interface FindingEntry extends NewFinding {
-  published?: boolean;
-}
-
-async function loadNewFindings(filePath: string): Promise<FindingEntry[]> {
+async function loadNewFindings(filePath: string): Promise<NewFinding[]> {
   let raw: string;
   try {
     raw = await fs.readFile(filePath, 'utf-8');
@@ -21,14 +17,31 @@ async function loadNewFindings(filePath: string): Promise<FindingEntry[]> {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) throw new Error('expected array');
-    return parsed as FindingEntry[];
+    return parsed as NewFinding[];
   } catch {
     throw new Error(`${filePath} must be a JSON array of { filePath, line, body, severity, category } objects`);
   }
 }
 
-async function saveFindings(filePath: string, entries: FindingEntry[]): Promise<void> {
+async function saveFindings(filePath: string, entries: NewFinding[]): Promise<void> {
   await fs.writeFile(filePath, JSON.stringify(entries, null, 2), 'utf-8');
+}
+
+/** Severity → emoji mapping for finding comment headers. */
+const SEVERITY_ICON: Record<string, string> = {
+  blocker: '🔴',
+  high: '🔴',
+  medium: '🟡',
+  low: '🟢',
+  info: '🟢',
+  nit: '🟢',
+};
+
+/** Build the header line prepended to published finding comments. */
+function buildFindingHeader(severity: string, category: string): string {
+  const icon = SEVERITY_ICON[severity] ?? '🟡';
+  const sevLabel = severity.charAt(0).toUpperCase() + severity.slice(1);
+  return `_${icon} ${sevLabel}_ | _${category}_\n\n`;
 }
 
 export function registerPublishFindingCommand(program: Command): void {
@@ -37,11 +50,11 @@ export function registerPublishFindingCommand(program: Command): void {
     .description([
       'Publish agent-generated findings as new discussion threads.',
       '  Reads from outputs/new-findings.json by default.',
+      '  Published entries are removed from the file.',
     ].join('\n'))
     .option('--from <file>', `Findings JSON file (default: ${DEFAULT_FINDINGS_FILE})`)
     .option('--dry-run', 'Show what would be published without creating threads')
-    .option('--force', 'Re-publish already-published findings')
-    .action(async (opts: { from?: string; dryRun?: boolean; force?: boolean }) => {
+    .action(async (opts: { from?: string; dryRun?: boolean }) => {
       try {
         const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
         const findings = await loadNewFindings(filePath);
@@ -51,19 +64,12 @@ export function registerPublishFindingCommand(program: Command): void {
           return;
         }
 
-        const pending = opts.force ? findings : findings.filter((f) => !f.published);
-
         if (opts.dryRun) {
-          console.log(chalk.bold(`${pending.length} finding(s) would be published:\n`));
-          for (const f of pending) {
+          console.log(chalk.bold(`${findings.length} finding(s) would be published:\n`));
+          for (const f of findings) {
             console.log(`  ${chalk.yellow(f.severity)} ${chalk.dim(f.category)} ${f.filePath}:${f.line}`);
             console.log(`    ${f.body.split('\n')[0].slice(0, 100)}`);
           }
-          return;
-        }
-
-        if (pending.length === 0) {
-          console.log(chalk.dim('All findings already published — use --force to re-publish.'));
           return;
         }
 
@@ -72,11 +78,15 @@ export function registerPublishFindingCommand(program: Command): void {
         const ws = new WorkspaceManager(process.cwd());
 
         let published = 0;
-        for (const finding of pending) {
+        const remaining: NewFinding[] = [];
+        for (const finding of findings) {
           try {
-            const createdThreadId = await orchestrator.publishFinding(finding, defaultRepo);
+            const body = buildFindingHeader(finding.severity, finding.category) + finding.body;
+            const createdThreadId = await orchestrator.publishFinding(
+              { ...finding, body },
+              defaultRepo,
+            );
             console.log(chalk.green(`  ✓ ${finding.filePath}:${finding.line} (${finding.severity})`));
-            finding.published = true;
             published++;
             await ws.appendPublishedAction({
               type: 'finding',
@@ -89,16 +99,15 @@ export function registerPublishFindingCommand(program: Command): void {
             });
           } catch (err) {
             console.error(chalk.red(`  ✗ ${finding.filePath}:${finding.line}: ${err instanceof Error ? err.message : String(err)}`));
+            remaining.push(finding); // keep failed entries
           }
         }
 
-        // Persist published state
-        await saveFindings(filePath, findings);
+        // Remove published entries, keep only failed ones
+        await saveFindings(filePath, remaining);
 
-        const skipped = findings.length - pending.length;
         console.log('');
-        console.log(chalk.green(`Done: ${published}/${pending.length} findings published`) +
-          (skipped > 0 ? chalk.dim(` (${skipped} already published)`) : ''));
+        console.log(chalk.green(`Done: ${published}/${findings.length} findings published`));
       } catch (err) {
         handleError(err);
       }

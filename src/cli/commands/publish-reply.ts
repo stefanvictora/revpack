@@ -10,7 +10,6 @@ interface ReplyEntry {
   threadId: string; // T-001 shorthand or full SHA
   body: string;
   resolve?: boolean;
-  published?: boolean;
 }
 
 async function loadRepliesJson(filePath: string): Promise<ReplyEntry[]> {
@@ -38,14 +37,14 @@ export function registerPublishReplyCommand(program: Command): void {
     .command('publish-reply [thread]')
     .description([
       'Publish replies to review threads.',
-      '  No argument: publish all unpublished replies from replies.json',
+      '  No argument: publish all replies from replies.json',
       '  [thread]:   publish one thread (T-001 or full SHA)',
+      '  Published entries are removed from the file.',
     ].join('\n'))
     .option('--from <file>', `Replies JSON file (default: ${DEFAULT_REPLIES_FILE})`)
     .option('--body <text>', 'Inline reply body (single thread only)')
     .option('--resolve', 'Resolve the thread(s) after replying')
-    .option('--force', 'Re-publish already-published replies')
-    .action(async (thread: string | undefined, opts: { from?: string; body?: string; resolve?: boolean; force?: boolean }) => {
+    .action(async (thread: string | undefined, opts: { from?: string; body?: string; resolve?: boolean }) => {
       try {
         const orchestrator = await createOrchestrator();
         const defaultRepo = await getDefaultRepo();
@@ -56,7 +55,7 @@ export function registerPublishReplyCommand(program: Command): void {
           let body: string;
           let shouldResolve = opts.resolve ?? false;
           let entries: ReplyEntry[] | undefined;
-          let matchedEntry: ReplyEntry | undefined;
+          let matchedIdx = -1;
 
           if (opts.body) {
             body = opts.body;
@@ -64,20 +63,16 @@ export function registerPublishReplyCommand(program: Command): void {
             // Look up this thread in the replies file
             entries = await loadRepliesJson(repliesFile);
             const resolved = await orchestrator.resolveThreadRef(thread);
-            matchedEntry = entries.find(
+            matchedIdx = entries.findIndex(
               (e) => e.threadId === thread || e.threadId === resolved,
             );
-            if (!matchedEntry) {
+            if (matchedIdx === -1) {
               console.error(chalk.red(`No reply found for "${thread}" in ${repliesFile}`));
               console.error(chalk.dim('Available: ' + entries.map((e) => e.threadId).join(', ')));
               process.exit(1);
             }
-            if (matchedEntry.published && !opts.force) {
-              console.log(chalk.dim(`${thread} already published — use --force to re-publish`));
-              return;
-            }
-            body = matchedEntry.body;
-            shouldResolve = opts.resolve ?? matchedEntry.resolve ?? false;
+            body = entries[matchedIdx].body;
+            shouldResolve = opts.resolve ?? entries[matchedIdx].resolve ?? false;
           }
 
           await orchestrator.publishReply(undefined, thread, body, defaultRepo);
@@ -87,10 +82,10 @@ export function registerPublishReplyCommand(program: Command): void {
             console.log(chalk.dim('  thread resolved'));
           }
 
-          // Mark as published and record in session
+          // Remove published entry and record in session
           const ws = new WorkspaceManager(process.cwd());
-          if (matchedEntry && entries) {
-            matchedEntry.published = true;
+          if (entries && matchedIdx >= 0) {
+            entries.splice(matchedIdx, 1);
             await saveRepliesJson(repliesFile, entries);
           }
           await ws.appendPublishedAction({
@@ -116,21 +111,15 @@ export function registerPublishReplyCommand(program: Command): void {
             return;
           }
 
-          const pending = opts.force ? entries : entries.filter((e) => !e.published);
-          if (pending.length === 0) {
-            console.log(chalk.dim('All replies already published — use --force to re-publish.'));
-            return;
-          }
-
           let posted = 0;
           let resolved = 0;
           const ws = new WorkspaceManager(process.cwd());
-          for (const entry of pending) {
+          const remaining: ReplyEntry[] = [];
+          for (const entry of entries) {
             try {
               await orchestrator.publishReply(undefined, entry.threadId, entry.body, defaultRepo);
               console.log(chalk.green(`  ✓ ${entry.threadId}`));
               posted++;
-              entry.published = true;
               await ws.appendPublishedAction({
                 type: 'reply',
                 threadId: entry.threadId,
@@ -150,16 +139,15 @@ export function registerPublishReplyCommand(program: Command): void {
               }
             } catch (err) {
               console.error(chalk.red(`  ✗ ${entry.threadId}: ${err instanceof Error ? err.message : String(err)}`));
+              remaining.push(entry); // keep failed entries
             }
           }
 
-          // Persist published state
-          await saveRepliesJson(repliesFile, entries);
+          // Remove published entries, keep only failed ones
+          await saveRepliesJson(repliesFile, remaining);
 
-          const skipped = entries.length - pending.length;
           console.log('');
-          console.log(chalk.green(`Done: ${posted} replied, ${resolved} resolved`) +
-            (skipped > 0 ? chalk.dim(` (${skipped} already published)`) : ''));
+          console.log(chalk.green(`Done: ${posted} replied, ${resolved} resolved`));
         }
       } catch (err) {
         handleError(err);
