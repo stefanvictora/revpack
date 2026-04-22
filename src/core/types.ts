@@ -196,23 +196,6 @@ export interface NewFinding {
   category: string;
 }
 
-// ─── Review Summary ──────────────────────────────────────
-
-export interface ReviewSummary {
-  targetRef: ReviewTargetRef;
-  generatedAt: string;
-  highLevelSummary: string;
-  changedFilesSummary: FileSummary[];
-  unresolvedThreadCount: number;
-  resolvedThreadCount: number;
-}
-
-export interface FileSummary {
-  filePath: string;
-  changeType: 'added' | 'modified' | 'deleted' | 'renamed';
-  summary: string;
-}
-
 // ─── Workspace Bundle ────────────────────────────────────
 
 export interface WorkspaceBundle {

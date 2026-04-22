@@ -94,7 +94,7 @@ Creates `.review-assist/`:
     latest.patch           ← full MR diff
     incremental.patch      ← changes since last review (auto on re-run)
   outputs/
-    summary.md, summary.json, findings.json
+    findings.json
     new-findings.json     ← agent-created issues for proactive review
 ```
 

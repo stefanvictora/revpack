@@ -156,7 +156,7 @@ describe('ReviewOrchestrator', () => {
   });
 
   describe('review', () => {
-    it('creates bundle, summary, findings, and CONTEXT.md', async () => {
+    it('creates bundle, findings, and CONTEXT.md', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.review('!42', 'group/project');
 
@@ -164,7 +164,6 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundle.threads).toHaveLength(1);
       expect(result.bundle.diffs).toHaveLength(1);
       expect(result.findings).toHaveLength(1);
-      expect(result.summaryMarkdown).toContain('## Summary');
       expect(result.contextPath).toContain('CONTEXT.md');
       expect(result.incremental).toBe(false);
     });
@@ -175,11 +174,9 @@ describe('ReviewOrchestrator', () => {
 
       const bundleDir = path.join(tmpDir, '.review-assist');
       const contextMd = await fs.readFile(path.join(bundleDir, 'CONTEXT.md'), 'utf-8');
-      const summaryMd = await fs.readFile(path.join(bundleDir, 'outputs', 'summary.md'), 'utf-8');
       const findingsJson = await fs.readFile(path.join(bundleDir, 'outputs', 'findings.json'), 'utf-8');
 
       expect(contextMd).toContain('Test MR');
-      expect(summaryMd).toContain('## Summary');
       expect(JSON.parse(findingsJson)).toHaveLength(1);
     });
 

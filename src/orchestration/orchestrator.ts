@@ -5,13 +5,11 @@ import type {
   ReviewThread,
   WorkspaceBundle,
   Finding,
-  ReviewSummary,
   NewFinding,
 } from '../core/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
 import { ThreadClassifier } from './thread-classifier.js';
-import { SummaryGenerator } from './summary-generator.js';
 
 export interface OrchestratorOptions {
   provider: ReviewProvider;
@@ -21,11 +19,9 @@ export interface OrchestratorOptions {
 
 export interface ReviewResult {
   bundle: WorkspaceBundle;
-  summary: ReviewSummary;
   findings: Finding[];
   classifications: ReturnType<ThreadClassifier['classify']>[];
   contextPath: string;
-  summaryMarkdown: string;
   incremental: boolean;
   /** Whether the local branch HEAD matches the MR head commit. */
   localBranchStatus?: 'up-to-date' | 'behind' | 'ahead' | 'unknown';
@@ -48,21 +44,19 @@ export class ReviewOrchestrator {
   private readonly workspace: WorkspaceManager;
   private readonly git: GitHelper;
   private readonly classifier: ThreadClassifier;
-  private readonly summaryGen: SummaryGenerator;
 
   constructor(options: OrchestratorOptions) {
     this.provider = options.provider;
     this.workspace = new WorkspaceManager(options.workingDir, options.bundleDirName);
     this.git = new GitHelper(options.workingDir);
     this.classifier = new ThreadClassifier();
-    this.summaryGen = new SummaryGenerator();
   }
 
   // ─── High-level workflows ──────────────────────────────
 
   /**
    * Review: the primary unified workflow.
-   * Prepare bundle + classify threads + generate summary + write CONTEXT.md.
+   * Prepare bundle + classify threads + write CONTEXT.md.
    * Automatically incremental when a previous session exists, unless `full` is set.
    */
   async review(
@@ -157,13 +151,7 @@ export class ReviewOrchestrator {
     // Generate findings
     const findings = this.classifyThreads(activeThreads, target);
 
-    // Generate summary
-    const summary = this.summaryGen.generateSummary(target, diffs, activeThreads);
-    const summaryMarkdown = this.summaryGen.generateMarkdown(summary);
-
     // Write outputs
-    await this.workspace.writeOutput('summary.json', JSON.stringify(summary, null, 2));
-    await this.workspace.writeOutput('summary.md', summaryMarkdown);
     await this.workspace.writeOutput('findings.json', JSON.stringify(findings, null, 2));
 
     // Write CONTEXT.md — the agent entry point
@@ -213,11 +201,9 @@ export class ReviewOrchestrator {
 
     return {
       bundle,
-      summary,
       findings,
       classifications,
       contextPath,
-      summaryMarkdown,
       incremental: isIncremental,
       localBranchStatus,
       prunedReplies,
