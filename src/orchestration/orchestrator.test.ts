@@ -116,25 +116,16 @@ describe('ReviewOrchestrator', () => {
     });
   });
 
-  describe('classifyThreads', () => {
-    it('classifies threads into findings', () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      const findings = orchestrator.classifyThreads([mockThread], mockTarget);
-
-      expect(findings).toHaveLength(1);
-      expect(findings[0].type).toBe('finding');
-      expect(findings[0].severity).toBe('blocker'); // "security vulnerability"
-      expect(findings[0].category).toBe('security');
-      expect(findings[0].status).toBe('unreviewed');
-    });
-  });
-
   describe('publishReply', () => {
-    it('calls provider.postReply', async () => {
+    it('calls provider.postReply with marker', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.publishReply('!42', 'thread-1', 'Thanks, fixed!', 'group/project');
 
-      expect(mockProvider.postReply).toHaveBeenCalledWith(targetRef, 'thread-1', 'Thanks, fixed!');
+      expect(mockProvider.postReply).toHaveBeenCalledWith(
+        targetRef,
+        'thread-1',
+        `<!-- review-assist -->\nThanks, fixed!`,
+      );
     });
   });
 
@@ -157,14 +148,13 @@ describe('ReviewOrchestrator', () => {
   });
 
   describe('review', () => {
-    it('creates bundle, findings, and CONTEXT.md', async () => {
+    it('creates bundle, and CONTEXT.md', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.review('!42', 'group/project');
 
       expect(result.bundle.target.title).toBe('Test MR');
       expect(result.bundle.threads).toHaveLength(1);
       expect(result.bundle.diffs).toHaveLength(1);
-      expect(result.findings).toHaveLength(1);
       expect(result.contextPath).toContain('CONTEXT.md');
       expect(result.incremental).toBe(false);
     });
@@ -175,10 +165,8 @@ describe('ReviewOrchestrator', () => {
 
       const bundleDir = path.join(tmpDir, '.review-assist');
       const contextMd = await fs.readFile(path.join(bundleDir, 'CONTEXT.md'), 'utf-8');
-      const findingsJson = await fs.readFile(path.join(bundleDir, 'outputs', 'findings.json'), 'utf-8');
 
       expect(contextMd).toContain('Test MR');
-      expect(JSON.parse(findingsJson)).toHaveLength(1);
     });
 
     it('saves session for future incremental runs', async () => {
@@ -363,7 +351,7 @@ describe('ReviewOrchestrator', () => {
 
       const finding = {
         filePath: 'src/app.ts',
-        line: 42,
+        newLine: 42,
         body: 'Potential null dereference here',
         severity: 'high' as const,
         category: 'correctness',
@@ -373,8 +361,8 @@ describe('ReviewOrchestrator', () => {
       expect(threadId).toBe('new-thread-id');
       expect(mockProvider.createThread).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
-        'Potential null dereference here',
-        { filePath: 'src/app.ts', newLine: 42 },
+        `<!-- review-assist -->\nPotential null dereference here`,
+        { filePath: 'src/app.ts', newLine: 42, oldLine: undefined },
       );
     });
   });

@@ -55,5 +55,5 @@ Generate a changelog-style summary suitable for the MR/PR description.
 
 After the developer approves:
 ```
-review-assist update-description --from-summary
+review-assist publish description --from-summary
 ```

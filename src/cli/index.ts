@@ -5,10 +5,7 @@ import { registerReviewCommand } from './commands/review.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerCheckoutCommand } from './commands/checkout.js';
 import { registerResetCommand } from './commands/reset.js';
-import { registerPublishReplyCommand } from './commands/publish-reply.js';
-import { registerPublishFindingCommand } from './commands/publish-finding.js';
-import { registerUpdateDescriptionCommand } from './commands/update-description.js';
-import { registerSyncReviewCommentCommand } from './commands/sync-review-comment.js';
+import { registerPublishCommand } from './commands/publish.js';
 import { registerConfigCommand } from './commands/config.js';
 import { registerInitCommand } from './commands/init.js';
 
@@ -23,10 +20,7 @@ registerReviewCommand(program);
 registerStatusCommand(program);
 registerCheckoutCommand(program);
 registerResetCommand(program);
-registerPublishReplyCommand(program);
-registerPublishFindingCommand(program);
-registerUpdateDescriptionCommand(program);
-registerSyncReviewCommentCommand(program);
+registerPublishCommand(program);
 registerConfigCommand(program);
 registerInitCommand(program);
 

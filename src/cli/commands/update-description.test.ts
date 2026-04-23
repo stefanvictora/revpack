@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeWithMarkers, MARKER_START, MARKER_END } from './update-description.js';
+import { mergeWithMarkers, MARKER_START, MARKER_END } from './publish.js';
 
 describe('mergeWithMarkers', () => {
   it('appends marked section to an empty description', () => {

@@ -296,7 +296,6 @@ describe('WorkspaceManager', () => {
         makeTarget(),
         threads,
         [makeDiff()],
-        [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
         threadIndex,
       );
 
@@ -316,7 +315,6 @@ describe('WorkspaceManager', () => {
         makeTarget(),
         threads,
         [],
-        [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
         threadIndex,
       );
 
@@ -324,8 +322,6 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('## Unresolved Threads');
       expect(content).toContain('T-001');
       expect(content).toContain('src/app.ts');
-      expect(content).toContain('high');
-      expect(content).toContain('Fix null check');
     });
 
     it('includes changed files list', async () => {
@@ -342,7 +338,6 @@ describe('WorkspaceManager', () => {
         makeTarget(),
         [],
         [makeDiff(), newFileDiff],
-        [],
         threadIndex,
       );
 
@@ -362,10 +357,6 @@ describe('WorkspaceManager', () => {
         makeTarget(),
         allThreads,
         [],
-        [
-          { threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Old thread' },
-          { threadId: 'thread-new', severity: 'low', category: 'general', summary: 'New thread' },
-        ],
         threadIndex,
         {
           incremental: true,
@@ -420,7 +411,6 @@ describe('WorkspaceManager', () => {
         makeTarget(),
         allThreads,
         [],
-        [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
         threadIndex,
       );
 
@@ -440,7 +430,6 @@ describe('WorkspaceManager', () => {
         makeTarget(),
         threads,
         [],
-        [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
         threadIndex,
         {
           publishedActions: [
@@ -466,7 +455,7 @@ describe('WorkspaceManager', () => {
         position: { filePath: 'src/auth.ts', newLine: 42 },
         comments: [{
           id: 'self-note',
-          body: 'Unsafe token comparison',
+          body: '<!-- review-assist -->\nUnsafe token comparison',
           author: 'bot',
           createdAt: '2026-01-01T00:00:00Z',
           updatedAt: '2026-01-01T00:00:00Z',
@@ -482,16 +471,7 @@ describe('WorkspaceManager', () => {
         makeTarget(),
         threads,
         [],
-        [
-          { threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' },
-          { threadId: 'self-thread-sha', severity: 'high', category: 'correctness', summary: 'Unsafe token' },
-        ],
         threadIndex,
-        {
-          publishedActions: [
-            { type: 'finding', threadId: 'self-thread-sha', filePath: 'src/auth.ts', line: 42, detail: 'Unsafe token', publishedAt: '2026-01-01T12:00:00Z', createdThreadId: 'self-thread-sha' },
-          ],
-        },
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
@@ -500,21 +480,40 @@ describe('WorkspaceManager', () => {
       expect(content).not.toContain('T-001 **SELF**');
     });
 
-    it('tags REPLIED on threads that had replies published', async () => {
-      const threads = [makeThread()];
-      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+    it('tags REPLIED on threads that have a bot reply', async () => {
+      const repliedThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'replied-thread-sha',
+        comments: [
+          {
+            id: 'human-note',
+            body: 'This needs fixing',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+          {
+            id: 'bot-reply',
+            body: '<!-- review-assist -->\nFixed, good catch!',
+            author: 'bot',
+            createdAt: '2026-01-01T01:00:00Z',
+            updatedAt: '2026-01-01T01:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const threads = [repliedThread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(threads);
+      await manager.createBundle(makeTarget(), threads, [], [], threadIndex);
 
       const contextPath = await manager.writeContext(
         makeTarget(),
         threads,
         [],
-        [{ threadId: 'thread-abc', severity: 'high', category: 'correctness', summary: 'Fix null check' }],
         threadIndex,
-        {
-          publishedActions: [
-            { type: 'reply', threadId: 'T-001', detail: 'Fixed!', publishedAt: '2026-01-01T12:00:00Z' },
-          ],
-        },
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
@@ -524,7 +523,7 @@ describe('WorkspaceManager', () => {
     it('omits Previous Actions section when no actions exist', async () => {
       const { threadIndex } = await createBundle(manager, makeTarget(), []);
 
-      const contextPath = await manager.writeContext(makeTarget(), [], [], [], threadIndex, {
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex, {
         publishedActions: [],
       });
 
@@ -535,7 +534,7 @@ describe('WorkspaceManager', () => {
     it('includes MR description when present', async () => {
       const { threadIndex } = await createBundle(manager, makeTarget(), []);
 
-      const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff()], [], threadIndex);
+      const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff()], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## MR Description');
@@ -546,7 +545,7 @@ describe('WorkspaceManager', () => {
       const target = { ...makeTarget(), description: '' };
       const { threadIndex } = await createBundle(manager, target, []);
 
-      const contextPath = await manager.writeContext(target, [], [makeDiff()], [], threadIndex);
+      const contextPath = await manager.writeContext(target, [], [makeDiff()], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).not.toContain('## MR Description');

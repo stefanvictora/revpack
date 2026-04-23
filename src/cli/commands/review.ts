@@ -5,7 +5,7 @@ import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../
 export function registerReviewCommand(program: Command): void {
   program
     .command('review [ref]')
-    .description('Review a MR/PR: fetch context, classify threads, write CONTEXT.md')
+    .description('Review a MR/PR: fetch context, write CONTEXT.md')
     .option('--json', 'Output as JSON')
     .option('--full', 'Force a full review, ignoring previous session state')
     .action(async (ref: string | undefined, opts: { json?: boolean; full?: boolean }) => {
@@ -27,14 +27,13 @@ export function registerReviewCommand(program: Command): void {
             incremental: result.incremental,
             localBranchStatus: result.localBranchStatus,
             threadCount: result.bundle.threads.length,
-            findingCount: result.findings.length,
             diffCount: result.bundle.diffs.length,
             contextPath: result.contextPath,
           });
           return;
         }
 
-        const { bundle, findings, incremental } = result;
+        const { bundle, incremental } = result;
         const target = bundle.target;
         const stateColor = getStateColor(target.state);
 
@@ -67,17 +66,6 @@ export function registerReviewCommand(program: Command): void {
             console.log(`  ${chalk.dim('Changes:')}     ${parts.join(', ')}`);
             console.log('');
           }
-        }
-
-        // Findings by severity
-        if (findings.length > 0) {
-          const bySeverity = new Map<string, number>();
-          for (const f of findings) {
-            bySeverity.set(f.severity, (bySeverity.get(f.severity) ?? 0) + 1);
-          }
-          const parts = [...bySeverity.entries()].map(([s, n]) => `${n} ${s}`);
-          console.log(`  ${chalk.dim('Findings:')}    ${parts.join(', ')}`);
-          console.log('');
         }
 
         // Key paths

@@ -220,7 +220,6 @@ export class WorkspaceManager {
     target: ReviewTarget,
     threads: ReviewThread[],
     diffs: ReviewDiff[],
-    classifications: { threadId: string; severity: string; category: string; summary: string }[],
     threadIndex: ThreadIndex,
     options?: {
       incremental?: boolean;
@@ -230,25 +229,18 @@ export class WorkspaceManager {
   ): Promise<string> {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
     const generalComments = threads.filter((t) => !t.resolvable && !t.comments.every((c) => c.system));
-    const classMap = new Map(classifications.map((c) => [c.threadId, c]));
 
-    // Build set of self-authored thread SHAs (findings we published earlier)
+    // Derive SELF/REPLIED from comment origins (marker-based, survives session resets)
     const selfThreadIds = new Set<string>();
-    if (options?.publishedActions) {
-      for (const a of options.publishedActions) {
-        if (a.type === 'finding' && a.createdThreadId) {
-          selfThreadIds.add(a.createdThreadId);
-        }
-      }
-    }
-
-    // Build set of thread SHAs that were replied to / resolved
     const repliedThreadIds = new Set<string>();
-    if (options?.publishedActions) {
-      for (const a of options.publishedActions) {
-        if (a.type === 'reply' || a.type === 'resolve') {
-          repliedThreadIds.add(a.threadId);
-        }
+    for (const t of threads) {
+      const nonSystem = t.comments.filter((c) => !c.system);
+      if (nonSystem.length > 0 && nonSystem[0].origin === 'bot') {
+        // First comment is ours → we created this thread
+        selfThreadIds.add(t.threadId);
+      } else if (nonSystem.some((c) => c.origin === 'bot')) {
+        // Has a bot reply after a human comment → we replied
+        repliedThreadIds.add(t.threadId);
       }
     }
 
@@ -294,14 +286,13 @@ export class WorkspaceManager {
     if (unresolvedThreads.length > 0) {
       lines.push('## Unresolved Threads');
       lines.push('');
-      lines.push('| # | File | Severity | Summary |');
-      lines.push('|---|------|----------|---------|');
+      lines.push('| # | File |');
+      lines.push('|---|------|');
       for (const t of unresolvedThreads) {
-        const cls = classMap.get(t.threadId);
         const prefix = threadIndex.get(t.threadId) ?? '?';
         const isNew = options?.previousThreadIds && !options.previousThreadIds.has(t.threadId);
         const isSelf = selfThreadIds.has(t.threadId);
-        const isReplied = repliedThreadIds.has(prefix) || repliedThreadIds.has(t.threadId);
+        const isReplied = repliedThreadIds.has(t.threadId);
         const badges: string[] = [];
         if (isNew && !isSelf) badges.push('**NEW**');
         if (isSelf) badges.push('**SELF**');
@@ -310,7 +301,7 @@ export class WorkspaceManager {
         const file = t.position?.filePath
           ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
           : '(general)';
-        lines.push(`| ${prefix}${badgeStr} | ${file} | ${cls?.severity ?? '?'} | ${cls?.summary ?? ''} |`);
+        lines.push(`| ${prefix}${badgeStr} | ${file} |`);
       }
       lines.push('');
     }
@@ -398,8 +389,13 @@ export class WorkspaceManager {
     lines.push('     ```');
     lines.push('   - `outputs/new-findings.json` — new issues found during proactive review:');
     lines.push('     ```json');
-    lines.push('     [{ "filePath": "src/app.ts", "line": 42, "body": "Potential null dereference", "severity": "high", "category": "correctness" }]');
+    lines.push('     [{ "filePath": "src/app.ts", "newLine": 42, "body": "Potential null dereference", "severity": "high", "category": "correctness" }]');
     lines.push('     ```');
+    lines.push('     Each finding needs `filePath` and at least one of `newLine` / `oldLine`:');
+    lines.push('     - **Added line** (line with `+` in the diff): set `newLine` only');
+    lines.push('     - **Context line** (unchanged, visible in the diff): set both `newLine` and `oldLine`');
+    lines.push('     - **Removed line** (line with `-` in the diff): set `oldLine` only');
+    lines.push('     Read `diffs/latest.patch` hunk headers (`@@ -old,count +new,count @@`) to determine the correct values. For added/modified lines you can also verify `newLine` against the checked-out source file.');
     lines.push('   - `outputs/summary.md` — Changelog-style summary for the MR description (categorized by area: Bug Fixes, Improvements, New Features, Tests, Documentation, Chores). Do NOT include a file list or code walkthrough.');
     lines.push('   - `outputs/review-notes.md` — Your review notes for the synced MR comment (what you reviewed, what you found, what you fixed). This is updated each iteration.');
     lines.push('');
@@ -409,11 +405,12 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('Publish results back to GitLab/GitHub:');
     lines.push('```');
-    lines.push(`review-assist publish-reply            # publish all replies (removes published entries)`);
-    lines.push(`review-assist publish-reply T-001      # publish one specific reply`);
-    lines.push(`review-assist publish-finding          # publish new findings (removes published entries)`);
-    lines.push(`review-assist update-description --from-summary   # update MR description`);
-    lines.push(`review-assist sync-review-comment      # create/update review comment on the MR`);
+    lines.push(`review-assist publish                  # publish everything pending (replies + findings + notes)`);
+    lines.push(`review-assist publish replies           # publish all replies (removes published entries)`);
+    lines.push(`review-assist publish replies T-001     # publish one specific reply`);
+    lines.push(`review-assist publish findings          # publish new findings (removes published entries)`);
+    lines.push(`review-assist publish description --from-summary   # update MR description`);
+    lines.push(`review-assist publish notes             # create/update review comment on the MR`);
     lines.push('```');
 
     const content = lines.join('\n');

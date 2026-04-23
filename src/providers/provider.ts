@@ -12,9 +12,9 @@ import type {
 export interface NewThreadPosition {
   /** File path (new_path in the diff). */
   filePath: string;
-  /** Line number in the new version of the file. */
-  newLine: number;
-  /** Optional: line in the old version (for removed lines). */
+  /** Line number in the new version of the file (for added/context lines). */
+  newLine?: number;
+  /** Line number in the old version of the file (for removed/context lines). */
   oldLine?: number;
 }
 

@@ -1,5 +1,7 @@
 import type { Command } from 'commander';
+import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
+import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../helpers.js';
 
 export function registerStatusCommand(program: Command): void {
@@ -13,8 +15,26 @@ export function registerStatusCommand(program: Command): void {
         const defaultRepo = await getDefaultRepo();
         const target = await orchestrator.open(ref, defaultRepo);
 
+        // Load workspace state for enhanced info
+        const ws = new WorkspaceManager(process.cwd());
+        const session = await ws.loadSession();
+
+        // Count unpublished outputs
+        const pendingReplies = await countJsonArray('.review-assist/outputs/replies.json');
+        const pendingFindings = await countJsonArray('.review-assist/outputs/new-findings.json');
+        const hasReviewNotes = await fileHasContent('.review-assist/outputs/review-notes.md');
+
         if (opts.json) {
-          outputJson(target);
+          outputJson({
+            ...target,
+            session: session ? {
+              id: session.id,
+              createdAt: session.createdAt,
+              lastReviewedVersionId: session.lastReviewedVersionId,
+              publishedActionCount: session.publishedActions?.length ?? 0,
+            } : null,
+            pending: { replies: pendingReplies, findings: pendingFindings, notes: hasReviewNotes },
+          });
           return;
         }
 
@@ -32,6 +52,26 @@ export function registerStatusCommand(program: Command): void {
           console.log(`  ${chalk.dim('Labels:')}    ${target.labels.join(', ')}`);
         }
         console.log(`  ${chalk.dim('URL:')}       ${target.webUrl}`);
+
+        // Session info
+        if (session) {
+          console.log('');
+          console.log(chalk.dim('─ Session ─'));
+          console.log(`  ${chalk.dim('Session:')}   ${session.id.slice(0, 8)} (${formatDate(session.createdAt)})`);
+          if (session.publishedActions?.length) {
+            console.log(`  ${chalk.dim('Actions:')}   ${session.publishedActions.length} published`);
+          }
+        }
+
+        // Pending outputs
+        if (pendingReplies > 0 || pendingFindings > 0 || hasReviewNotes) {
+          console.log('');
+          console.log(chalk.dim('─ Pending ─'));
+          if (pendingReplies > 0) console.log(`  ${chalk.yellow('⬡')} ${pendingReplies} reply/replies ready to publish`);
+          if (pendingFindings > 0) console.log(`  ${chalk.yellow('⬡')} ${pendingFindings} finding(s) ready to publish`);
+          if (hasReviewNotes) console.log(`  ${chalk.yellow('⬡')} Review notes ready to sync`);
+          console.log(chalk.dim(`  → Run \`review-assist publish\` to publish all`));
+        }
 
         // Branch mismatch warning
         const mismatch = await orchestrator.checkBranchMismatch();
@@ -60,6 +100,25 @@ function getStateColor(state: string): (text: string) => string {
     case 'closed': return chalk.red;
     case 'locked': return chalk.yellow;
     default: return chalk.white;
+  }
+}
+
+async function countJsonArray(filePath: string): Promise<number> {
+  try {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function fileHasContent(filePath: string): Promise<boolean> {
+  try {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    return raw.trim().length > 0;
+  } catch {
+    return false;
   }
 }
 

@@ -4,15 +4,12 @@
 
 export type Severity = 'blocker' | 'high' | 'medium' | 'low' | 'info' | 'nit';
 export type Confidence = 'high' | 'medium' | 'low';
-export type FindingStatus = 'unreviewed' | 'verified' | 'invalid' | 'fixed' | 'replied' | 'resolved';
-export type Disposition = 'ignore' | 'explain_only' | 'reply_only' | 'patch_only' | 'patch_and_reply' | 'escalate';
 export type CommentOrigin = 'human' | 'bot' | 'unknown';
 export type ProviderType = 'gitlab' | 'github';
 export type TargetType = 'merge_request' | 'pull_request';
 export type LearningScope = 'org' | 'repository' | 'path' | 'file';
 export type LearningRuleType = 'review_preference' | 'architecture_rule' | 'testing_rule' | 'false_positive_pattern';
 export type ApprovalState = 'pending' | 'approved' | 'rejected';
-export type CheckResult = 'passed' | 'failed' | 'not_run' | 'skipped';
 
 // ─── Review Target ───────────────────────────────────────
 
@@ -108,40 +105,6 @@ export interface ReviewThread extends ReviewThreadRef {
   comments: ReviewComment[];
 }
 
-// ─── Finding ─────────────────────────────────────────────
-
-export interface Finding {
-  type: 'finding';
-  provider: ProviderType;
-  repository: string;
-  targetType: TargetType;
-  targetId: string;
-  threadId: string;
-  commentId: string;
-  origin: CommentOrigin;
-  severity: Severity;
-  confidence: Confidence;
-  category: string;
-  status: FindingStatus;
-  disposition: Disposition;
-  fileName: string;
-  lineStart?: number;
-  lineEnd?: number;
-  title: string;
-  problem: string;
-  validationSummary: string;
-  codegenInstructions?: string;
-  suggestions: string[];
-  replyDraft: string;
-  checks: CheckResults;
-}
-
-export interface CheckResults {
-  build: CheckResult;
-  tests: CheckResult;
-  lint: CheckResult;
-}
-
 // ─── Reply Draft ─────────────────────────────────────────
 
 export interface ReplyDraft {
@@ -181,13 +144,15 @@ export interface Learning {
 
 /**
  * A new finding created by an agent during proactive code review.
- * Written to outputs/new-findings.json for publishing via `publish-finding`.
+ * Written to outputs/new-findings.json for publishing via `publish findings`.
  */
 export interface NewFinding {
   /** File path relative to repo root. */
   filePath: string;
-  /** Line number in the new version of the file. */
-  line: number;
+  /** Line number in the new version of the file (right side of the diff). */
+  newLine?: number;
+  /** Line number in the old version of the file (left side of the diff). Required for context/removed lines. */
+  oldLine?: number;
   /** The review comment body (markdown). */
   body: string;
   /** Severity for prioritization. */

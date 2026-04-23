@@ -2,14 +2,11 @@ import type { ReviewProvider } from '../providers/provider.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
-  ReviewThread,
   WorkspaceBundle,
-  Finding,
   NewFinding,
 } from '../core/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
-import { ThreadClassifier } from './thread-classifier.js';
 
 export interface OrchestratorOptions {
   provider: ReviewProvider;
@@ -19,8 +16,6 @@ export interface OrchestratorOptions {
 
 export interface ReviewResult {
   bundle: WorkspaceBundle;
-  findings: Finding[];
-  classifications: ReturnType<ThreadClassifier['classify']>[];
   contextPath: string;
   incremental: boolean;
   /** Whether the local branch HEAD matches the MR head commit. */
@@ -43,27 +38,27 @@ export interface CheckoutResult {
 }
 
 /**
- * Central orchestrator that coordinates provider, workspace, and
- * classification into coherent review workflows.
+ * Central orchestrator that coordinates provider and workspace into coherent review workflows.
  */
 export class ReviewOrchestrator {
   private readonly provider: ReviewProvider;
   private readonly workspace: WorkspaceManager;
   private readonly git: GitHelper;
-  private readonly classifier: ThreadClassifier;
+
+  /** Marker prepended to every comment published by review-assist. */
+  static readonly COMMENT_MARKER = '<!-- review-assist -->';
 
   constructor(options: OrchestratorOptions) {
     this.provider = options.provider;
     this.workspace = new WorkspaceManager(options.workingDir, options.bundleDirName);
     this.git = new GitHelper(options.workingDir);
-    this.classifier = new ThreadClassifier();
   }
 
   // ─── High-level workflows ──────────────────────────────
 
   /**
    * Review: the primary unified workflow.
-   * Prepare bundle + classify threads + write CONTEXT.md.
+   * Prepare bundle and write CONTEXT.md.
    * Automatically incremental when a previous session exists, unless `full` is set.
    */
   async review(
@@ -150,29 +145,12 @@ export class ReviewOrchestrator {
       ).length;
     }
 
-    // Classify resolvable unresolved threads
-    const classifications = activeThreads
-      .filter((t) => t.resolvable)
-      .map((t) => this.classifier.classify(t));
-
-    // Generate findings
-    const findings = this.classifyThreads(activeThreads, target);
-
-    // Write outputs
-    await this.workspace.writeOutput('findings.json', JSON.stringify(findings, null, 2));
-
     // Write CONTEXT.md — the agent entry point
     const publishedActions = existingSession?.publishedActions ?? [];
     const contextPath = await this.workspace.writeContext(
       target,
       activeThreads,
       diffs,
-      classifications.map((c) => ({
-        threadId: c.threadId,
-        severity: c.severity,
-        category: c.category,
-        summary: c.summary,
-      })),
       threadIndex,
       { incremental: isIncremental, previousThreadIds: previousThreadIdSet, publishedActions },
     );
@@ -208,8 +186,6 @@ export class ReviewOrchestrator {
 
     return {
       bundle,
-      findings,
-      classifications,
       contextPath,
       incremental: isIncremental,
       localBranchStatus,
@@ -301,45 +277,6 @@ export class ReviewOrchestrator {
     return { branch: target.sourceBranch, target };
   }
 
-  /**
-   * Classify threads and produce findings (without LLM — heuristic only).
-   */
-  classifyThreads(threads: ReviewThread[], target: ReviewTarget): Finding[] {
-    return threads
-      .filter((t) => t.resolvable && !t.resolved)
-      .map((thread) => {
-        const classification = this.classifier.classify(thread);
-        const firstComment = thread.comments.find((c) => !c.system);
-
-        const finding: Finding = {
-          type: 'finding',
-          provider: target.provider,
-          repository: target.repository,
-          targetType: target.targetType,
-          targetId: target.targetId,
-          threadId: thread.threadId,
-          commentId: firstComment?.id ?? '',
-          origin: classification.origin,
-          severity: classification.severity,
-          confidence: classification.confidence,
-          category: classification.category,
-          status: 'unreviewed',
-          disposition: 'explain_only',
-          fileName: thread.position?.filePath ?? '',
-          lineStart: thread.position?.newLine,
-          lineEnd: thread.position?.newLine,
-          title: classification.summary,
-          problem: firstComment?.body ?? '',
-          validationSummary: '',
-          suggestions: [],
-          replyDraft: '',
-          checks: { build: 'not_run', tests: 'not_run', lint: 'not_run' },
-        };
-
-        return finding;
-      });
-  }
-
   // ─── Write operations (guarded) ─────────────────────────
 
   async publishReply(ref?: string, threadId?: string, body?: string, defaultRepo?: string): Promise<void> {
@@ -347,7 +284,8 @@ export class ReviewOrchestrator {
     if (!threadId) throw new Error('threadId is required');
     if (!body) throw new Error('reply body is required');
     const resolvedId = await this.workspace.resolveThreadRef(threadId);
-    await this.provider.postReply(targetRef, resolvedId, body);
+    const markedBody = `${ReviewOrchestrator.COMMENT_MARKER}\n${body}`;
+    await this.provider.postReply(targetRef, resolvedId, markedBody);
   }
 
   async resolveThread(ref?: string, threadId?: string, defaultRepo?: string): Promise<void> {
@@ -369,10 +307,11 @@ export class ReviewOrchestrator {
    */
   async publishFinding(finding: NewFinding, defaultRepo?: string): Promise<string> {
     const targetRef = await this.resolveRef(undefined, defaultRepo);
+    const markedBody = `${ReviewOrchestrator.COMMENT_MARKER}\n${finding.body}`;
     return this.provider.createThread(
       targetRef,
-      finding.body,
-      { filePath: finding.filePath, newLine: finding.line },
+      markedBody,
+      { filePath: finding.filePath, newLine: finding.newLine, oldLine: finding.oldLine },
     );
   }
 

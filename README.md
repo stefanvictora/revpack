@@ -55,10 +55,11 @@ review-assist review
 review-assist review
 
 # 5. Publish results back to GitLab/GitHub:
-review-assist publish-reply
-review-assist publish-finding
-review-assist update-description --from-summary
-review-assist sync-review-comment
+review-assist publish                             # publish everything pending
+review-assist publish replies                     # publish replies only
+review-assist publish findings                    # publish findings only
+review-assist publish description --from-summary  # update MR description
+review-assist publish notes                       # sync review notes
 ```
 
 You can also paste a full GitLab URL instead of `!42`:
@@ -83,7 +84,7 @@ review-assist checkout !42 --repo group/project   # clone when not in a git repo
 
 ### `review [ref]` — Primary workflow (recommended)
 
-Fetches MR metadata, threads, diffs, classifies findings, and writes a `CONTEXT.md` entry point for agents.
+Fetches MR metadata, threads, diffs, and writes a `CONTEXT.md` entry point for agents.
 
 Re-running on the same MR automatically produces an **incremental** review (only changes since last run). Thread IDs (T-001, T-002, ...) are derived from position in the provider's all-threads list (creation order), so they stay stable as long as existing threads aren't deleted.
 
@@ -112,7 +113,6 @@ Creates `.review-assist/`:
     latest.patch           ← full MR diff
     incremental.patch      ← changes since last review (auto on re-run)
   outputs/
-    findings.json
     replies.json          ← agent drafts (T-NNN references)
     new-findings.json     ← agent-created issues for proactive review
     summary.md            ← changelog for MR description
@@ -121,7 +121,7 @@ Creates `.review-assist/`:
 
 ### `status [ref]` — View MR/PR status
 
-Shows MR state, author, branches, dates, labels, URL, and description. Warns if the current git branch doesn't match the active session's MR.
+Shows MR state, author, branches, dates, labels, URL, description, session info, and pending outputs. Warns if the current git branch doesn't match the active session's MR.
 
 ```bash
 review-assist status                              # show session's MR status
@@ -138,50 +138,24 @@ review-assist reset                               # clear session only
 review-assist reset --full                        # remove entire .review-assist/ directory
 ```
 
-### `publish-reply [thread]` — Post replies
+### `publish` — Publish outputs to the MR/PR
+
+Publishes pending replies, findings, description updates, and review notes. After publishing, automatically refreshes the bundle to pick up the new comments.
 
 ```bash
-review-assist publish-reply                            # publish all from replies.json
-review-assist publish-reply T-001                      # publish one thread
-review-assist publish-reply T-001 --body "Fixed!"      # inline reply
-review-assist publish-reply T-001 --resolve            # reply and resolve
-review-assist publish-reply --from custom-replies.json # custom file
-```
-
-### `publish-finding` — Create new discussion threads
-
-Publishes agent-generated findings as new discussion threads on the MR. Reads from `outputs/new-findings.json` by default.
-
-```bash
-review-assist publish-finding                     # publish all findings
-review-assist publish-finding --from custom.json  # use a different file
-review-assist publish-finding --dry-run           # preview without posting
-```
-
-Expected format for `new-findings.json`:
-```json
-[
-  { "filePath": "src/app.ts", "line": 42, "body": "Potential null dereference", "severity": "high", "category": "correctness" }
-]
-```
-
-### `update-description [ref]` — Update MR/PR description
-
-Uses HTML comment markers (`<!-- review-assist:start -->` / `<!-- review-assist:end -->`) to append or update a section in the description without overwriting the original.
-
-```bash
-review-assist update-description --from-summary     # append/update from summary.md
-review-assist update-description --from custom.md   # append/update from any file
-review-assist update-description --from-summary --replace  # replace entire description
-```
-
-### `sync-review-comment` — Sync review notes to MR
-
-Creates or updates a single comment on the MR containing review notes. The comment is identified by a marker and updated in-place on subsequent syncs.
-
-```bash
-review-assist sync-review-comment                   # sync from outputs/review-notes.md
-review-assist sync-review-comment --from notes.md   # custom file
+review-assist publish                                  # publish everything pending
+review-assist publish --no-refresh                     # skip auto-refresh after publishing
+review-assist publish replies                          # publish all from replies.json
+review-assist publish replies T-001                    # publish one thread
+review-assist publish replies T-001 --body "Fixed!"    # inline reply
+review-assist publish replies T-001 --resolve          # reply and resolve
+review-assist publish findings                         # publish new findings
+review-assist publish findings --dry-run               # preview without posting
+review-assist publish description --from-summary       # update MR description
+review-assist publish description --from custom.md     # use any file
+review-assist publish description --from-summary --replace  # replace entire description
+review-assist publish notes                            # sync review notes to MR comment
+review-assist publish notes --from notes.md            # custom file
 ```
 
 ### `init` — Set up a project for review-assist
@@ -207,7 +181,7 @@ Five layers:
 1. **Core domain** (`src/core/`) — Provider-neutral types, schemas, errors
 2. **Provider adapters** (`src/providers/`) — GitLab (now), GitHub (future)
 3. **Workspace** (`src/workspace/`) — Git operations, bundle creation
-4. **Orchestration** (`src/orchestration/`) — Workflow coordination, classification, summaries
+4. **Orchestration** (`src/orchestration/`) — Workflow coordination, summaries
 5. **CLI** (`src/cli/`) — Commander-based commands with `--json` support
 
 ### Key design decisions

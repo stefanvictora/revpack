@@ -190,9 +190,7 @@ export class GitLabProvider implements ReviewProvider {
 
   async createThread(ref: ReviewTargetRef, body: string, position?: NewThreadPosition): Promise<string> {
     const projectId = encodeURIComponent(ref.repository);
-
-    // Build the request body
-    const reqBody: Record<string, unknown> = { body };
+    const discussionsUrl = `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/discussions`;
 
     if (position) {
       // For diff-positioned threads, GitLab requires the position object
@@ -200,21 +198,51 @@ export class GitLabProvider implements ReviewProvider {
       const mr = await this.request<GitLabMR>(
         `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`,
       );
-      reqBody.position = {
+
+      // The agent provides newLine and/or oldLine directly:
+      // - Added line: newLine only
+      // - Context line: both newLine and oldLine
+      // - Removed line: oldLine only
+      const positionPayload: Record<string, unknown> = {
         position_type: 'text',
         base_sha: mr.diff_refs?.base_sha,
         head_sha: mr.diff_refs?.head_sha,
         start_sha: mr.diff_refs?.start_sha,
         new_path: position.filePath,
         old_path: position.filePath,
-        new_line: position.newLine,
-        ...(position.oldLine ? { old_line: position.oldLine } : {}),
       };
+      if (position.newLine != null) positionPayload.new_line = position.newLine;
+      if (position.oldLine != null) positionPayload.old_line = position.oldLine;
+
+      // Try diff-positioned note with the values the agent provided.
+      try {
+        const result = await this.request<GitLabDiscussion>(
+          discussionsUrl,
+          { method: 'POST', body: { body, position: positionPayload } },
+        );
+        return result.id;
+      } catch (err) {
+        // GitLab rejects with 400 "line_code can't be blank" when the line is
+        // outside every diff hunk (e.g. the agent pointed at a line far from
+        // any change).  Fall back to a general comment with a file anchor.
+        const isLineCodeError = err instanceof Error
+          && err.message.includes('400')
+          && err.message.toLowerCase().includes('line_code');
+        if (!isLineCodeError) throw err;
+      }
+
+      // Fallback: post as a general MR comment with a file/line anchor.
+      const anchor = `📌 \`${position.filePath}:${position.newLine ?? position.oldLine}\`\n\n`;
+      const result = await this.request<GitLabDiscussion>(
+        discussionsUrl,
+        { method: 'POST', body: { body: anchor + body } },
+      );
+      return result.id;
     }
 
     const result = await this.request<GitLabDiscussion>(
-      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/discussions`,
-      { method: 'POST', body: reqBody },
+      discussionsUrl,
+      { method: 'POST', body: { body } },
     );
     return result.id;
   }
@@ -416,6 +444,8 @@ export class GitLabProvider implements ReviewProvider {
 
   private detectOrigin(note: GitLabNote): CommentOrigin {
     if (note.system) return 'bot';
+    // Comments published by review-assist contain a marker
+    if (note.body?.startsWith('<!-- review-assist')) return 'bot';
     if (note.author?.username?.includes('bot') || note.author?.username?.includes('[bot]')) return 'bot';
     return 'human';
   }

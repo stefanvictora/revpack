@@ -14,39 +14,6 @@ export const reviewTargetRefSchema = z.object({
 
 export const severitySchema = z.enum(['blocker', 'high', 'medium', 'low', 'info', 'nit']);
 export const confidenceSchema = z.enum(['high', 'medium', 'low']);
-export const findingStatusSchema = z.enum(['unreviewed', 'verified', 'invalid', 'fixed', 'replied', 'resolved']);
-export const dispositionSchema = z.enum(['ignore', 'explain_only', 'reply_only', 'patch_only', 'patch_and_reply', 'escalate']);
-export const checkResultSchema = z.enum(['passed', 'failed', 'not_run', 'skipped']);
-
-export const findingSchema = z.object({
-  type: z.literal('finding'),
-  provider: providerTypeSchema,
-  repository: z.string(),
-  targetType: targetTypeSchema,
-  targetId: z.string(),
-  threadId: z.string(),
-  commentId: z.string(),
-  origin: z.enum(['human', 'bot', 'unknown']),
-  severity: severitySchema,
-  confidence: confidenceSchema,
-  category: z.string(),
-  status: findingStatusSchema,
-  disposition: dispositionSchema,
-  fileName: z.string(),
-  lineStart: z.number().optional(),
-  lineEnd: z.number().optional(),
-  title: z.string(),
-  problem: z.string(),
-  validationSummary: z.string(),
-  codegenInstructions: z.string().optional(),
-  suggestions: z.array(z.string()),
-  replyDraft: z.string(),
-  checks: z.object({
-    build: checkResultSchema,
-    tests: checkResultSchema,
-    lint: checkResultSchema,
-  }),
-});
 
 export const configSchema = z.object({
   provider: providerTypeSchema,
