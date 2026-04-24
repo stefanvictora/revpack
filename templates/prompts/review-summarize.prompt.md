@@ -19,16 +19,16 @@ Generate a changelog-style summary suitable for the MR/PR description.
    - Read `.review-assist/diffs/latest.patch` for all changes.
    - Read `REVIEW.md` and `.review-assist/rules.md` if they exist.
 
-2. **Analyze the changes** and produce a summary categorized by area of change:
+2. **Analyze the changes** and produce a summary of what the MR **changes in the application/codebase**. Categorize by area:
 
-   - **Bug Fixes** — issues that were fixed
+   - **Bug Fixes** — bugs that were fixed
    - **Improvements** — enhancements to existing functionality
    - **New Features** — new capabilities added
    - **Tests** — test additions or changes
    - **Documentation** — docs changes
    - **Chores** — config, deps, CI, refactoring
 
-   Only include categories that apply. Each bullet should describe a meaningful behavioral change, not list individual files.
+   Only include categories that have actual changes. Skip empty categories entirely.
 
 3. **Write output** to `.review-assist/outputs/summary.md`:
    ```markdown
@@ -44,10 +44,12 @@ Generate a changelog-style summary suitable for the MR/PR description.
 
 ## Guidelines
 
+- Describe what the **developer changed** based on the diff — NOT what the reviewer/agent found.
 - Write for someone who hasn't seen the code — each bullet should make sense standalone.
 - Focus on **what changed and why**, not how. Readers can see the diff.
 - Do NOT include a file list or code walkthrough.
-- Do NOT include review-specific details (threads, findings) — those go in `review-notes.md`.
+- Do NOT include review findings, agent observations, or anything the reviewer discovered.
+- Do NOT include empty categories — skip sections where there is nothing to report.
 - Keep it concise: one bullet per meaningful change.
 - Use the project's own terminology if visible in the code.
 
