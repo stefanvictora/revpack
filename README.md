@@ -161,7 +161,7 @@ review-assist publish notes --from notes.md            # custom file
 ### `init` — Set up a project for review-assist
 
 ```bash
-review-assist init             # creates REVIEW.md + .review-assist/rules.md
+review-assist init             # creates REVIEW.md
 review-assist init --prompts   # also creates .github/prompts/ with Copilot prompts
 review-assist init --dry-run   # preview without writing
 ```
@@ -192,7 +192,7 @@ Five layers:
 - **Agent-ready bundles** — Context packaged for LLM consumption, not raw API dumps
 - **Read-first, write-guarded** — No auto-push/auto-post; write operations require explicit commands
 - **Marker-based description updates** — Preserves original MR description; review-assist content lives in a marked section
-- **No file copies in bundle** — Instruction files (REVIEW.md, rules.md) and source code are read directly from the repo, not copied into the bundle
+- **No file copies in bundle** — Instruction files (REVIEW.md) and source code are read directly from the repo, not copied into the bundle
 
 ## Tests
 

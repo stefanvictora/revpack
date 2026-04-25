@@ -11,6 +11,7 @@ import type {
   PublishedAction,
 } from '../core/types.js';
 import { WorkspaceError } from '../core/errors.js';
+import { parsePatch } from './patch-parser.js';
 
 /**
  * Map from thread SHA → stable T-NNN short ID.
@@ -76,6 +77,9 @@ export class WorkspaceManager {
     await this.clearThreadFiles();
     await this.writeThreads(threads, threadIndex);
     await this.writeDiffs(diffs);
+    await this.writeLineMap();
+    await this.ensureDefaultOutputFiles();
+    await this.writeOutputSchemas();
 
     return bundle;
   }
@@ -236,10 +240,8 @@ export class WorkspaceManager {
     for (const t of threads) {
       const nonSystem = t.comments.filter((c) => !c.system);
       if (nonSystem.length > 0 && nonSystem[0].origin === 'bot') {
-        // First comment is ours → we created this thread
         selfThreadIds.add(t.threadId);
       } else if (nonSystem.some((c) => c.origin === 'bot')) {
-        // Has a bot reply after a human comment → we replied
         repliedThreadIds.add(t.threadId);
       }
     }
@@ -256,33 +258,78 @@ export class WorkspaceManager {
     if (target.webUrl) lines.push(`**URL**: ${target.webUrl}  `);
     if (options?.incremental) lines.push(`**Mode**: Incremental review (changes since last review)  `);
     lines.push('');
+    lines.push('> Read `.review-assist/INSTRUCTIONS.md` for detailed review workflow, output formats, and quality guidelines.');
+    lines.push('');
+    // Suggested reading order
+    lines.push('## Suggested reading order');
+    lines.push('');
+    lines.push('1. Read this context file.');
+    lines.push('2. Read `REVIEW.md` in the repo root if present');
+    lines.push('3. Read `.review-assist/INSTRUCTIONS.md`');
+    lines.push('4. Read relevant thread files in `.review-assist/threads/`');
+    lines.push('5. Review `diffs/latest.patch` and `diffs/line-map.json`.');
+    lines.push('6. Inspect checked-out source files when needed to understand changed behavior.');
+    lines.push('');
 
-    // MR description — important context for the reviewer
-    if (target.description?.trim()) {
-      lines.push('## MR Description');
+    // Incremental review summary
+    if (options?.incremental && options?.previousThreadIds) {
+      lines.push('## Review Mode Notes');
       lines.push('');
-      lines.push(target.description.trim());
+      lines.push('This is an incremental review.')
+      lines.push('')
+      lines.push('Focus on:')
+      lines.push('- new changes since the last review');
+      lines.push('- unresolved threads that need a useful reply');
+      lines.push('issues not already covered by previous actions');
+      lines.push('');
+      lines.push('Avoid:')
+      lines.push('- re-raising previous review-assist findings');
+      lines.push('- replying to SELF or REPLIED threads unless there is new information');
       lines.push('');
     }
 
-    // What's in the bundle
+    // MR description
+    if (target.description?.trim()) {
+      lines.push('## MR Description');
+      lines.push('');
+      lines.push('The description below is existing author-provided or previously generated text. ' +
+          'Treat it as context only. Verify behavior against the diff and source code.');
+      lines.push('');
+      lines.push('````markdown')
+      lines.push(target.description.trim());
+      lines.push('````');
+      lines.push('');
+    }
+
+    // Bundle contents
     lines.push('## Bundle Contents');
     lines.push('');
     lines.push('| Path | Description |');
     lines.push('|------|-------------|');
-    lines.push('| `target.json` | MR/PR metadata |');
+    lines.push('| `.review-assist/INSTRUCTIONS.md` | Stable review workflow and output format rules |');
+    lines.push('| `.review-assist/target.json` | MR/PR metadata |');
     const threadFileCount = unresolvedThreads.length + generalComments.length;
     if (threadFileCount > 0) {
-      lines.push(`| \`threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
+      lines.push(`| \`.review-assist/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
     }
-    lines.push(`| \`diffs/latest.patch\` | Full diff (${diffs.length} file(s)) |`);
+    lines.push(`| \`.review-assist/diffs/latest.patch\` | Full diff (${diffs.length} file(s)) |`);
+    lines.push('| `.review-assist/diffs/line-map.json` | Parsed line map for positional anchors |');
     if (options?.incremental) {
-      lines.push('| `diffs/incremental.patch` | Changes since last review |');
+      lines.push('| `.review-assist/diffs/incremental.patch` | Changes since last review |');
     }
-    lines.push('| `outputs/` | Write results here |');
+    lines.push('| `.review-assist/outputs/` | Write results here |');
     lines.push('');
 
-    // Thread overview table
+    // Changed files
+    lines.push('## Changed Files');
+    lines.push('');
+    for (const d of diffs) {
+      const tag = d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
+      lines.push(`- \`${d.newPath || d.oldPath}\` (${tag})`);
+    }
+    lines.push('');
+
+    // Thread overview
     if (unresolvedThreads.length > 0) {
       lines.push('## Unresolved Threads');
       lines.push('');
@@ -306,12 +353,11 @@ export class WorkspaceManager {
       lines.push('');
     }
 
-    // General (non-resolvable) comments for context
+    // General comments
     if (generalComments.length > 0) {
       lines.push('## General Comments');
       lines.push('');
-      lines.push('These are non-resolvable comments (general notes, not tied to specific code review threads).');
-      lines.push('They may provide useful context but do not require a reply.');
+      lines.push('General comments are non-resolvable MR/PR notes. They may provide context but usually do not require replies.');
       lines.push('');
       for (const t of generalComments) {
         const prefix = threadIndex.get(t.threadId) ?? '?';
@@ -322,47 +368,11 @@ export class WorkspaceManager {
       lines.push('');
     }
 
-    // Changed files overview
-    lines.push('## Changed Files');
-    lines.push('');
-    for (const d of diffs) {
-      const tag = d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
-      lines.push(`- \`${d.newPath || d.oldPath}\` (${tag})`);
-    }
-    lines.push('');
-
-    // Incremental review notes
-    if (options?.incremental && options?.previousThreadIds) {
-      const newThreads = unresolvedThreads.filter((t) => !options.previousThreadIds!.has(t.threadId));
-      const carriedOver = unresolvedThreads.filter((t) => options.previousThreadIds!.has(t.threadId));
-      const resolvedCount = [...options.previousThreadIds].filter(
-        (id) => !unresolvedThreads.some((t) => t.threadId === id),
-      ).length;
-
-      lines.push('## Incremental Review Summary');
-      lines.push('');
-      if (newThreads.length > 0) {
-        lines.push(`- **${newThreads.length} new thread(s)** since last review (marked **NEW** above)`);
-      }
-      if (carriedOver.length > 0) {
-        lines.push(`- **${carriedOver.length} carried-over thread(s)** still unresolved`);
-      }
-      if (resolvedCount > 0) {
-        lines.push(`- **${resolvedCount} thread(s) resolved** since last review`);
-      }
-      lines.push('- Check `diffs/incremental.patch` for what changed since last review');
-      lines.push('- Focus on **NEW** threads — carried-over threads may already have pending replies');
-      lines.push('- Threads marked **SELF** were published by you in a prior iteration — skip unless still unresolved after your fix');
-      lines.push('- Threads marked **REPLIED** already have a reply from a prior iteration');
-      lines.push('');
-    }
-
-    // Previous actions — tell the agent what it already did
+    // Previous actions
     if (options?.publishedActions && options.publishedActions.length > 0) {
       lines.push('## Previous Actions (this session)');
       lines.push('');
-      lines.push('These actions were published by `review-assist` in prior iterations of this session.');
-      lines.push('Threads marked **SELF** above were created by your findings. Do not re-raise the same issues.');
+      lines.push('These actions were published by `review-assist` in prior iterations of this session. Do not re-raise the same issues.');
       lines.push('');
       lines.push('| Action | Target | Detail |');
       lines.push('|--------|--------|--------|');
@@ -374,51 +384,67 @@ export class WorkspaceManager {
       lines.push('');
     }
 
-    // Workflow instructions
-    lines.push('## Suggested Workflow');
-    lines.push('');
-    lines.push('1. Read `REVIEW.md` and `.review-assist/rules.md` in the repo root if present');
-    lines.push('2. Read each thread `.md` file in `.review-assist/threads/`');
-    lines.push('3. Check the referenced source code and `diffs/latest.patch`');
-    lines.push('4. For each existing thread: draft a reply, include a suggestion block if you know the fix');
-    lines.push('5. Review the full diff for additional issues not yet raised by reviewers');
-    lines.push('6. Write results to `outputs/` — **do NOT modify source files directly**:');
-    lines.push('   - `outputs/replies.json` — replies to existing threads, use **T-NNN** short IDs:');
-    lines.push('     ```json');
-    lines.push('     [{ "threadId": "T-001", "body": "Good catch!\\n\\n```suggestion:-0+0\\nfixed line\\n```", "resolve": false }]');
-    lines.push('     ```');
-    lines.push('     Set `"resolve": true` only for threads you created yourself (**SELF**). Do NOT resolve threads from other reviewers.');
-    lines.push('   - `outputs/new-findings.json` — new issues found during proactive review:');
-    lines.push('     ```json');
-    lines.push('     [{ "filePath": "src/app.ts", "newLine": 42, "body": "Potential null dereference\\n\\n```suggestion:-0+0\\nif (user?.name) {\\n```", "severity": "high", "category": "correctness" }]');
-    lines.push('     ```');
-    lines.push('     Each finding needs `filePath` and at least one of `newLine` / `oldLine`:');
-    lines.push('     - **Added line** (line with `+` in the diff): set `newLine` only');
-    lines.push('     - **Context line** (unchanged, visible in the diff): set both `newLine` and `oldLine`');
-    lines.push('     - **Removed line** (line with `-` in the diff): set `oldLine` only');
-    lines.push('     Read `diffs/latest.patch` hunk headers (`@@ -old,count +new,count @@`) to determine the correct values.');
-    lines.push('     For non-trivial findings, include a `suggestion` block and/or an agent handover prompt (see review prompt for format).');
-    lines.push('   - `outputs/summary.md` — Summary of what the MR changes in the application (based on the diff). Only include categories with content. Do NOT include review findings or empty sections.');
-    lines.push('   - `outputs/review-notes.md` — Public review note for other MR participants. Do NOT reference internal bundle files.');
-    lines.push('');
-    lines.push('**Important**: Check existing threads and the Previous Actions table before creating new findings.');
-    lines.push('Do not re-raise issues that are already tracked or were published by you (**SELF** threads).');
-    lines.push('Only raise issues you are confident about. Do NOT modify source files — use suggestion blocks instead.');
-    lines.push('');
-    lines.push('Publish results back to GitLab/GitHub:');
-    lines.push('```');
-    lines.push(`review-assist publish                  # publish everything pending (replies + findings + notes)`);
-    lines.push(`review-assist publish replies           # publish all replies (removes published entries)`);
-    lines.push(`review-assist publish replies T-001     # publish one specific reply`);
-    lines.push(`review-assist publish findings          # publish new findings (removes published entries)`);
-    lines.push(`review-assist publish description --from-summary   # update MR description`);
-    lines.push(`review-assist publish notes             # create/update review comment on the MR`);
-    lines.push('```');
-
     const content = lines.join('\n');
     const contextPath = path.join(this.baseDir, 'CONTEXT.md');
     await fs.writeFile(contextPath, content, 'utf-8');
     return contextPath;
+  }
+
+  // ─── Line map & output scaffolding ──────────────────────
+
+  /**
+   * Parse diffs/latest.patch and write diffs/line-map.json.
+   */
+  private async writeLineMap(): Promise<void> {
+    const patchPath = path.join(this.baseDir, 'diffs', 'latest.patch');
+    let patchContent: string;
+    try {
+      patchContent = await fs.readFile(patchPath, 'utf-8');
+    } catch {
+      return; // No patch file yet
+    }
+    const lineMap = parsePatch(patchContent);
+    await this.writeJson(path.join(this.baseDir, 'diffs', 'line-map.json'), lineMap);
+  }
+
+  /**
+   * Ensure default empty output files exist so agents and automation
+   * always have a predictable set of files.
+   */
+  private async ensureDefaultOutputFiles(): Promise<void> {
+    const outputDir = path.join(this.baseDir, 'outputs');
+    const defaults: [string, string][] = [
+      ['replies.json', '[]'],
+      ['new-findings.json', '[]'],
+      ['summary.md', ''],
+      ['review-notes.md', ''],
+    ];
+    for (const [name, content] of defaults) {
+      const filePath = path.join(outputDir, name);
+      try {
+        await fs.access(filePath);
+        // File exists — don't overwrite
+      } catch {
+        await fs.writeFile(filePath, content, 'utf-8');
+      }
+    }
+  }
+
+  /**
+   * Write JSON schema files for output validation.
+   */
+  private async writeOutputSchemas(): Promise<void> {
+    const outputDir = path.join(this.baseDir, 'outputs');
+    await fs.writeFile(
+      path.join(outputDir, 'new-findings.schema.json'),
+      JSON.stringify(NEW_FINDINGS_JSON_SCHEMA, null, 2),
+      'utf-8',
+    );
+    await fs.writeFile(
+      path.join(outputDir, 'replies.schema.json'),
+      JSON.stringify(REPLIES_JSON_SCHEMA, null, 2),
+      'utf-8',
+    );
   }
 
   // ─── Internal helpers ───────────────────────────────────
@@ -523,3 +549,55 @@ export class WorkspaceManager {
     await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
   }
 }
+
+// ─── JSON Schemas for output files ────────────────────────
+
+const NEW_FINDINGS_JSON_SCHEMA = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  title: 'new-findings',
+  description: 'Array of review findings to publish as GitLab/GitHub diff threads.',
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['oldPath', 'newPath', 'body', 'severity', 'category'],
+    properties: {
+      oldPath: { type: 'string', minLength: 1, description: 'Path in the old (base) version of the diff.' },
+      newPath: { type: 'string', minLength: 1, description: 'Path in the new (head) version of the diff.' },
+      oldLine: { type: 'integer', minimum: 1, description: 'Line number in the old file (for removed/context lines).' },
+      newLine: { type: 'integer', minimum: 1, description: 'Line number in the new file (for added/context lines).' },
+      body: { type: 'string', minLength: 1, description: 'Review comment body (markdown).' },
+      severity: { type: 'string', enum: ['blocker', 'high', 'medium', 'low', 'nit'] },
+      category: {
+        type: 'string',
+        enum: ['security', 'correctness', 'performance', 'testing', 'architecture', 'style', 'documentation', 'naming', 'error-handling', 'general'],
+      },
+    },
+    anyOf: [
+      { required: ['oldLine'] },
+      { required: ['newLine'] },
+    ],
+    additionalProperties: false,
+  },
+};
+
+const REPLIES_JSON_SCHEMA = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  title: 'replies',
+  description: 'Array of replies to existing MR/PR threads.',
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['threadId', 'body', 'resolve'],
+    properties: {
+      threadId: { type: 'string', minLength: 1, pattern: '^T-\\d{3,}$', description: 'T-NNN short ID of the thread.' },
+      body: { type: 'string', minLength: 1, description: 'Reply body (markdown).' },
+      resolve: { type: 'boolean', description: 'Whether to resolve the thread after replying.' },
+      disposition: {
+        type: 'string',
+        enum: ['already_fixed', 'explain_only', 'reply_only', 'suggest_fix', 'disagree', 'escalate'],
+        description: 'Internal disposition tag (not published to GitLab).',
+      },
+    },
+    additionalProperties: false,
+  },
+};

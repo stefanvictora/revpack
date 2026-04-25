@@ -21,21 +21,14 @@ const REVIEW_CONFIG_FILES: InitFile[] = [
     label: 'Review guidelines',
   },
   {
-    target: path.join('.review-assist', 'rules.md'),
-    source: 'rules.md',
-    label: 'Project review rules',
+    target: path.join('.review-assist', 'INSTRUCTIONS.md'),
+    source: 'INSTRUCTIONS.md',
+    label: 'Project review instructions',
   },
   {
     target: path.join('.review-assist', '.gitignore'),
     inline: [
-      '# review-assist runtime output (not committed)',
-      'session.json',
-      'target.json',
-      'threads/',
-      'diffs/',
-      'outputs/',
-      '',
-      '# rules.md IS tracked — do not ignore it',
+      '*',
     ].join('\n'),
     label: 'Runtime output gitignore',
   },
@@ -129,9 +122,6 @@ export function registerInitCommand(program: Command): void {
         console.log(chalk.dim('Next steps:'));
         if (created.includes('REVIEW.md')) {
           console.log(chalk.dim('  1. Edit REVIEW.md — tailor review priorities to your project'));
-        }
-        if (created.includes(path.join('.review-assist', 'rules.md'))) {
-          console.log(chalk.dim('  2. Edit .review-assist/rules.md — uncomment and fill in your stack, patterns, and rules'));
         }
         if (!opts.prompts) {
           console.log(chalk.dim('  Tip: run with --prompts to also install Copilot Chat prompt files'));

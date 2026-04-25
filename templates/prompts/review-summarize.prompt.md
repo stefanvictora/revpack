@@ -1,61 +1,49 @@
 ---
 agent: agent
-description: "Generate a changelog-style summary for an MR/PR description"
+description: "Generate an MR/PR description summary from the review-assist bundle"
 ---
 
 # MR/PR Summary Generation
 
-You are a code review assistant. A workspace bundle has been prepared by `review-assist review` in the `.review-assist/` directory.
+A workspace bundle has been prepared in `.review-assist/`.
 
-## Your task
+Your task is to generate `.review-assist/outputs/summary.md` for the MR/PR description.
 
-Generate a changelog-style summary suitable for the MR/PR description.
+Do not perform a code review.
+Do not create findings, thread replies, or review notes.
+Do not modify source files.
+Do not publish anything unless the developer explicitly asks.
 
 ## Steps
 
-1. **Read context**
-   - Start with `.review-assist/CONTEXT.md` for an overview.
-   - Read `.review-assist/target.json` for full MR metadata.
-   - Read `.review-assist/diffs/latest.patch` for all changes.
-   - Read `REVIEW.md` and `.review-assist/rules.md` if they exist.
+1. Read `.review-assist/CONTEXT.md`.
+2. Read `.review-assist/INSTRUCTIONS.md`.
+3. Read `REVIEW.md` if present.
+4. Read `.review-assist/diffs/latest.patch`.
+5. Use checked-out source files only when the diff alone is not enough to understand the changed behavior.
+6. Write `.review-assist/outputs/summary.md`.
+7. Present the generated summary to the developer.
 
-2. **Analyze the changes** and produce a summary of what the MR **changes in the application/codebase**. Categorize by area:
+Follow `.review-assist/INSTRUCTIONS.md` for the complete `outputs/summary.md` format, allowed categories, examples, and style rules.
 
-   - **Bug Fixes** — bugs that were fixed
-   - **Improvements** — enhancements to existing functionality
-   - **New Features** — new capabilities added
-   - **Tests** — test additions or changes
-   - **Documentation** — docs changes
-   - **Chores** — config, deps, CI, refactoring
+## Scope
 
-   Only include categories that have actual changes. Skip empty categories entirely.
+In this mode, only produce the MR/PR summary.
 
-3. **Write output** to `.review-assist/outputs/summary.md`:
-   ```markdown
-   * **Bug Fixes**
-     * Fixed null dereference in user authentication flow
-   * **Improvements**
-     * Simplified error handling in API middleware
-   * **New Features**
-     * Added OAuth2 login support
-   ```
+Do not write or update:
 
-4. Present it to the developer for review before publishing.
+- `.review-assist/outputs/replies.json`
+- `.review-assist/outputs/new-findings.json`
+- `.review-assist/outputs/review-notes.md`
 
-## Guidelines
-
-- Describe what the **developer changed** based on the diff — NOT what the reviewer/agent found.
-- Write for someone who hasn't seen the code — each bullet should make sense standalone.
-- Focus on **what changed and why**, not how. Readers can see the diff.
-- Do NOT include a file list or code walkthrough.
-- Do NOT include review findings, agent observations, or anything the reviewer discovered.
-- Do NOT include empty categories — skip sections where there is nothing to report.
-- Keep it concise: one bullet per meaningful change.
-- Use the project's own terminology if visible in the code.
+Do not mention review findings, suspected issues, approval status, unresolved threads, or internal review-assist files in the summary.
 
 ## Publishing
 
-After the developer approves:
-```
+After the developer approves, they may run:
+
+```bash
 review-assist publish description --from-summary
 ```
+
+Do not run publishing commands unless explicitly asked.

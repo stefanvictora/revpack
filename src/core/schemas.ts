@@ -12,8 +12,52 @@ export const reviewTargetRefSchema = z.object({
   targetId: z.string().min(1),
 });
 
-export const severitySchema = z.enum(['blocker', 'high', 'medium', 'low', 'info', 'nit']);
-export const confidenceSchema = z.enum(['high', 'medium', 'low']);
+export const severitySchema = z.enum(['blocker', 'high', 'medium', 'low', 'nit']);
+
+export const findingCategorySchema = z.enum([
+  'security',
+  'correctness',
+  'performance',
+  'testing',
+  'architecture',
+  'style',
+  'documentation',
+  'naming',
+  'error-handling',
+  'general',
+]);
+
+export const newFindingSchema = z.object({
+  oldPath: z.string().min(1),
+  newPath: z.string().min(1),
+  oldLine: z.number().int().positive().optional(),
+  newLine: z.number().int().positive().optional(),
+  body: z.string().min(1),
+  severity: severitySchema,
+  category: findingCategorySchema,
+}).refine(
+  (f) => f.oldLine != null || f.newLine != null,
+  { message: 'At least one of oldLine or newLine is required' },
+);
+
+export const replyDispositionSchema = z.enum([
+  'already_fixed',
+  'explain_only',
+  'reply_only',
+  'suggest_fix',
+  'disagree',
+  'escalate',
+]);
+
+export const replyDraftSchema = z.object({
+  threadId: z.string().min(1),
+  body: z.string().min(1),
+  resolve: z.boolean(),
+  disposition: replyDispositionSchema.optional(),
+});
+
+export const newFindingsArraySchema = z.array(newFindingSchema);
+export const repliesArraySchema = z.array(replyDraftSchema);
 
 export const configSchema = z.object({
   provider: providerTypeSchema,

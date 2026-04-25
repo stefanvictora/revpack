@@ -193,23 +193,37 @@ export class GitLabProvider implements ReviewProvider {
     const discussionsUrl = `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/discussions`;
 
     if (position) {
-      // For diff-positioned threads, GitLab requires the position object
-      // with SHA refs from the MR's diff_refs
-      const mr = await this.request<GitLabMR>(
-        `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`,
+      // Fetch the latest MR version to get accurate SHA refs for diff positioning.
+      // GitLab recommends using version SHAs over diff_refs for diff notes.
+      const versions = await this.request<GitLabDiffVersion[]>(
+        `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/versions`,
       );
+      let baseSha: string | undefined;
+      let headSha: string | undefined;
+      let startSha: string | undefined;
 
-      // The agent provides newLine and/or oldLine directly:
-      // - Added line: newLine only
-      // - Context line: both newLine and oldLine
-      // - Removed line: oldLine only
+      if (versions.length > 0) {
+        const latest = versions[0];
+        baseSha = latest.base_commit_sha;
+        headSha = latest.head_commit_sha;
+        startSha = latest.start_commit_sha;
+      } else {
+        // Fallback to MR diff_refs
+        const mr = await this.request<GitLabMR>(
+          `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`,
+        );
+        baseSha = mr.diff_refs?.base_sha;
+        headSha = mr.diff_refs?.head_sha;
+        startSha = mr.diff_refs?.start_sha;
+      }
+
       const positionPayload: Record<string, unknown> = {
         position_type: 'text',
-        base_sha: mr.diff_refs?.base_sha,
-        head_sha: mr.diff_refs?.head_sha,
-        start_sha: mr.diff_refs?.start_sha,
-        new_path: position.filePath,
-        old_path: position.filePath,
+        base_sha: baseSha,
+        head_sha: headSha,
+        start_sha: startSha,
+        old_path: position.oldPath,
+        new_path: position.newPath,
       };
       if (position.newLine != null) positionPayload.new_line = position.newLine;
       if (position.oldLine != null) positionPayload.old_line = position.oldLine;
@@ -232,7 +246,8 @@ export class GitLabProvider implements ReviewProvider {
       }
 
       // Fallback: post as a general MR comment with a file/line anchor.
-      const anchor = `📌 \`${position.filePath}:${position.newLine ?? position.oldLine}\`\n\n`;
+      const displayPath = position.newPath || position.oldPath;
+      const anchor = `📌 \`${displayPath}:${position.newLine ?? position.oldLine}\`\n\n`;
       const result = await this.request<GitLabDiscussion>(
         discussionsUrl,
         { method: 'POST', body: { body: anchor + body } },

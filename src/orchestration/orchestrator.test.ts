@@ -350,11 +350,12 @@ describe('ReviewOrchestrator', () => {
       await orchestrator.review('!42', 'group/project');
 
       const finding = {
-        filePath: 'src/app.ts',
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
         newLine: 42,
         body: 'Potential null dereference here',
         severity: 'high' as const,
-        category: 'correctness',
+        category: 'correctness' as const,
       };
 
       const threadId = await orchestrator.publishFinding(finding, 'group/project');
@@ -362,7 +363,7 @@ describe('ReviewOrchestrator', () => {
       expect(mockProvider.createThread).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
         `<!-- review-assist -->\nPotential null dereference here`,
-        { filePath: 'src/app.ts', newLine: 42, oldLine: undefined },
+        { oldPath: 'src/app.ts', newPath: 'src/app.ts', newLine: 42, oldLine: undefined },
       );
     });
   });

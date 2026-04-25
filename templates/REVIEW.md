@@ -41,5 +41,4 @@
 | high     | Should fix. Bug, incorrect behavior. | Usually |
 | medium   | Consider fixing. Potential issue, missing edge case. | No |
 | low      | Minor improvement. | No |
-| info     | FYI, question, or suggestion for future. | No |
 | nit      | Style/preference. Take it or leave it. | No |

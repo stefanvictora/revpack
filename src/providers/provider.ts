@@ -10,8 +10,10 @@ import type {
  * Position for creating a new discussion thread on a diff.
  */
 export interface NewThreadPosition {
-  /** File path (new_path in the diff). */
-  filePath: string;
+  /** Path in the old (base) version of the diff. */
+  oldPath: string;
+  /** Path in the new (head) version of the diff. */
+  newPath: string;
   /** Line number in the new version of the file (for added/context lines). */
   newLine?: number;
   /** Line number in the old version of the file (for removed/context lines). */

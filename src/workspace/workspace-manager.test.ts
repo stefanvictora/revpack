@@ -367,21 +367,18 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('Incremental review');
       expect(content).toContain('**NEW**');
-      expect(content).toContain('## Incremental Review Summary');
-      expect(content).toContain('1 new thread(s)');
-      expect(content).toContain('1 carried-over thread(s)');
+      expect(content).toContain('## Review Mode Notes');
     });
 
     it('includes workflow instructions', async () => {
       const { threadIndex } = await createBundle(manager, makeTarget(), []);
 
-      const contextPath = await manager.writeContext(makeTarget(), [], [], [], threadIndex);
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Suggested Workflow');
+      expect(content).toContain('## Suggested reading order');
       expect(content).toContain('REVIEW.md');
-      expect(content).toContain('replies.json');
-      expect(content).toContain('T-NNN');
+      expect(content).toContain('INSTRUCTIONS.md');
     });
 
     it('shows general comments section for non-resolvable human threads', async () => {

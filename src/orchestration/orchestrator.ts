@@ -311,7 +311,7 @@ export class ReviewOrchestrator {
     return this.provider.createThread(
       targetRef,
       markedBody,
-      { filePath: finding.filePath, newLine: finding.newLine, oldLine: finding.oldLine },
+      { oldPath: finding.oldPath, newPath: finding.newPath, newLine: finding.newLine, oldLine: finding.oldLine },
     );
   }
 

@@ -3,6 +3,8 @@ import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import type { NewFinding } from '../../core/types.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
+import { parsePatch } from '../../workspace/patch-parser.js';
+import { validateFindings, formatValidationErrors } from '../../workspace/finding-validator.js';
 import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 
 // ─── Marker-based description merge ─────────────────────
@@ -61,7 +63,7 @@ async function saveRepliesJson(filePath: string, entries: ReplyEntry[]): Promise
   await fs.writeFile(filePath, JSON.stringify(entries, null, 2), 'utf-8');
 }
 
-async function loadNewFindings(filePath: string): Promise<NewFinding[]> {
+async function loadNewFindings(filePath: string): Promise<unknown[]> {
   let raw: string;
   try {
     raw = await fs.readFile(filePath, 'utf-8');
@@ -71,9 +73,9 @@ async function loadNewFindings(filePath: string): Promise<NewFinding[]> {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) throw new Error('expected array');
-    return parsed as NewFinding[];
+    return parsed as unknown[];
   } catch {
-    throw new Error(`${filePath} must be a JSON array of { filePath, line, body, severity, category } objects`);
+    throw new Error(`${filePath} must be a JSON array of finding objects`);
   }
 }
 
@@ -208,13 +210,39 @@ async function publishFindings(opts: {
   noRefresh?: boolean;
 }): Promise<number> {
   const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
-  const findings = await loadNewFindings(filePath);
-  if (findings.length === 0) return 0;
+  const rawFindings = await loadNewFindings(filePath);
+  if (rawFindings.length === 0) return 0;
+
+  // Load line map for validation
+  const patchPath = '.review-assist/diffs/latest.patch';
+  let patchContent: string;
+  try {
+    patchContent = await fs.readFile(patchPath, 'utf-8');
+  } catch {
+    throw new Error(
+      `Cannot validate findings: ${patchPath} not found.\n` +
+      `Run \`review-assist review\` first to generate the diff bundle.`,
+    );
+  }
+
+  const lineMap = parsePatch(patchContent);
+  const { valid: findings, errors } = validateFindings(rawFindings, lineMap);
+
+  if (errors.length > 0) {
+    console.error(chalk.red(`\n${errors.length} finding(s) failed validation:\n`));
+    console.error(formatValidationErrors(errors));
+    console.error('');
+    throw new Error(
+      `${errors.length} invalid finding(s) in ${filePath}. Fix the positions and retry.\n` +
+      `The output file has not been modified.`,
+    );
+  }
 
   if (opts.dryRun) {
     console.log(chalk.bold(`${findings.length} finding(s) would be published:\n`));
     for (const f of findings) {
-      console.log(`  ${chalk.yellow(f.severity)} ${chalk.dim(f.category)} ${f.filePath}:${f.newLine ?? f.oldLine}`);
+      const displayPath = f.newPath || f.oldPath;
+      console.log(`  ${chalk.yellow(f.severity)} ${chalk.dim(f.category)} ${displayPath}:${f.newLine ?? f.oldLine}`);
       console.log(`    ${f.body.split('\n')[0].slice(0, 100)}`);
     }
     return 0;
@@ -233,19 +261,21 @@ async function publishFindings(opts: {
         { ...finding, body },
         defaultRepo,
       );
-      console.log(chalk.green(`  \u2713 ${finding.filePath}:${finding.newLine ?? finding.oldLine} (${finding.severity})`));
+      const displayPath = finding.newPath || finding.oldPath;
+      console.log(chalk.green(`  \u2713 ${displayPath}:${finding.newLine ?? finding.oldLine} (${finding.severity})`));
       published++;
       await ws.appendPublishedAction({
         type: 'finding',
         threadId: createdThreadId,
-        filePath: finding.filePath,
+        filePath: displayPath,
         line: finding.newLine ?? finding.oldLine,
         detail: `${finding.severity} ${finding.category}: ${finding.body.split('\n')[0].slice(0, 60)}`,
         publishedAt: new Date().toISOString(),
         createdThreadId,
       });
     } catch (err) {
-      console.error(chalk.red(`  \u2717 ${finding.filePath}:${finding.newLine ?? finding.oldLine}: ${err instanceof Error ? err.message : String(err)}`));
+      const displayPath = finding.newPath || finding.oldPath;
+      console.error(chalk.red(`  \u2717 ${displayPath}:${finding.newLine ?? finding.oldLine}: ${err instanceof Error ? err.message : String(err)}`));
       remaining.push(finding);
     }
   }
@@ -349,6 +379,7 @@ export function registerPublishCommand(program: Command): void {
 
       // Notes and description are optional — try but don't fail
       try { total += await publishNotes({}); } catch { /* no notes */ }
+      try { total += await publishDescription({ fromSummary: true }); } catch { /* no description */ }
 
       if (total === 0) {
         console.log(chalk.dim('Nothing to publish.'));

@@ -2,7 +2,18 @@
 
 // ─── Enums ───────────────────────────────────────────────
 
-export type Severity = 'blocker' | 'high' | 'medium' | 'low' | 'info' | 'nit';
+export type Severity = 'blocker' | 'high' | 'medium' | 'low' | 'nit';
+export type FindingCategory =
+  | 'security'
+  | 'correctness'
+  | 'performance'
+  | 'testing'
+  | 'architecture'
+  | 'style'
+  | 'documentation'
+  | 'naming'
+  | 'error-handling'
+  | 'general';
 export type Confidence = 'high' | 'medium' | 'low';
 export type CommentOrigin = 'human' | 'bot' | 'unknown';
 export type ProviderType = 'gitlab' | 'github';
@@ -105,15 +116,6 @@ export interface ReviewThread extends ReviewThreadRef {
   comments: ReviewComment[];
 }
 
-// ─── Reply Draft ─────────────────────────────────────────
-
-export interface ReplyDraft {
-  threadId: string;
-  body: string;
-  resolve: boolean;
-  createdAt: string;
-}
-
 // ─── Patch Proposal ──────────────────────────────────────
 
 export interface PatchProposal {
@@ -147,18 +149,41 @@ export interface Learning {
  * Written to outputs/new-findings.json for publishing via `publish findings`.
  */
 export interface NewFinding {
-  /** File path relative to repo root. */
-  filePath: string;
-  /** Line number in the new version of the file (right side of the diff). */
+  /** Path in the old (base) version of the diff. For non-renamed files, same as newPath. */
+  oldPath: string;
+  /** Path in the new (head) version of the diff. For non-renamed files, same as oldPath. */
+  newPath: string;
+  /** Line number in the new version of the file (right side of the diff). Set for added/context lines. */
   newLine?: number;
-  /** Line number in the old version of the file (left side of the diff). Required for context/removed lines. */
+  /** Line number in the old version of the file (left side of the diff). Set for removed/context lines. */
   oldLine?: number;
   /** The review comment body (markdown). */
   body: string;
   /** Severity for prioritization. */
   severity: Severity;
   /** Category tag. */
-  category: string;
+  category: FindingCategory;
+}
+
+/**
+ * Reply disposition (internal tracking, not published to GitLab).
+ */
+export type ReplyDisposition =
+  | 'already_fixed'
+  | 'explain_only'
+  | 'reply_only'
+  | 'suggest_fix'
+  | 'disagree'
+  | 'escalate';
+
+/**
+ * A reply to an existing thread, written to outputs/replies.json.
+ */
+export interface ReplyDraft {
+  threadId: string;
+  body: string;
+  resolve: boolean;
+  disposition?: ReplyDisposition;
 }
 
 // ─── Workspace Bundle ────────────────────────────────────
