@@ -594,7 +594,7 @@ const REPLIES_JSON_SCHEMA = {
       resolve: { type: 'boolean', description: 'Whether to resolve the thread after replying.' },
       disposition: {
         type: 'string',
-        enum: ['already_fixed', 'explain_only', 'reply_only', 'suggest_fix', 'disagree', 'escalate'],
+        enum: ['already_fixed', 'explain', 'suggest_fix', 'disagree', 'escalate'],
         description: 'Internal disposition tag (not published to GitLab).',
       },
     },

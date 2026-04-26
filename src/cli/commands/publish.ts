@@ -372,14 +372,14 @@ export function registerPublishCommand(program: Command): void {
   publish.action(async (opts: { refresh?: boolean }) => {
     try {
       let total = 0;
+      // Notes and description are optional — try but don't fail
+      try { total += await publishNotes({}); } catch { /* no notes */ }
+      try { total += await publishDescription({ fromSummary: true }); } catch { /* no description */ }
+
       const replyCount = await publishReplies({ noRefresh: true });
       total += replyCount;
       const findingCount = await publishFindings({ noRefresh: true });
       total += findingCount;
-
-      // Notes and description are optional — try but don't fail
-      try { total += await publishNotes({}); } catch { /* no notes */ }
-      try { total += await publishDescription({ fromSummary: true }); } catch { /* no description */ }
 
       if (total === 0) {
         console.log(chalk.dim('Nothing to publish.'));

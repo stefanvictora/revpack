@@ -170,8 +170,7 @@ export interface NewFinding {
  */
 export type ReplyDisposition =
   | 'already_fixed'
-  | 'explain_only'
-  | 'reply_only'
+  | 'explain'
   | 'suggest_fix'
   | 'disagree'
   | 'escalate';

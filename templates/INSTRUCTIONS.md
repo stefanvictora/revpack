@@ -47,16 +47,33 @@ Use checked-out source files to understand the current MR/PR state when the diff
 
 Use `.review-assist/threads/` and the unresolved thread overview in `.review-assist/CONTEXT.md`.
 
-Only write a reply when one of these is true:
+`outputs/replies.json` must contain only replies that should actually be posted back to the MR/PR.
 
-- the thread asks a question
-- you can confirm the issue is fixed
-- you can provide a concrete suggestion
-- you disagree and can explain why
-- the thread is stale or no longer applies
-- the thread needs a useful agent handover prompt for a non-trivial fix
+Do not include entries for threads you decided to ignore.
 
-Do not reply just to acknowledge a thread.
+An unresolved thread does not require a reply just because it is unresolved.
+
+Only write a reply when the reply adds useful information for another human reviewer or author.
+
+Write a reply only when one of these is true:
+
+- the thread asks a concrete question and you can answer it
+- the thread reports a concrete issue and you can confirm it is fixed
+- the thread reports a concrete issue and you can provide a fix suggestion
+- the thread reports a concrete issue and you disagree with a clear technical reason
+- the thread has follow-up discussion that needs clarification
+- the thread was created by review-assist (**SELF**) and you can resolve it because the issue is now fixed
+
+Do not reply to:
+
+- test comments
+- placeholder comments
+- acknowledgements
+- comments without a concrete code concern
+- general notes that do not require an answer
+- threads where your only response would be “acknowledged”, “no action needed”, “nothing to do”, or “no code change suggested”
+
+For those cases, omit the thread from `outputs/replies.json`.
 
 Skip threads marked **SELF** unless they have new follow-up from others or you are resolving your own previously published finding.
 
@@ -67,6 +84,14 @@ Set `"resolve": true` only for threads you created yourself (**SELF** threads). 
 ## `outputs/replies.json`
 
 Write replies to existing threads as a JSON array.
+
+If no existing thread needs a useful reply, write:
+
+```json
+[]
+```
+
+Example:
 
 ```json
 [
@@ -92,11 +117,12 @@ Optional but recommended:
 Allowed dispositions:
 
 - `already_fixed`
-- `explain_only`
-- `reply_only`
+- `explain`
 - `suggest_fix`
 - `disagree`
 - `escalate`
+
+If the reply does not add technical value, omit it.
 
 ---
 

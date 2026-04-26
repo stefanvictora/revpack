@@ -42,8 +42,7 @@ export const newFindingSchema = z.object({
 
 export const replyDispositionSchema = z.enum([
   'already_fixed',
-  'explain_only',
-  'reply_only',
+  'explain',
   'suggest_fix',
   'disagree',
   'escalate',
