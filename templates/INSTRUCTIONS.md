@@ -360,7 +360,7 @@ Agent handover prompts are complementary to GitLab suggestion blocks.
 
 Include an agent handover prompt when the fix is clear and a developer may want an AI coding agent to implement the full change.
 
-Use a handover prompt especially for:
+A handover prompt is especially useful for:
 
 - findings that require edits in multiple places
 - fixes that require adding or updating tests
@@ -372,9 +372,29 @@ If a small local code suggestion is possible, include it even when you also incl
 
 Good pattern:
 
-1. Explain the issue.
-2. Provide a small suggestion block for the direct local fix.
+1. Explain the issue in the finding or reply.
+2. Provide a small suggestion block for the direct local fix, if safely applicable.
 3. Add a handover prompt for tests, imports, related changes, or broader cleanup.
+
+### Write for a fixing agent with limited context
+
+Write handover prompts for a fixing agent that may only see the current workspace.
+
+Avoid relying on hidden review context. Do not say “restore the removed code”, “use the original implementation”, “revert this change”, or “add back the previous call” unless you also describe the desired final behavior or include the exact code/pattern to restore.
+
+Prefer behavior-oriented wording:
+
+- “Ensure successful exports emit DSG audit logging before the file response is written.”
+- “Persist DMS containers for every successful submission with at least one registration.”
+- “Return a dynamic selectable year range instead of the placeholder value `0`.”
+
+When exact parameters or conventions matter, tell the fixing agent where to derive them:
+
+- “Follow the existing DSG logging conventions in this controller.”
+- “Use the same response handling pattern as the adjacent endpoint.”
+- “Preserve the existing validation and error handling behavior.”
+
+### Format
 
 Use this format:
 
@@ -384,19 +404,24 @@ Use this format:
 
 Verify this issue against the current code and only fix it if still applicable.
 
-In `@src/path/to/File.java` around `methodName(...)`, replace the current behavior that ... with ...
-Also update or add tests covering ...
+In `@src/path/to/File.java` around `methodName(...)`, change the current behavior so that [desired behavior].
+
+Preserve [important existing behavior, if relevant].
+
+Add or update tests covering [specific scenario].
 
 </details>
 ```
 
-Rules:
+### Rules
 
-- Reference file paths with an `@` prefix, for example `@src/path/to/File.java`.
-- Include line numbers, method names, class names, or other stable context so the agent can locate the code.
-- Describe the fix precisely: what to find, what to replace, and what behavior to preserve.
-- Mention tests when the fix should include a regression test.
-- Keep the prompt self-contained. The fixing agent may not see the original review thread.
+* Reference file paths with an `@` prefix, for example `@src/path/to/File.java`.
+* Include line numbers, method names, class names, or other stable context so the fixing agent can locate the code.
+* Describe the desired final behavior, not only the suspected cause.
+* Describe what behavior should be preserved when the fix touches validation, authorization, persistence, API responses, logging, or error handling.
+* Mention tests when the fix should include a regression test.
+* Keep the prompt self-contained. The fixing agent may not see the review thread, MR/PR diff, or previous implementation.
+* Keep it concise. A good handover prompt usually has one location sentence, one behavior sentence, one preservation sentence if needed, and one test sentence.
 
 ---
 
