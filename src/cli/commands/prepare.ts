@@ -2,29 +2,32 @@ import type { Command } from 'commander';
 import chalk from 'chalk';
 import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../helpers.js';
 
-export function registerReviewCommand(program: Command): void {
+export function registerPrepareCommand(program: Command): void {
   program
-    .command('review [ref]')
-    .description('Review a MR/PR: fetch context, write CONTEXT.md')
+    .command('prepare [ref]')
+    .description('Fetch MR/PR data and generate/refresh the .review-assist/ bundle')
     .option('--json', 'Output as JSON')
-    .option('--full', 'Force a full review, ignoring previous session state')
-    .action(async (ref: string | undefined, opts: { json?: boolean; full?: boolean }) => {
+    .option('--fresh', 'Delete existing bundle and prepare from scratch')
+    .option('--discard-outputs', 'Clear pending outputs before preparing')
+    .action(async (ref: string | undefined, opts: { json?: boolean; fresh?: boolean; discardOutputs?: boolean }) => {
       try {
         const orchestrator = await createOrchestrator();
         const defaultRepo = await getDefaultRepo();
 
-        const result = await orchestrator.review(ref, defaultRepo, {
-          full: opts.full,
+        const result = await orchestrator.prepare(ref, defaultRepo, {
+          fresh: opts.fresh,
+          discardOutputs: opts.discardOutputs,
         });
 
         if (opts.json) {
           outputJson({
-            sessionId: result.bundle.sessionId,
-            createdAt: result.bundle.createdAt,
+            preparedAt: result.bundle.preparedAt,
             targetId: result.bundle.target.targetId,
             title: result.bundle.target.title,
             state: result.bundle.target.state,
-            incremental: result.incremental,
+            mode: result.mode,
+            codeChanged: result.codeChanged,
+            threadsChanged: result.threadsChanged,
             localBranchStatus: result.localBranchStatus,
             threadCount: result.bundle.threads.length,
             diffCount: result.bundle.diffs.length,
@@ -33,11 +36,12 @@ export function registerReviewCommand(program: Command): void {
           return;
         }
 
-        const { bundle, incremental } = result;
+        const { bundle, mode } = result;
         const target = bundle.target;
         const stateColor = getStateColor(target.state);
 
-        console.log(chalk.green(`✓ Review bundle ready${incremental ? ' (incremental)' : ''}`));
+        const modeLabel = mode === 'fresh' ? '' : ' (refresh)';
+        console.log(chalk.green(`✓ Bundle prepared${modeLabel}`));
         console.log('');
         console.log(`  ${chalk.bold(`!${target.targetId}`)}: ${target.title}`);
         console.log(`  ${chalk.dim('State:')}       ${stateColor(target.state)}`);
@@ -46,30 +50,31 @@ export function registerReviewCommand(program: Command): void {
         console.log(`  ${chalk.dim('Updated:')}     ${formatDate(target.updatedAt)}`);
         console.log(`  ${chalk.dim('Threads:')}     ${bundle.threads.length} unresolved`);
         console.log(`  ${chalk.dim('Files:')}       ${bundle.diffs.length} changed`);
-        console.log(`  ${chalk.dim('Versions:')}    ${bundle.versions.length}`);
 
         // Branch sync status
         if (result.localBranchStatus && result.localBranchStatus !== 'unknown') {
           const syncLabel = getBranchSyncLabel(result.localBranchStatus);
           console.log(`  ${chalk.dim('Local:')}       ${syncLabel}`);
-        };
+        }
         console.log('');
 
-        // Incremental change summary
-        if (incremental) {
+        // Prepare summary
+        if (mode === 'refresh') {
           const parts: string[] = [];
-          if (result.newThreadCount > 0) parts.push(`${result.newThreadCount} new thread(s)`);
-          if (result.resolvedSinceLastReview > 0) parts.push(`${result.resolvedSinceLastReview} resolved`);
+          if (result.codeChanged) parts.push('code changed');
+          if (result.threadsChanged) parts.push('threads changed');
           if (result.prunedReplies > 0) parts.push(`${result.prunedReplies} stale replies pruned`);
           if (result.publishedActionCount > 0) parts.push(`${result.publishedActionCount} prior action(s) tracked`);
           if (parts.length > 0) {
             console.log(`  ${chalk.dim('Changes:')}     ${parts.join(', ')}`);
-            console.log('');
+          } else {
+            console.log(`  ${chalk.dim('Changes:')}     no changes detected`);
           }
+          console.log('');
         }
 
         // Key paths
-        const bundleDir = bundle.outputDir.replace(/[/\\]outputs$/, '');
+        const bundleDir = bundle.bundlePath;
         console.log(`  ${chalk.dim('Bundle:')}      ${bundleDir}`);
         console.log(`  ${chalk.dim('Context:')}     ${result.contextPath}`);
         console.log('');
@@ -91,12 +96,7 @@ export function registerReviewCommand(program: Command): void {
         console.log(chalk.dim('Next steps:'));
         console.log(chalk.dim('  • Open .review-assist/CONTEXT.md and point your agent at it'));
         console.log(chalk.dim('  • Or use a Copilot prompt: /review or /review-summarize'));
-        if (incremental) {
-          console.log(chalk.dim('  • Re-run `review-assist review` to pick up new changes'));
-          console.log(chalk.dim('  • Use --full to discard session and start fresh'));
-        } else {
-          console.log(chalk.dim('  • Re-run `review-assist review` after changes for an incremental update'));
-        }
+        console.log(chalk.dim('  • Re-run `review-assist prepare` after changes to refresh'));
       } catch (err) {
         handleError(err);
       }

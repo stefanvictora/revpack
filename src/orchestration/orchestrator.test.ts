@@ -30,6 +30,7 @@ const mockTarget: ReviewTarget = {
   diffRefs: { baseSha: 'aaa', headSha: 'bbb', startSha: 'aaa' },
 };
 
+
 const mockThread: ReviewThread = {
   provider: 'gitlab',
   targetRef,
@@ -147,21 +148,21 @@ describe('ReviewOrchestrator', () => {
     });
   });
 
-  describe('review', () => {
-    it('creates bundle, and CONTEXT.md', async () => {
+  describe('prepare', () => {
+    it('creates bundle, bundle.json, and CONTEXT.md', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      const result = await orchestrator.review('!42', 'group/project');
+      const result = await orchestrator.prepare('!42', 'group/project');
 
       expect(result.bundle.target.title).toBe('Test MR');
       expect(result.bundle.threads).toHaveLength(1);
       expect(result.bundle.diffs).toHaveLength(1);
       expect(result.contextPath).toContain('CONTEXT.md');
-      expect(result.incremental).toBe(false);
+      expect(result.mode).toBe('fresh');
     });
 
     it('writes outputs to disk', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.review('!42', 'group/project');
+      await orchestrator.prepare('!42', 'group/project');
 
       const bundleDir = path.join(tmpDir, '.review-assist');
       const contextMd = await fs.readFile(path.join(bundleDir, 'CONTEXT.md'), 'utf-8');
@@ -169,78 +170,82 @@ describe('ReviewOrchestrator', () => {
       expect(contextMd).toContain('Test MR');
     });
 
-    it('saves session for future incremental runs', async () => {
+    it('saves bundle.json with correct structure', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.review('!42', 'group/project');
+      await orchestrator.prepare('!42', 'group/project');
 
-      const sessionPath = path.join(tmpDir, '.review-assist', 'session.json');
-      const session = JSON.parse(await fs.readFile(sessionPath, 'utf-8'));
-      expect(session.targetRef.targetId).toBe('42');
-      expect(session.lastReviewedVersionId).toBe('v1');
-      expect(session.knownThreadIds).toContain('thread-1');
+      const bundlePath = path.join(tmpDir, '.review-assist', 'bundle.json');
+      const bundleState = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+      expect(bundleState.schemaVersion).toBe(1);
+      expect(bundleState.target.id).toBe('42');
+      expect(bundleState.target.provider).toBe('gitlab');
+      expect(bundleState.threads.knownProviderThreadIds).toContain('thread-1');
+      expect(bundleState.prepare.mode).toBe('fresh');
     });
 
-    it('detects incremental mode from existing session', async () => {
+    it('detects refresh mode from existing bundle.json', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
-      // First run creates session
-      const first = await orchestrator.review('!42', 'group/project');
-      expect(first.incremental).toBe(false);
+      // First run creates fresh bundle
+      const first = await orchestrator.prepare('!42', 'group/project');
+      expect(first.mode).toBe('fresh');
 
-      // Second run detects session and goes incremental
-      const second = await orchestrator.review('!42', 'group/project');
-      expect(second.incremental).toBe(true);
+      // Second run detects bundle and goes refresh
+      const second = await orchestrator.prepare('!42', 'group/project');
+      expect(second.mode).toBe('refresh');
     });
 
-    it('--full clears session and starts fresh', async () => {
+    it('--fresh removes bundle and starts clean', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
-      // First run creates session
-      await orchestrator.review('!42', 'group/project');
+      // First run creates bundle
+      await orchestrator.prepare('!42', 'group/project');
 
-      // Second run with --full should not be incremental
-      const result = await orchestrator.review('!42', 'group/project', { full: true });
-      expect(result.incremental).toBe(false);
+      // Second run with --fresh should be fresh mode
+      const result = await orchestrator.prepare('!42', 'group/project', { fresh: true });
+      expect(result.mode).toBe('fresh');
     });
 
-    it('attempts incremental diff when session exists', async () => {
+    it('attempts incremental diff when code changes detected in refresh', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
       // First run
-      await orchestrator.review('!42', 'group/project');
+      await orchestrator.prepare('!42', 'group/project');
+
+      // Change the headSha so code is detected as changed
+      const updatedTarget = { ...mockTarget, diffRefs: { ...mockTarget.diffRefs, headSha: 'ccc' } };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(updatedTarget);
 
       // Second run should call getIncrementalDiff
-      await orchestrator.review('!42', 'group/project');
+      await orchestrator.prepare('!42', 'group/project');
 
       expect(mockProvider.getIncrementalDiff).toHaveBeenCalled();
     });
 
-    it('resumes from session when no ref is provided', async () => {
+    it('resumes from bundle.json when no ref is provided', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
-      // First run establishes session
-      await orchestrator.review('!42', 'group/project');
+      // First run establishes bundle
+      await orchestrator.prepare('!42', 'group/project');
 
-      // Second run without ref should use session
-      const result = await orchestrator.review(undefined, 'group/project');
+      // Second run without ref should use bundle
+      const result = await orchestrator.prepare(undefined, 'group/project');
       expect(result.bundle.target.targetId).toBe('42');
     });
 
-    it('throws when no ref and no session', async () => {
+    it('throws when no ref and no bundle', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
-      await expect(orchestrator.review(undefined, 'group/project'))
-        .rejects.toThrow('Could not determine which MR to review');
+      await expect(orchestrator.prepare(undefined, 'group/project'))
+        .rejects.toThrow('Could not determine which MR to prepare');
     });
 
-    it('returns incremental stats on second run', async () => {
+    it('returns prepare stats on second run', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
       // First run
-      const first = await orchestrator.review('!42', 'group/project');
+      const first = await orchestrator.prepare('!42', 'group/project');
       expect(first.prunedReplies).toBe(0);
-      expect(first.resolvedSinceLastReview).toBe(0);
-      expect(first.newThreadCount).toBe(0);
       expect(first.publishedActionCount).toBe(0);
 
       // Add a new thread for second run
@@ -251,34 +256,34 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
         .mockResolvedValue([mockThread, newThread]);
 
-      const second = await orchestrator.review('!42', 'group/project');
-      expect(second.incremental).toBe(true);
-      expect(second.newThreadCount).toBe(1);
+      const second = await orchestrator.prepare('!42', 'group/project');
+      expect(second.mode).toBe('refresh');
+      expect(second.threadsChanged).toBe(true);
     });
 
-    it('preserves publishedActions across review runs', async () => {
+    it('preserves publishedActions across prepare runs', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
       // First run
-      await orchestrator.review('!42', 'group/project');
+      await orchestrator.prepare('!42', 'group/project');
 
-      // Simulate publishing a reply (write directly to session)
+      // Simulate publishing by appending to bundle.json
       const ws = new WorkspaceManager(tmpDir);
       await ws.appendPublishedAction({
         type: 'reply',
-        threadId: 'T-001',
-        detail: 'Fixed!',
+        providerThreadId: 'thread-1',
+        title: 'Fixed!',
         publishedAt: '2026-01-01T12:00:00Z',
       });
 
       // Second run should carry over the action
-      const second = await orchestrator.review('!42', 'group/project');
+      const second = await orchestrator.prepare('!42', 'group/project');
       expect(second.publishedActionCount).toBe(1);
 
-      // Session should still have the action
-      const session = await ws.loadSession();
-      expect(session!.publishedActions).toHaveLength(1);
-      expect(session!.publishedActions![0].type).toBe('reply');
+      // Bundle should still have the action
+      const bundleState = await ws.loadBundleState();
+      expect(bundleState!.publishedActions).toHaveLength(1);
+      expect(bundleState!.publishedActions[0].type).toBe('reply');
     });
 
     it('excludes system-only threads from bundle and index', async () => {
@@ -324,7 +329,7 @@ describe('ReviewOrchestrator', () => {
         .mockResolvedValue([systemThread, mockThread, generalComment]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      const result = await orchestrator.review('!42', 'group/project');
+      const result = await orchestrator.prepare('!42', 'group/project');
 
       // Bundle should have 2 threads: mockThread + generalComment (not system)
       expect(result.bundle.threads).toHaveLength(2);
@@ -346,8 +351,8 @@ describe('ReviewOrchestrator', () => {
     it('calls provider.createThread with position', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
-      // Need a session for resolveRef to work without explicit ref
-      await orchestrator.review('!42', 'group/project');
+      // Need a bundle for resolveRef to work without explicit ref
+      await orchestrator.prepare('!42', 'group/project');
 
       const finding = {
         oldPath: 'src/app.ts',
@@ -383,7 +388,7 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([mockTarget]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      const result = await orchestrator.review(undefined, undefined);
+      const result = await orchestrator.prepare(undefined, undefined);
 
       expect(mockProvider.findTargetByBranch).toHaveBeenCalledWith('group/project', 'feature/test');
       expect(result.bundle.target.targetId).toBe('42');
@@ -397,7 +402,7 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([mockTarget, secondTarget]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.review(undefined, undefined))
+      await expect(orchestrator.prepare(undefined, undefined))
         .rejects.toThrow('Multiple open MRs found for branch "feature/test": !42, !99');
     });
 
@@ -407,8 +412,8 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.review(undefined, undefined))
-        .rejects.toThrow('Could not determine which MR to review');
+      await expect(orchestrator.prepare(undefined, undefined))
+        .rejects.toThrow('Could not determine which MR to prepare');
     });
 
     it('falls through to error on detached HEAD', async () => {
@@ -416,8 +421,8 @@ describe('ReviewOrchestrator', () => {
       currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('HEAD');
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.review(undefined, undefined))
-        .rejects.toThrow('Could not determine which MR to review');
+      await expect(orchestrator.prepare(undefined, undefined))
+        .rejects.toThrow('Could not determine which MR to prepare');
       expect(mockProvider.findTargetByBranch).not.toHaveBeenCalled();
     });
 
@@ -427,54 +432,26 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([mockTarget]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      const result = await orchestrator.review(undefined, 'group/project');
+      const result = await orchestrator.prepare(undefined, 'group/project');
 
       expect(mockProvider.findTargetByBranch).toHaveBeenCalledWith('group/project', 'feature/test');
       expect(result.bundle.target.targetId).toBe('42');
     });
 
-    it('prefers session over auto-detect', async () => {
+    it('prefers bundle over auto-detect', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
-      // First run creates session
-      await orchestrator.review('!42', 'group/project');
+      // First run creates bundle
+      await orchestrator.prepare('!42', 'group/project');
 
-      // Spy after session is created — should not be called
+      // Spy after bundle is created — should not be called
       deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug');
       currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch');
 
-      // Second run should use session, not auto-detect
-      const result = await orchestrator.review(undefined, 'group/project');
+      // Second run should use bundle, not auto-detect
+      const result = await orchestrator.prepare(undefined, 'group/project');
       expect(result.bundle.target.targetId).toBe('42');
       expect(mockProvider.findTargetByBranch).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('reset', () => {
-    it('clears session only by default', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.review('!42', 'group/project');
-
-      const sessionPath = path.join(tmpDir, '.review-assist', 'session.json');
-      expect(await fileExists(sessionPath)).toBe(true);
-
-      await orchestrator.reset();
-      expect(await fileExists(sessionPath)).toBe(false);
-
-      // Bundle directory should still exist
-      const bundleDir = path.join(tmpDir, '.review-assist');
-      expect(await fileExists(bundleDir)).toBe(true);
-    });
-
-    it('removes entire bundle with --full', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.review('!42', 'group/project');
-
-      const bundleDir = path.join(tmpDir, '.review-assist');
-      expect(await fileExists(bundleDir)).toBe(true);
-
-      await orchestrator.reset({ full: true });
-      expect(await fileExists(bundleDir)).toBe(false);
     });
   });
 
@@ -485,7 +462,7 @@ describe('ReviewOrchestrator', () => {
       currentBranchSpy?.mockRestore();
     });
 
-    it('returns null when no session exists', async () => {
+    it('returns null when no bundle exists', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.checkBranchMismatch();
       expect(result).toBeNull();
@@ -493,7 +470,7 @@ describe('ReviewOrchestrator', () => {
 
     it('returns null when branch matches', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.review('!42', 'group/project');
+      await orchestrator.prepare('!42', 'group/project');
 
       currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/test');
       const result = await orchestrator.checkBranchMismatch();
@@ -502,7 +479,7 @@ describe('ReviewOrchestrator', () => {
 
     it('returns mismatch info when branch differs', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.review('!42', 'group/project');
+      await orchestrator.prepare('!42', 'group/project');
 
       currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('other-branch');
       const result = await orchestrator.checkBranchMismatch();
@@ -521,24 +498,24 @@ describe('ReviewOrchestrator', () => {
       currentBranchSpy?.mockRestore();
     });
 
-    it('throws when resuming session on wrong branch', async () => {
+    it('throws when resuming bundle on wrong branch', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.review('!42', 'group/project');
+      await orchestrator.prepare('!42', 'group/project');
 
       currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('wrong-branch');
 
-      await expect(orchestrator.review(undefined, 'group/project'))
+      await expect(orchestrator.prepare(undefined, 'group/project'))
         .rejects.toThrow('Branch mismatch');
     });
 
     it('does not throw when explicit ref is provided even on wrong branch', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.review('!42', 'group/project');
+      await orchestrator.prepare('!42', 'group/project');
 
       currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('wrong-branch');
 
-      // Explicit ref bypasses session branch check
-      const result = await orchestrator.review('!42', 'group/project');
+      // Explicit ref bypasses bundle branch check
+      const result = await orchestrator.prepare('!42', 'group/project');
       expect(result.bundle.target.targetId).toBe('42');
     });
   });

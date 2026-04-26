@@ -1,14 +1,15 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import type {
   ReviewTarget,
   ReviewThread,
   ReviewDiff,
   ReviewVersion,
   WorkspaceBundle,
-  Session,
-  PublishedAction,
+  BundleState,
+  BundlePublishedAction,
+  PrepareSummary
 } from '../core/types.js';
 import { WorkspaceError } from '../core/errors.js';
 import { parsePatch } from './patch-parser.js';
@@ -52,8 +53,7 @@ export class WorkspaceManager {
     versions: ReviewVersion[],
     threadIndex: ThreadIndex,
   ): Promise<WorkspaceBundle> {
-    const sessionId = randomUUID();
-    const createdAt = new Date().toISOString();
+    const preparedAt = new Date().toISOString();
 
     // Create directory structure
     await this.ensureDir(this.baseDir);
@@ -62,50 +62,120 @@ export class WorkspaceManager {
     await this.ensureDir(path.join(this.baseDir, 'outputs'));
 
     const bundle: WorkspaceBundle = {
-      sessionId,
-      createdAt,
+      preparedAt,
       target,
       threads,
       diffs,
       versions,
+      bundlePath: this.baseDir,
       outputDir: path.join(this.baseDir, 'outputs'),
     };
 
-    // Write bundle files
-    await this.writeSession({ id: sessionId, createdAt, targetRef: target, bundlePath: this.baseDir });
-    await this.writeTarget(target);
+    // Write description.md (raw MR/PR description)
+    await this.writeDescription(target.description);
+
+    // Write thread files
     await this.clearThreadFiles();
     await this.writeThreads(threads, threadIndex);
+
+    // Write diffs and line map
     await this.writeDiffs(diffs);
     await this.writeLineMap();
+
+    // Ensure output placeholders exist (preserve existing outputs)
     await this.ensureDefaultOutputFiles();
     await this.writeOutputSchemas();
+
+    // Write .gitignore to exclude bundle from version control
+    await this.writeGitignore();
 
     return bundle;
   }
 
-  // ─── Session management ─────────────────────────────────
+  // ─── Bundle state management (bundle.json) ──────────────
 
-  async loadSession(): Promise<Session | null> {
-    const sessionPath = path.join(this.baseDir, 'session.json');
+  async loadBundleState(): Promise<BundleState | null> {
+    const bundlePath = path.join(this.baseDir, 'bundle.json');
     try {
-      const data = await fs.readFile(sessionPath, 'utf-8');
-      return JSON.parse(data) as Session;
+      const data = await fs.readFile(bundlePath, 'utf-8');
+      return JSON.parse(data) as BundleState;
     } catch {
       return null;
     }
   }
 
-  async saveSession(session: Session): Promise<void> {
-    await this.writeJson(path.join(this.baseDir, 'session.json'), session);
+  async saveBundleState(state: BundleState): Promise<void> {
+    await this.ensureDir(this.baseDir);
+    await this.writeJson(path.join(this.baseDir, 'bundle.json'), state);
   }
 
   /**
-   * Clear the session for a fresh start (--full mode).
+   * Build the BundleState from current prepare data and optional previous state.
    */
-  async clearSession(): Promise<void> {
-    const sessionPath = path.join(this.baseDir, 'session.json');
-    try { await fs.unlink(sessionPath); } catch { /* may not exist */ }
+  buildBundleState(
+    target: ReviewTarget,
+    threads: ReviewThread[],
+    versions: ReviewVersion[],
+    threadIndex: ThreadIndex,
+    prepareSummary: PrepareSummary,
+    previousActions?: BundlePublishedAction[],
+  ): BundleState {
+    const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
+
+    return {
+      schemaVersion: 1,
+      preparedAt: new Date().toISOString(),
+      tool: { name: 'review-assist', version: '0.1.0' },
+      target: {
+        provider: target.provider,
+        repository: target.repository,
+        type: target.targetType,
+        id: target.targetId,
+        title: target.title,
+        descriptionPath: '.review-assist/description.md',
+        author: target.author,
+        state: target.state,
+        sourceBranch: target.sourceBranch,
+        targetBranch: target.targetBranch,
+        webUrl: target.webUrl,
+        createdAt: target.createdAt,
+        updatedAt: target.updatedAt,
+        labels: target.labels,
+        diffRefs: target.diffRefs,
+        providerVersionId: latestVersionId,
+      },
+      prepare: prepareSummary,
+      threads: {
+        knownProviderThreadIds: threads.map((t) => t.threadId),
+        shortIdMapping: [...threadIndex].map(([providerThreadId, shortId]) => ({
+          shortId,
+          providerThreadId,
+        })),
+      },
+      publishedActions: previousActions ?? [],
+      paths: {
+        context: '.review-assist/CONTEXT.md',
+        instructions: '.review-assist/INSTRUCTIONS.md',
+        description: '.review-assist/description.md',
+        latestPatch: '.review-assist/diffs/latest.patch',
+        incrementalPatch: prepareSummary.codeChangedSincePreviousPrepare
+          ? '.review-assist/diffs/incremental.patch'
+          : null,
+        lineMap: '.review-assist/diffs/line-map.json',
+        outputs: '.review-assist/outputs',
+      },
+    };
+  }
+
+  /**
+   * Append a published action to the current bundle state.
+   */
+  async appendPublishedAction(action: BundlePublishedAction): Promise<boolean> {
+    const state = await this.loadBundleState();
+    if (!state) return false;
+    state.publishedActions.push(action);
+    await this.saveBundleState(state);
+    return true;
   }
 
   /**
@@ -120,16 +190,30 @@ export class WorkspaceManager {
   }
 
   /**
-   * Append a published action to the current session.
-   * Returns false if no session exists.
+   * Discard pending output files (reset to empty).
    */
-  async appendPublishedAction(action: PublishedAction): Promise<boolean> {
-    const session = await this.loadSession();
-    if (!session) return false;
-    session.publishedActions = session.publishedActions ?? [];
-    session.publishedActions.push(action);
-    await this.saveSession(session);
-    return true;
+  async discardOutputs(): Promise<void> {
+    const outputDir = path.join(this.baseDir, 'outputs');
+    const defaults: [string, string][] = [
+      ['replies.json', '[]'],
+      ['new-findings.json', '[]'],
+      ['summary.md', ''],
+      ['review-notes.md', ''],
+    ];
+    for (const [name, content] of defaults) {
+      const filePath = path.join(outputDir, name);
+      try {
+        await fs.writeFile(filePath, content, 'utf-8');
+      } catch { /* outputs dir may not exist yet */ }
+    }
+  }
+
+  /**
+   * Write the raw MR/PR description to description.md.
+   */
+  async writeDescription(description: string): Promise<void> {
+    const descPath = path.join(this.baseDir, 'description.md');
+    await fs.writeFile(descPath, description ?? '', 'utf-8');
   }
 
   /**
@@ -217,8 +301,9 @@ export class WorkspaceManager {
   }
 
   /**
-   * Write CONTEXT.md — the agent entry point that explains what's in
-   * the bundle and what to do next.
+   * Write CONTEXT.md — the agent-readable context file.
+   * Contains MR/PR summary, prepare state, bundle contents, threads, and actions.
+   * Does NOT contain output schemas, severity definitions, or positional tutorials.
    */
   async writeContext(
     target: ReviewTarget,
@@ -226,15 +311,14 @@ export class WorkspaceManager {
     diffs: ReviewDiff[],
     threadIndex: ThreadIndex,
     options?: {
-      incremental?: boolean;
-      previousThreadIds?: Set<string>;
-      publishedActions?: PublishedAction[];
+      prepareSummary?: PrepareSummary;
+      publishedActions?: BundlePublishedAction[];
     },
   ): Promise<string> {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
     const generalComments = threads.filter((t) => !t.resolvable && !t.comments.every((c) => c.system));
 
-    // Derive SELF/REPLIED from comment origins (marker-based, survives session resets)
+    // Derive SELF/REPLIED from comment origins (marker-based)
     const selfThreadIds = new Set<string>();
     const repliedThreadIds = new Set<string>();
     for (const t of threads) {
@@ -249,115 +333,138 @@ export class WorkspaceManager {
     const lines: string[] = [];
     const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
 
-    lines.push(`# Review Context`);
+    // ─── Target table ─────────────────────────────────────
+    lines.push('# Review Context');
     lines.push('');
-    lines.push(`**${mrType} !${target.targetId}**: ${target.title}  `);
-    lines.push(`**Author**: @${target.author}  `);
-    lines.push(`**Branch**: \`${target.sourceBranch}\` → \`${target.targetBranch}\`  `);
-    lines.push(`**Status**: ${unresolvedThreads.length} unresolved thread(s), ${diffs.length} changed file(s)  `);
-    if (target.webUrl) lines.push(`**URL**: ${target.webUrl}  `);
-    if (options?.incremental) lines.push(`**Mode**: Incremental review (changes since last review)  `);
+    lines.push('## Target');
     lines.push('');
-    lines.push('> Read `.review-assist/INSTRUCTIONS.md` for detailed review workflow, output formats, and quality guidelines.');
+    lines.push('| Field | Value |');
+    lines.push('|---|---|');
+    lines.push(`| Type | ${target.provider === 'gitlab' ? 'GitLab merge request' : 'GitHub pull request'} |`);
+    lines.push(`| ${mrType} | !${target.targetId} — ${target.title} |`);
+    lines.push(`| Repository | \`${target.repository}\` |`);
+    lines.push(`| Author | @${target.author} |`);
+    lines.push(`| Source branch | \`${target.sourceBranch}\` |`);
+    lines.push(`| Target branch | \`${target.targetBranch}\` |`);
+    lines.push(`| State | ${target.state} |`);
+    if (target.webUrl) lines.push(`| URL | ${target.webUrl} |`);
     lines.push('');
-    // Suggested reading order
-    lines.push('## Suggested reading order');
+    lines.push('Read `.review-assist/INSTRUCTIONS.md` for the review workflow, output formats, and quality guidelines.');
+    lines.push('');
+
+    // ─── Prepare Summary ──────────────────────────────────
+    const ps = options?.prepareSummary;
+    if (ps) {
+      lines.push('## Prepare Summary');
+      lines.push('');
+      lines.push('| Field | Value |');
+      lines.push('|---|---|');
+      lines.push(`| Prepared at | ${new Date().toISOString()} |`);
+      lines.push(`| Mode | ${ps.mode} |`);
+      if (ps.codeChangedSincePreviousPrepare !== null) {
+        lines.push(`| Code changed since previous prepare | ${ps.codeChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
+      }
+      if (ps.threadsChangedSincePreviousPrepare !== null) {
+        lines.push(`| Threads changed since previous prepare | ${ps.threadsChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
+      }
+      if (ps.previous) {
+        lines.push(`| Previous head SHA | \`${ps.previous.headSha}\` |`);
+      }
+      lines.push(`| Current head SHA | \`${ps.current.headSha}\` |`);
+      lines.push('');
+
+      // Mode-specific context guidance
+      if (ps.mode === 'fresh') {
+        lines.push('This is a fresh prepared bundle. There is no previous prepare to compare against.');
+        lines.push('');
+      } else if (ps.codeChangedSincePreviousPrepare) {
+        lines.push('This refresh detected new code changes since the previous prepare. Focus proactive review on the incremental patch and unresolved thread updates.');
+        lines.push('');
+      } else {
+        lines.push('This refresh did not detect code changes since the previous prepare. Focus on new or unresolved thread updates and pending outputs. Do not perform a full proactive review unless requested.');
+        lines.push('');
+      }
+    }
+
+    // ─── Suggested Reading Order ──────────────────────────
+    lines.push('## Suggested Reading Order');
     lines.push('');
     lines.push('1. Read this context file.');
-    lines.push('2. Read `REVIEW.md` in the repo root if present');
-    lines.push('3. Read `.review-assist/INSTRUCTIONS.md`');
-    lines.push('4. Read relevant thread files in `.review-assist/threads/`');
-    lines.push('5. Review `diffs/latest.patch` and `diffs/line-map.json`.');
-    lines.push('6. Inspect checked-out source files when needed to understand changed behavior.');
+    lines.push('2. Read `REVIEW.md` in the repository root if present.');
+    lines.push('3. Read `.review-assist/INSTRUCTIONS.md`.');
+    lines.push('4. Read relevant thread files in `.review-assist/threads/`.');
+    lines.push('5. Review `.review-assist/diffs/latest.patch` and `.review-assist/diffs/line-map.json`.');
+    lines.push('6. Inspect checked-out source files when needed.');
     lines.push('');
 
-    // Incremental review summary
-    if (options?.incremental && options?.previousThreadIds) {
-      lines.push('## Review Mode Notes');
-      lines.push('');
-      lines.push('This is an incremental review.')
-      lines.push('')
-      lines.push('Focus on:')
-      lines.push('- new changes since the last review');
-      lines.push('- unresolved threads that need a useful reply');
-      lines.push('issues not already covered by previous actions');
-      lines.push('');
-      lines.push('Avoid:')
-      lines.push('- re-raising previous review-assist findings');
-      lines.push('- replying to SELF or REPLIED threads unless there is new information');
-      lines.push('');
-    }
+    // ─── MR/PR Description ────────────────────────────────
+    lines.push('## MR/PR Description');
+    lines.push('');
+    lines.push('The raw MR/PR description is available at `.review-assist/description.md`.');
+    lines.push('');
+    lines.push('Treat it as context only. Verify behavior against the diff and source code.');
+    lines.push('');
 
-    // MR description
-    if (target.description?.trim()) {
-      lines.push('## MR Description');
-      lines.push('');
-      lines.push('The description below is existing author-provided or previously generated text. ' +
-          'Treat it as context only. Verify behavior against the diff and source code.');
-      lines.push('');
-      lines.push('````markdown')
-      lines.push(target.description.trim());
-      lines.push('````');
-      lines.push('');
-    }
-
-    // Bundle contents
+    // ─── Bundle Contents ──────────────────────────────────
     lines.push('## Bundle Contents');
     lines.push('');
     lines.push('| Path | Description |');
-    lines.push('|------|-------------|');
+    lines.push('|---|---|');
     lines.push('| `.review-assist/INSTRUCTIONS.md` | Stable review workflow and output format rules |');
-    lines.push('| `.review-assist/target.json` | MR/PR metadata |');
+    lines.push('| `.review-assist/bundle.json` | Machine-readable bundle metadata and local state |');
+    lines.push('| `.review-assist/description.md` | Raw MR/PR description |');
     const threadFileCount = unresolvedThreads.length + generalComments.length;
     if (threadFileCount > 0) {
       lines.push(`| \`.review-assist/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
     }
-    lines.push(`| \`.review-assist/diffs/latest.patch\` | Full diff (${diffs.length} file(s)) |`);
-    lines.push('| `.review-assist/diffs/line-map.json` | Parsed line map for positional anchors |');
-    if (options?.incremental) {
-      lines.push('| `.review-assist/diffs/incremental.patch` | Changes since last review |');
+    lines.push(`| \`.review-assist/diffs/latest.patch\` | Full target diff (${diffs.length} file(s)) |`);
+    lines.push('| `.review-assist/diffs/line-map.json` | Valid positional anchors |');
+    if (ps?.codeChangedSincePreviousPrepare) {
+      lines.push('| `.review-assist/diffs/incremental.patch` | Code changes since previous prepare |');
     }
-    lines.push('| `.review-assist/outputs/` | Write results here |');
+    lines.push('| `.review-assist/outputs/` | Agent output files |');
     lines.push('');
 
-    // Changed files
+    // ─── Changed Files ────────────────────────────────────
     lines.push('## Changed Files');
     lines.push('');
+    lines.push('| File | Status |');
+    lines.push('|---|---|');
     for (const d of diffs) {
       const tag = d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
-      lines.push(`- \`${d.newPath || d.oldPath}\` (${tag})`);
+      lines.push(`| \`${d.newPath || d.oldPath}\` | ${tag} |`);
     }
     lines.push('');
 
-    // Thread overview
+    // ─── Unresolved Threads ───────────────────────────────
     if (unresolvedThreads.length > 0) {
       lines.push('## Unresolved Threads');
       lines.push('');
-      lines.push('| # | File |');
-      lines.push('|---|------|');
+      lines.push('| Thread | Flags | Author | Location | Summary |');
+      lines.push('|---|---|---|---|---|');
       for (const t of unresolvedThreads) {
         const prefix = threadIndex.get(t.threadId) ?? '?';
-        const isNew = options?.previousThreadIds && !options.previousThreadIds.has(t.threadId);
         const isSelf = selfThreadIds.has(t.threadId);
         const isReplied = repliedThreadIds.has(t.threadId);
         const badges: string[] = [];
-        if (isNew && !isSelf) badges.push('**NEW**');
-        if (isSelf) badges.push('**SELF**');
-        if (isReplied) badges.push('**REPLIED**');
-        const badgeStr = badges.length > 0 ? ' ' + badges.join(' ') : '';
+        if (isSelf) badges.push('SELF');
+        if (isReplied) badges.push('REPLIED');
+        const flagStr = badges.length > 0 ? badges.join(', ') : '';
+
+        const firstComment = t.comments.find((c) => !c.system);
+        const author = firstComment?.author ?? '?';
         const file = t.position?.filePath
           ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
-          : '(general)';
-        lines.push(`| ${prefix}${badgeStr} | ${file} |`);
+          : 'general';
+        const snippet = firstComment?.body.split('\n')[0].slice(0, 80) ?? '';
+        lines.push(`| ${prefix} | ${flagStr} | @${author} | ${file} | ${snippet} |`);
       }
       lines.push('');
     }
 
-    // General comments
+    // ─── General Comments ─────────────────────────────────
     if (generalComments.length > 0) {
       lines.push('## General Comments');
-      lines.push('');
-      lines.push('General comments are non-resolvable MR/PR notes. They may provide context but usually do not require replies.');
       lines.push('');
       for (const t of generalComments) {
         const prefix = threadIndex.get(t.threadId) ?? '?';
@@ -368,18 +475,20 @@ export class WorkspaceManager {
       lines.push('');
     }
 
-    // Previous actions
+    // ─── Previous Actions ─────────────────────────────────
     if (options?.publishedActions && options.publishedActions.length > 0) {
-      lines.push('## Previous Actions (this session)');
+      lines.push('## Previous Actions');
       lines.push('');
-      lines.push('These actions were published by `review-assist` in prior iterations of this session. Do not re-raise the same issues.');
+      lines.push('These actions were published by `review-assist` in prior iterations. Do not re-raise the same issues.');
       lines.push('');
-      lines.push('| Action | Target | Detail |');
-      lines.push('|--------|--------|--------|');
+      lines.push('| Action | Location | Severity | Category | Title |');
+      lines.push('|---|---|---|---|---|');
       for (const a of options.publishedActions) {
         const actionLabel = a.type === 'reply' ? 'Reply' : a.type === 'finding' ? 'Finding' : 'Resolve';
-        const target = a.filePath ? `${a.filePath}:${a.line ?? '?'}` : a.threadId;
-        lines.push(`| ${actionLabel} | ${target} | ${a.detail.slice(0, 100)} |`);
+        const loc = a.location
+          ? `\`${a.location.newPath || a.location.oldPath}\`:${a.location.newLine ?? a.location.oldLine ?? '?'}`
+          : a.providerThreadId ?? '';
+        lines.push(`| ${actionLabel} | ${loc} | ${a.severity ?? ''} | ${a.category ?? ''} | ${a.title ?? ''} |`);
       }
       lines.push('');
     }
@@ -387,6 +496,10 @@ export class WorkspaceManager {
     const content = lines.join('\n');
     const contextPath = path.join(this.baseDir, 'CONTEXT.md');
     await fs.writeFile(contextPath, content, 'utf-8');
+
+    // Also write INSTRUCTIONS.md
+    await this.writeInstructions();
+
     return contextPath;
   }
 
@@ -466,12 +579,35 @@ export class WorkspaceManager {
 
   // ─── Write helpers ──────────────────────────────────────
 
-  private async writeSession(session: Session): Promise<void> {
-    await this.writeJson(path.join(this.baseDir, 'session.json'), session);
+  /**
+   * Write INSTRUCTIONS.md — copied from the package templates directory.
+   */
+  async writeInstructions(): Promise<void> {
+    const thisFile = fileURLToPath(import.meta.url);
+    // dist/workspace/workspace-manager.js -> package root -> templates/
+    const templatesDir = path.resolve(path.dirname(thisFile), '..', '..', 'templates');
+    const source = path.join(templatesDir, 'INSTRUCTIONS.md');
+    const dest = path.join(this.baseDir, 'INSTRUCTIONS.md');
+    await fs.copyFile(source, dest);
   }
 
-  private async writeTarget(target: ReviewTarget): Promise<void> {
-    await this.writeJson(path.join(this.baseDir, 'target.json'), target);
+  /**
+   * Write .gitignore to exclude the entire bundle dir from version control.
+   */
+  private async writeGitignore(): Promise<void> {
+    await fs.writeFile(path.join(this.baseDir, '.gitignore'), '*\n', 'utf-8');
+  }
+
+  /**
+   * Write an explicit "no code changes" incremental patch.
+   */
+  async writeNoCodeChangeIncrementalPatch(): Promise<void> {
+    await this.ensureDir(path.join(this.baseDir, 'diffs'));
+    await fs.writeFile(
+      path.join(this.baseDir, 'diffs', 'incremental.patch'),
+      '# No code changes since previous prepare.\n',
+      'utf-8',
+    );
   }
 
   private async writeThreads(threads: ReviewThread[], threadIndex: ThreadIndex): Promise<void> {

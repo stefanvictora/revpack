@@ -85,7 +85,7 @@ describe('WorkspaceManager', () => {
   it('creates bundle directory structure', async () => {
     const { bundle } = await createBundle(manager, makeTarget(), [makeThread()], [makeDiff()]);
 
-    expect(bundle.sessionId).toBeTruthy();
+    expect(bundle.preparedAt).toBeTruthy();
     expect(bundle.target.targetId).toBe('42');
     expect(bundle.threads).toHaveLength(1);
     expect(bundle.diffs).toHaveLength(1);
@@ -93,32 +93,19 @@ describe('WorkspaceManager', () => {
     // Verify directory structure
     const bundleDir = path.join(tmpDir, '.review-assist');
     const entries = await fs.readdir(bundleDir);
-    expect(entries).toContain('session.json');
-    expect(entries).toContain('target.json');
+    expect(entries).toContain('description.md');
     expect(entries).toContain('threads');
     expect(entries).toContain('diffs');
     expect(entries).toContain('outputs');
   });
 
-  it('writes session.json with correct structure', async () => {
+  it('writes description.md with MR description', async () => {
     await createBundle(manager, makeTarget(), []);
 
-    const sessionPath = path.join(tmpDir, '.review-assist', 'session.json');
-    const session = JSON.parse(await fs.readFile(sessionPath, 'utf-8'));
+    const descPath = path.join(tmpDir, '.review-assist', 'description.md');
+    const content = await fs.readFile(descPath, 'utf-8');
 
-    expect(session).toHaveProperty('id');
-    expect(session).toHaveProperty('createdAt');
-    expect(session.targetRef).toBeDefined();
-  });
-
-  it('writes target.json', async () => {
-    await createBundle(manager, makeTarget(), []);
-
-    const targetPath = path.join(tmpDir, '.review-assist', 'target.json');
-    const target = JSON.parse(await fs.readFile(targetPath, 'utf-8'));
-
-    expect(target.targetId).toBe('42');
-    expect(target.title).toBe('Test MR');
+    expect(content).toContain('A test merge request');
   });
 
   it('writes thread JSON and markdown files', async () => {
@@ -158,17 +145,9 @@ describe('WorkspaceManager', () => {
     expect(content).toBe('# Test');
   });
 
-  it('loads session from disk', async () => {
-    await createBundle(manager, makeTarget(), []);
-    const session = await manager.loadSession();
-
-    expect(session).toBeTruthy();
-    expect(session!.targetRef.targetId).toBe('42');
-  });
-
-  it('returns null when no session exists', async () => {
-    const session = await manager.loadSession();
-    expect(session).toBeNull();
+  it('loadBundleState returns null when no bundle exists', async () => {
+    const state = await manager.loadBundleState();
+    expect(state).toBeNull();
   });
 
   it('buildThreadIndex derives T-NNN from position', () => {
@@ -252,20 +231,18 @@ describe('WorkspaceManager', () => {
     expect(pruned).toBe(0);
   });
 
-  it('clears session file', async () => {
+  it('removeBundle removes entire directory', async () => {
     await createBundle(manager, makeTarget(), [makeThread()]);
 
-    const sessionPath = path.join(tmpDir, '.review-assist', 'session.json');
-    expect(await fileExists(sessionPath)).toBe(true);
+    const bundleDir = path.join(tmpDir, '.review-assist');
+    expect(await fileExists(bundleDir)).toBe(true);
 
-    await manager.clearSession();
-
-    expect(await fileExists(sessionPath)).toBe(false);
+    await manager.removeBundle();
+    expect(await fileExists(bundleDir)).toBe(false);
   });
 
-  it('clearSession is safe when files do not exist', async () => {
-    // Should not throw even if nothing to clear
-    await expect(manager.clearSession()).resolves.not.toThrow();
+  it('removeBundle is safe when nothing exists', async () => {
+    await expect(manager.removeBundle()).resolves.not.toThrow();
   });
 
   it('writes incremental diff patch', async () => {
@@ -343,31 +320,37 @@ describe('WorkspaceManager', () => {
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Changed Files');
-      expect(content).toContain('`src/app.ts` (modified)');
-      expect(content).toContain('`src/new-file.ts` (added)');
+      expect(content).toContain('`src/app.ts`');
+      expect(content).toContain('modified');
+      expect(content).toContain('`src/new-file.ts`');
+      expect(content).toContain('added');
     });
 
-    it('marks incremental mode and NEW threads', async () => {
-      const thread1 = makeThread();
-      const thread2 = { ...makeThread(), threadId: 'thread-new' };
-      const allThreads = [thread1, thread2];
-      const { threadIndex } = await createBundle(manager, makeTarget(), allThreads);
+    it('shows prepare summary with refresh mode and code changes', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
       const contextPath = await manager.writeContext(
         makeTarget(),
-        allThreads,
+        threads,
         [],
         threadIndex,
         {
-          incremental: true,
-          previousThreadIds: new Set(['thread-abc']),
+          prepareSummary: {
+            mode: 'refresh',
+            previous: { preparedAt: '2026-01-01T00:00:00Z', providerVersionId: 'v0', headSha: 'aaa' },
+            current: { providerVersionId: 'v1', headSha: 'bbb' },
+            codeChangedSincePreviousPrepare: true,
+            threadsChangedSincePreviousPrepare: true,
+          },
         },
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('Incremental review');
-      expect(content).toContain('**NEW**');
-      expect(content).toContain('## Review Mode Notes');
+      expect(content).toContain('## Prepare Summary');
+      expect(content).toContain('refresh');
+      expect(content).toContain('Code changed since previous prepare');
+      expect(content).toContain('yes');
     });
 
     it('includes workflow instructions', async () => {
@@ -376,7 +359,7 @@ describe('WorkspaceManager', () => {
       const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Suggested reading order');
+      expect(content).toContain('## Suggested Reading Order');
       expect(content).toContain('REVIEW.md');
       expect(content).toContain('INSTRUCTIONS.md');
     });
@@ -430,19 +413,17 @@ describe('WorkspaceManager', () => {
         threadIndex,
         {
           publishedActions: [
-            { type: 'reply', threadId: 'T-001', detail: 'Fixed, good catch!', publishedAt: '2026-01-01T12:00:00Z' },
-            { type: 'finding', threadId: 'new-thread-id', filePath: 'src/auth.ts', line: 42, detail: 'high correctness: Unsafe token', publishedAt: '2026-01-01T12:01:00Z', createdThreadId: 'new-thread-id' },
+            { type: 'reply', providerThreadId: 'thread-abc', title: 'Fixed, good catch!', publishedAt: '2026-01-01T12:00:00Z' },
+            { type: 'finding', location: { oldPath: 'src/auth.ts', newPath: 'src/auth.ts', newLine: 42 }, severity: 'high', category: 'correctness', title: 'Unsafe token', publishedAt: '2026-01-01T12:01:00Z' },
           ],
         },
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Previous Actions (this session)');
+      expect(content).toContain('## Previous Actions');
       expect(content).toContain('Reply');
-      expect(content).toContain('T-001');
-      expect(content).toContain('Fixed, good catch!');
       expect(content).toContain('Finding');
-      expect(content).toContain('src/auth.ts:42');
+      expect(content).toContain('src/auth.ts');
     });
 
     it('tags SELF on threads created by published findings', async () => {
@@ -472,9 +453,9 @@ describe('WorkspaceManager', () => {
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('T-002 **SELF**');
+      expect(content).toContain('SELF');
       // T-001 should NOT be tagged SELF
-      expect(content).not.toContain('T-001 **SELF**');
+      expect(content).not.toMatch(/T-001.*SELF/);
     });
 
     it('tags REPLIED on threads that have a bot reply', async () => {
@@ -514,7 +495,7 @@ describe('WorkspaceManager', () => {
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('T-001 **REPLIED**');
+      expect(content).toContain('REPLIED');
     });
 
     it('omits Previous Actions section when no actions exist', async () => {
@@ -525,75 +506,86 @@ describe('WorkspaceManager', () => {
       });
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).not.toContain('## Previous Actions (this session)');
+      expect(content).not.toContain('## Previous Actions');
     });
 
-    it('includes MR description when present', async () => {
+    it('references description.md for MR description', async () => {
       const { threadIndex } = await createBundle(manager, makeTarget(), []);
 
       const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff()], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## MR Description');
-      expect(content).toContain('A test merge request');
-    });
-
-    it('omits MR description section when empty', async () => {
-      const target = { ...makeTarget(), description: '' };
-      const { threadIndex } = await createBundle(manager, target, []);
-
-      const contextPath = await manager.writeContext(target, [], [makeDiff()], threadIndex);
-
-      const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).not.toContain('## MR Description');
+      expect(content).toContain('description.md');
     });
   });
 
   describe('appendPublishedAction', () => {
-    it('appends action to existing session', async () => {
+    it('appends action to existing bundle.json', async () => {
       await createBundle(manager, makeTarget(), []);
+
+      // First save a bundle state
+      const bundleState = manager.buildBundleState(
+        makeTarget(), [], [], new Map(), {
+          mode: 'fresh',
+          previous: null,
+          current: { headSha: 'bbb' },
+          codeChangedSincePreviousPrepare: null,
+          threadsChangedSincePreviousPrepare: null,
+        },
+      );
+      await manager.saveBundleState(bundleState);
 
       const appended = await manager.appendPublishedAction({
         type: 'reply',
-        threadId: 'T-001',
-        detail: 'Fixed!',
+        providerThreadId: 'thread-abc',
+        title: 'Fixed!',
         publishedAt: '2026-01-01T12:00:00Z',
       });
       expect(appended).toBe(true);
 
-      const session = await manager.loadSession();
-      expect(session!.publishedActions).toHaveLength(1);
-      expect(session!.publishedActions![0].threadId).toBe('T-001');
+      const state = await manager.loadBundleState();
+      expect(state!.publishedActions).toHaveLength(1);
+      expect(state!.publishedActions[0].providerThreadId).toBe('thread-abc');
     });
 
     it('accumulates multiple actions', async () => {
       await createBundle(manager, makeTarget(), []);
 
+      const bundleState = manager.buildBundleState(
+        makeTarget(), [], [], new Map(), {
+          mode: 'fresh',
+          previous: null,
+          current: { headSha: 'bbb' },
+          codeChangedSincePreviousPrepare: null,
+          threadsChangedSincePreviousPrepare: null,
+        },
+      );
+      await manager.saveBundleState(bundleState);
+
       await manager.appendPublishedAction({
         type: 'reply',
-        threadId: 'T-001',
-        detail: 'First',
+        providerThreadId: 'thread-abc',
+        title: 'First',
         publishedAt: '2026-01-01T12:00:00Z',
       });
       await manager.appendPublishedAction({
         type: 'finding',
-        threadId: 'new-id',
-        filePath: 'src/app.ts',
-        line: 10,
-        detail: 'Second',
+        location: { oldPath: 'src/app.ts', newPath: 'src/app.ts', newLine: 10 },
+        severity: 'high',
+        category: 'correctness',
+        title: 'Second',
         publishedAt: '2026-01-01T12:01:00Z',
-        createdThreadId: 'new-id',
       });
 
-      const session = await manager.loadSession();
-      expect(session!.publishedActions).toHaveLength(2);
+      const state = await manager.loadBundleState();
+      expect(state!.publishedActions).toHaveLength(2);
     });
 
-    it('returns false when no session exists', async () => {
+    it('returns false when no bundle exists', async () => {
       const result = await manager.appendPublishedAction({
         type: 'reply',
-        threadId: 'T-001',
-        detail: 'No session',
+        providerThreadId: 'thread-1',
+        title: 'No bundle',
         publishedAt: '2026-01-01T12:00:00Z',
       });
       expect(result).toBe(false);

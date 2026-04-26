@@ -187,43 +187,91 @@ export interface ReplyDraft {
 
 // ─── Workspace Bundle ────────────────────────────────────
 
-export interface WorkspaceBundle {
-  sessionId: string;
+/** The on-disk bundle.json — canonical machine-readable state. */
+export interface BundleState {
+  schemaVersion: number;
+  preparedAt: string;
+  tool: { name: string; version: string };
+  target: BundleTarget;
+  prepare: PrepareSummary;
+  threads: BundleThreads;
+  publishedActions: BundlePublishedAction[];
+  paths: BundlePaths;
+}
+
+export interface BundleTarget {
+  provider: ProviderType;
+  repository: string;
+  type: TargetType;
+  id: string;
+  title: string;
+  descriptionPath: string;
+  author: string;
+  state: string;
+  sourceBranch: string;
+  targetBranch: string;
+  webUrl: string;
   createdAt: string;
+  updatedAt: string;
+  labels: string[];
+  diffRefs: DiffRefs;
+  providerVersionId?: string;
+}
+
+export interface PrepareSummary {
+  mode: 'fresh' | 'refresh' | 'target_changed';
+  previous: {
+    preparedAt: string;
+    providerVersionId?: string;
+    headSha: string;
+  } | null;
+  current: {
+    providerVersionId?: string;
+    headSha: string;
+  };
+  codeChangedSincePreviousPrepare: boolean | null;
+  threadsChangedSincePreviousPrepare: boolean | null;
+}
+
+export interface BundleThreads {
+  knownProviderThreadIds: string[];
+  shortIdMapping: { shortId: string; providerThreadId: string }[];
+}
+
+export interface BundlePublishedAction {
+  type: PublishedActionType;
+  providerThreadId?: string;
+  location?: {
+    oldPath?: string;
+    newPath?: string;
+    oldLine?: number;
+    newLine?: number;
+  };
+  severity?: string;
+  category?: string;
+  title?: string;
+  publishedAt: string;
+}
+
+export interface BundlePaths {
+  context: string;
+  instructions: string;
+  description: string;
+  latestPatch: string;
+  incrementalPatch: string | null;
+  lineMap: string;
+  outputs: string;
+}
+
+/** In-memory bundle used during prepare (not persisted directly). */
+export interface WorkspaceBundle {
+  preparedAt: string;
   target: ReviewTarget;
   threads: ReviewThread[];
   diffs: ReviewDiff[];
   versions: ReviewVersion[];
+  bundlePath: string;
   outputDir: string;
 }
 
-// ─── Session ─────────────────────────────────────────────
-
 export type PublishedActionType = 'reply' | 'finding' | 'resolve';
-
-export interface PublishedAction {
-  type: PublishedActionType;
-  /** T-NNN short ID (for replies/resolves) or created thread ID (for findings). */
-  threadId: string;
-  /** For findings: the file path and line that was published. */
-  filePath?: string;
-  line?: number;
-  /** Short description (truncated body or severity+category). */
-  detail: string;
-  /** When the action was published. */
-  publishedAt: string;
-  /** For findings: the thread SHA returned by the provider after creation. */
-  createdThreadId?: string;
-}
-
-export interface Session {
-  id: string;
-  createdAt: string;
-  targetRef: ReviewTargetRef;
-  bundlePath: string;
-  lastReviewedVersionId?: string;
-  /** Thread SHAs seen in the last review run (for tracking new vs. carried-over threads). */
-  knownThreadIds?: string[];
-  /** Actions published via CLI since this session started. */
-  publishedActions?: PublishedAction[];
-}

@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { registerReviewCommand } from './commands/review.js';
+import { registerPrepareCommand } from './commands/prepare.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerCheckoutCommand } from './commands/checkout.js';
-import { registerResetCommand } from './commands/reset.js';
+import { registerCleanCommand } from './commands/clean.js';
 import { registerPublishCommand } from './commands/publish.js';
 import { registerConfigCommand } from './commands/config.js';
-import { registerInitCommand } from './commands/init.js';
+import { registerSetupCommand } from './commands/setup.js';
 
 const program = new Command();
 
@@ -16,12 +16,12 @@ program
   .description('CLI assistant for code review workflows')
   .version('0.1.0');
 
-registerReviewCommand(program);
+registerPrepareCommand(program);
 registerStatusCommand(program);
 registerCheckoutCommand(program);
-registerResetCommand(program);
+registerCleanCommand(program);
 registerPublishCommand(program);
 registerConfigCommand(program);
-registerInitCommand(program);
+registerSetupCommand(program);
 
 program.parse();

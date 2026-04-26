@@ -151,15 +151,15 @@ async function publishReplies(opts: {
     }
     await ws.appendPublishedAction({
       type: 'reply',
-      threadId: opts.thread,
-      detail: body.split('\n')[0].slice(0, 80),
+      providerThreadId: opts.thread,
+      title: body.split('\n')[0].slice(0, 80),
       publishedAt: new Date().toISOString(),
     });
     if (shouldResolve) {
       await ws.appendPublishedAction({
         type: 'resolve',
-        threadId: opts.thread,
-        detail: 'Thread resolved',
+        providerThreadId: opts.thread,
+        title: 'Thread resolved',
         publishedAt: new Date().toISOString(),
       });
     }
@@ -180,8 +180,8 @@ async function publishReplies(opts: {
       posted++;
       await ws.appendPublishedAction({
         type: 'reply',
-        threadId: entry.threadId,
-        detail: entry.body.split('\n')[0].slice(0, 80),
+        providerThreadId: entry.threadId,
+        title: entry.body.split('\n')[0].slice(0, 80),
         publishedAt: new Date().toISOString(),
       });
       if (entry.resolve || opts.resolve) {
@@ -189,8 +189,8 @@ async function publishReplies(opts: {
         console.log(chalk.dim('    resolved'));
         await ws.appendPublishedAction({
           type: 'resolve',
-          threadId: entry.threadId,
-          detail: 'Thread resolved',
+          providerThreadId: entry.threadId,
+          title: 'Thread resolved',
           publishedAt: new Date().toISOString(),
         });
       }
@@ -221,7 +221,7 @@ async function publishFindings(opts: {
   } catch {
     throw new Error(
       `Cannot validate findings: ${patchPath} not found.\n` +
-      `Run \`review-assist review\` first to generate the diff bundle.`,
+      `Run \`review-assist prepare\` first to generate the diff bundle.`,
     );
   }
 
@@ -266,12 +266,17 @@ async function publishFindings(opts: {
       published++;
       await ws.appendPublishedAction({
         type: 'finding',
-        threadId: createdThreadId,
-        filePath: displayPath,
-        line: finding.newLine ?? finding.oldLine,
-        detail: `${finding.severity} ${finding.category}: ${finding.body.split('\n')[0].slice(0, 60)}`,
+        providerThreadId: createdThreadId,
+        location: {
+          oldPath: finding.oldPath,
+          newPath: finding.newPath,
+          oldLine: finding.oldLine,
+          newLine: finding.newLine,
+        },
+        severity: finding.severity,
+        category: finding.category,
+        title: finding.body.split('\n')[0].slice(0, 80),
         publishedAt: new Date().toISOString(),
-        createdThreadId,
       });
     } catch (err) {
       const displayPath = finding.newPath || finding.oldPath;
@@ -298,7 +303,7 @@ async function publishDescription(opts: {
     try {
       content = await fs.readFile('.review-assist/outputs/summary.md', 'utf-8');
     } catch {
-      console.error(chalk.red('No summary found. Run `review-assist review` first.'));
+      console.error(chalk.red('No summary found. Run `review-assist prepare` first.'));
       process.exit(1);
     }
   } else {
@@ -354,7 +359,7 @@ async function autoRefresh(): Promise<void> {
   try {
     const orchestrator = await createOrchestrator();
     const defaultRepo = await getDefaultRepo();
-    await orchestrator.review(undefined, defaultRepo);
+    await orchestrator.prepare(undefined, defaultRepo);
     console.log(chalk.dim('Bundle refreshed.'));
   } catch {
     console.log(chalk.dim('(could not auto-refresh bundle)'));
@@ -368,33 +373,47 @@ export function registerPublishCommand(program: Command): void {
     .description('Publish pending outputs to the MR/PR')
     .option('--no-refresh', 'Skip auto-refresh after publishing');
 
-  // ── publish (no subcommand) → publish everything pending ───
-  publish.action(async (opts: { refresh?: boolean }) => {
-    try {
-      let total = 0;
-      // Notes and description are optional — try but don't fail
-      try { total += await publishNotes({}); } catch { /* no notes */ }
-      try { total += await publishDescription({ fromSummary: true }); } catch { /* no description */ }
-
-      const replyCount = await publishReplies({ noRefresh: true });
-      total += replyCount;
-      const findingCount = await publishFindings({ noRefresh: true });
-      total += findingCount;
-
-      if (total === 0) {
-        console.log(chalk.dim('Nothing to publish.'));
-      } else {
-        console.log('');
-        console.log(chalk.green(`✓ ${total} item(s) published`));
-      }
-
-      if (opts.refresh !== false && total > 0) {
-        await autoRefresh();
-      }
-    } catch (err) {
-      handleError(err);
-    }
+  // ── publish (no subcommand) → tell user to be explicit ───
+  publish.action(async () => {
+    console.log(chalk.yellow('Please specify what to publish:'));
+    console.log('');
+    console.log('  review-assist publish all          Publish everything pending');
+    console.log('  review-assist publish findings      Publish findings only');
+    console.log('  review-assist publish replies       Publish replies only');
+    console.log('  review-assist publish description   Update MR description');
+    console.log('  review-assist publish notes         Sync review notes');
+    process.exit(1);
   });
+
+  // ── publish all ───────────────────────────────────────────
+  publish.command('all')
+    .description('Publish all pending outputs')
+    .action(async (_opts: Record<string, never>, cmd: Command) => {
+      try {
+        const parentOpts = cmd.parent?.opts() as { refresh?: boolean } | undefined;
+        let total = 0;
+        try { total += await publishNotes({}); } catch { /* no notes */ }
+        try { total += await publishDescription({ fromSummary: true }); } catch { /* no description */ }
+
+        const replyCount = await publishReplies({ noRefresh: true });
+        total += replyCount;
+        const findingCount = await publishFindings({ noRefresh: true });
+        total += findingCount;
+
+        if (total === 0) {
+          console.log(chalk.dim('Nothing to publish.'));
+        } else {
+          console.log('');
+          console.log(chalk.green(`✓ ${total} item(s) published`));
+        }
+
+        if (parentOpts?.refresh !== false && total > 0) {
+          await autoRefresh();
+        }
+      } catch (err) {
+        handleError(err);
+      }
+    });
 
   // ── publish replies [thread] ───────────────────────────────
   publish.command('replies [thread]')

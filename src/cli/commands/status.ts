@@ -7,85 +7,119 @@ import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../
 export function registerStatusCommand(program: Command): void {
   program
     .command('status [ref]')
-    .description('Show current review status for a MR/PR')
+    .description('Show target state, bundle freshness, branch sync, and pending outputs')
     .option('--json', 'Output as JSON')
     .action(async (ref: string | undefined, opts: { json?: boolean }) => {
       try {
         const orchestrator = await createOrchestrator();
         const defaultRepo = await getDefaultRepo();
-        const target = await orchestrator.open(ref, defaultRepo);
 
-        // Load workspace state for enhanced info
+        // Load bundle state
         const ws = new WorkspaceManager(process.cwd());
-        const session = await ws.loadSession();
+        const bundleState = await ws.loadBundleState();
 
         // Count unpublished outputs
         const pendingReplies = await countJsonArray('.review-assist/outputs/replies.json');
         const pendingFindings = await countJsonArray('.review-assist/outputs/new-findings.json');
+        const hasSummary = await fileHasContent('.review-assist/outputs/summary.md');
         const hasReviewNotes = await fileHasContent('.review-assist/outputs/review-notes.md');
 
         if (opts.json) {
+          const target = ref
+            ? await orchestrator.open(ref, defaultRepo)
+            : bundleState
+              ? { ...bundleState.target }
+              : await orchestrator.open(ref, defaultRepo);
+
           outputJson({
-            ...target,
-            session: session ? {
-              id: session.id,
-              createdAt: session.createdAt,
-              lastReviewedVersionId: session.lastReviewedVersionId,
-              publishedActionCount: session.publishedActions?.length ?? 0,
+            target,
+            bundle: bundleState ? {
+              preparedAt: bundleState.preparedAt,
+              mode: bundleState.prepare.mode,
+              codeChanged: bundleState.prepare.codeChangedSincePreviousPrepare,
+              threadsChanged: bundleState.prepare.threadsChangedSincePreviousPrepare,
+              publishedActionCount: bundleState.publishedActions.length,
             } : null,
-            pending: { replies: pendingReplies, findings: pendingFindings, notes: hasReviewNotes },
+            pending: { replies: pendingReplies, findings: pendingFindings, summary: hasSummary, notes: hasReviewNotes },
           });
           return;
         }
 
-        const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
-        const stateColor = getStateColor(target.state);
+        // If we have a bundle, show bundle-first status
+        if (bundleState) {
+          const t = bundleState.target;
+          const mrType = t.type === 'merge_request' ? 'MR' : 'PR';
+          const stateColor = getStateColor(t.state);
 
-        console.log(chalk.bold(`${mrType} !${target.targetId}: ${target.title}`));
-        console.log('');
-        console.log(`  ${chalk.dim('State:')}     ${stateColor(target.state)}`);
-        console.log(`  ${chalk.dim('Author:')}    @${target.author}`);
-        console.log(`  ${chalk.dim('Branch:')}    ${target.sourceBranch} → ${target.targetBranch}`);
-        console.log(`  ${chalk.dim('Created:')}   ${formatDate(target.createdAt)}`);
-        console.log(`  ${chalk.dim('Updated:')}   ${formatDate(target.updatedAt)}`);
-        if (target.labels.length) {
-          console.log(`  ${chalk.dim('Labels:')}    ${target.labels.join(', ')}`);
-        }
-        console.log(`  ${chalk.dim('URL:')}       ${target.webUrl}`);
-
-        // Session info
-        if (session) {
+          console.log(chalk.bold(`${mrType} !${t.id}: ${t.title}`));
+          console.log(`  ${chalk.dim('Repository:')} ${t.repository}`);
+          console.log(`  ${chalk.dim('Branch:')}     ${t.sourceBranch} → ${t.targetBranch}`);
+          console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
+          console.log(`  ${chalk.dim('URL:')}        ${t.webUrl}`);
           console.log('');
-          console.log(chalk.dim('─ Session ─'));
-          console.log(`  ${chalk.dim('Session:')}   ${session.id.slice(0, 8)} (${formatDate(session.createdAt)})`);
-          if (session.publishedActions?.length) {
-            console.log(`  ${chalk.dim('Actions:')}   ${session.publishedActions.length} published`);
+
+          // Bundle info
+          console.log(chalk.dim('─ Bundle ─'));
+          console.log(`  ${chalk.dim('Prepared:')}   ${formatDate(bundleState.preparedAt)}`);
+          console.log(`  ${chalk.dim('Head SHA:')}   ${t.diffRefs.headSha.slice(0, 7)}`);
+          const ps = bundleState.prepare;
+          if (ps.codeChangedSincePreviousPrepare !== null) {
+            console.log(`  ${chalk.dim('Code changed since previous prepare:')} ${ps.codeChangedSincePreviousPrepare ? 'yes' : 'no'}`);
           }
-        }
+          if (ps.threadsChangedSincePreviousPrepare !== null) {
+            console.log(`  ${chalk.dim('Threads changed since previous prepare:')} ${ps.threadsChangedSincePreviousPrepare ? 'yes' : 'no'}`);
+          }
 
-        // Pending outputs
-        if (pendingReplies > 0 || pendingFindings > 0 || hasReviewNotes) {
-          console.log('');
-          console.log(chalk.dim('─ Pending ─'));
-          if (pendingReplies > 0) console.log(`  ${chalk.yellow('⬡')} ${pendingReplies} reply/replies ready to publish`);
-          if (pendingFindings > 0) console.log(`  ${chalk.yellow('⬡')} ${pendingFindings} finding(s) ready to publish`);
-          if (hasReviewNotes) console.log(`  ${chalk.yellow('⬡')} Review notes ready to sync`);
-          console.log(chalk.dim(`  → Run \`review-assist publish\` to publish all`));
-        }
+          // Branch mismatch
+          const mismatch = await orchestrator.checkBranchMismatch();
+          if (mismatch) {
+            console.log('');
+            console.log(chalk.yellow(`  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but bundle targets "${mismatch.expectedBranch}" (!${mismatch.targetId})`));
+            console.log(chalk.yellow(`    Run \`review-assist clean\` to remove the stale bundle, or switch to "${mismatch.expectedBranch}".`));
+          }
 
-        // Branch mismatch warning
-        const mismatch = await orchestrator.checkBranchMismatch();
-        if (mismatch) {
-          console.log('');
-          console.log(chalk.yellow(`  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but session targets "${mismatch.expectedBranch}" (!${mismatch.targetId})`));
-          console.log(chalk.yellow(`    Run \`review-assist reset\` to clear, or \`review-assist checkout !${mismatch.targetId}\` to switch.`));
-        }
+          // Pending outputs
+          if (pendingReplies > 0 || pendingFindings > 0 || hasSummary || hasReviewNotes) {
+            console.log('');
+            console.log(chalk.dim('─ Pending outputs ─'));
+            if (pendingReplies > 0) console.log(`  ${chalk.yellow('⬡')} replies: ${pendingReplies}`);
+            if (pendingFindings > 0) console.log(`  ${chalk.yellow('⬡')} findings: ${pendingFindings}`);
+            if (hasSummary) console.log(`  ${chalk.yellow('⬡')} summary: changed`);
+            if (hasReviewNotes) console.log(`  ${chalk.yellow('⬡')} notes: changed`);
+          } else {
+            console.log('');
+            console.log(chalk.dim('─ Pending outputs ─'));
+            console.log(chalk.dim('  (none)'));
+          }
 
-        if (target.description) {
+          // Published actions
+          if (bundleState.publishedActions.length > 0) {
+            console.log('');
+            console.log(chalk.dim('─ Published actions ─'));
+            console.log(`  ${bundleState.publishedActions.length} action(s) published`);
+          }
+
+          // Next step
           console.log('');
-          console.log(chalk.dim('─'.repeat(60)));
-          console.log(target.description.slice(0, 500));
-          if (target.description.length > 500) console.log(chalk.dim('... (truncated)'));
+          if (pendingFindings > 0 || pendingReplies > 0) {
+            console.log(chalk.dim('Next:'));
+            console.log(chalk.dim('  review-assist publish'));
+          }
+
+        } else {
+          // No bundle — fall back to fetching target from provider
+          const target = await orchestrator.open(ref, defaultRepo);
+          const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
+          const stateColor = getStateColor(target.state);
+
+          console.log(chalk.bold(`${mrType} !${target.targetId}: ${target.title}`));
+          console.log('');
+          console.log(`  ${chalk.dim('State:')}     ${stateColor(target.state)}`);
+          console.log(`  ${chalk.dim('Author:')}    @${target.author}`);
+          console.log(`  ${chalk.dim('Branch:')}    ${target.sourceBranch} → ${target.targetBranch}`);
+          console.log(`  ${chalk.dim('URL:')}       ${target.webUrl}`);
+          console.log('');
+          console.log(chalk.dim('No bundle prepared. Run `review-assist prepare` to create one.'));
         }
       } catch (err) {
         handleError(err);

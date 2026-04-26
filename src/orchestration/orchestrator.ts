@@ -3,7 +3,9 @@ import type {
   ReviewTarget,
   ReviewTargetRef,
   WorkspaceBundle,
+  BundleState,
   NewFinding,
+  PrepareSummary,
 } from '../core/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
@@ -14,26 +16,21 @@ export interface OrchestratorOptions {
   bundleDirName?: string;
 }
 
-export interface ReviewResult {
+export interface PrepareResult {
   bundle: WorkspaceBundle;
+  bundleState: BundleState;
   contextPath: string;
-  incremental: boolean;
-  /** Whether the local branch HEAD matches the MR head commit. */
+  mode: 'fresh' | 'refresh' | 'target_changed';
+  codeChanged: boolean | null;
+  threadsChanged: boolean | null;
   localBranchStatus?: 'up-to-date' | 'behind' | 'ahead' | 'unknown';
-  /** Number of replies pruned from stale threads (incremental only). */
   prunedReplies: number;
-  /** Number of threads resolved since last review (incremental only). */
-  resolvedSinceLastReview: number;
-  /** Number of new threads since last review (incremental only). */
-  newThreadCount: number;
-  /** Number of published actions carried over from the session. */
   publishedActionCount: number;
 }
 
 export interface CheckoutResult {
   branch: string;
   target: ReviewTarget;
-  /** Set when a fresh clone was performed (no existing git repo). */
   clonedTo?: string;
 }
 
@@ -42,10 +39,9 @@ export interface CheckoutResult {
  */
 export class ReviewOrchestrator {
   private readonly provider: ReviewProvider;
-  private readonly workspace: WorkspaceManager;
+  readonly workspace: WorkspaceManager;
   private readonly git: GitHelper;
 
-  /** Marker prepended to every comment published by review-assist. */
   static readonly COMMENT_MARKER = '<!-- review-assist -->';
 
   constructor(options: OrchestratorOptions) {
@@ -57,27 +53,39 @@ export class ReviewOrchestrator {
   // ─── High-level workflows ──────────────────────────────
 
   /**
-   * Review: the primary unified workflow.
-   * Prepare bundle and write CONTEXT.md.
-   * Automatically incremental when a previous session exists, unless `full` is set.
+   * Prepare: the primary workflow.
+   * Fetches MR data, generates/refreshes the .review-assist/ bundle.
+   * Does NOT perform a review or create findings.
    */
-  async review(
+  async prepare(
     ref?: string,
     defaultRepo?: string,
-    options?: { full?: boolean },
-  ): Promise<ReviewResult> {
-    const targetRef = await this.resolveRef(ref, defaultRepo);
+    options?: { fresh?: boolean; discardOutputs?: boolean },
+  ): Promise<PrepareResult> {
+    const existingBundle = await this.workspace.loadBundleState();
 
-    // Check for existing session (for auto-incremental)
-    let existingSession = await this.workspace.loadSession();
-
-    // --full: clear previous session for a clean start
-    if (options?.full && existingSession) {
-      await this.workspace.clearSession();
-      existingSession = null;
+    // --fresh: remove everything and start clean
+    if (options?.fresh) {
+      await this.workspace.removeBundle();
     }
 
-    const isIncremental = !!(existingSession?.lastReviewedVersionId);
+    // Discard outputs if requested
+    if (options?.discardOutputs) {
+      await this.workspace.discardOutputs();
+    }
+
+    const targetRef = await this.resolveRef(ref, defaultRepo);
+
+    // Determine prepare mode
+    let mode: PrepareSummary['mode'] = 'fresh';
+    const previousBundle = options?.fresh ? null : existingBundle;
+    if (previousBundle) {
+      if (previousBundle.target.id !== targetRef.targetId) {
+        mode = 'target_changed';
+      } else {
+        mode = 'refresh';
+      }
+    }
 
     // Fetch all data in parallel
     const [target, rawThreads, diffs, versions] = await Promise.all([
@@ -87,15 +95,15 @@ export class ReviewOrchestrator {
       this.provider.getDiffVersions(targetRef),
     ]);
 
-    // Filter out system-only threads (activity log entries like "added 5 commits")
+    // Filter out system-only threads
     const allThreads = rawThreads.filter(
       (t) => !t.comments.every((c) => c.system),
     );
 
-    // Build position-based thread index (T-001, T-002, ... from creation order)
+    // Build position-based thread index
     const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
 
-    // Only non-resolved threads go into the bundle (both resolvable discussions and general comments)
+    // Only non-resolved threads go into the bundle
     const activeThreads = allThreads.filter((t) => !t.resolved);
 
     // Create the bundle
@@ -107,68 +115,87 @@ export class ReviewOrchestrator {
       threadIndex,
     );
 
-    // Incremental diff if applicable
-    if (isIncremental && versions.length > 0) {
+    // Compute prepare summary
+    const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
+    const currentHeadSha = target.diffRefs.headSha;
+
+    const codeChanged = previousBundle && mode === 'refresh'
+      ? previousBundle.target.diffRefs.headSha !== currentHeadSha
+      : null;
+
+    const threadsChanged = previousBundle && mode === 'refresh'
+      ? !arraysEqual(
+          previousBundle.threads.knownProviderThreadIds,
+          allThreads.map((t) => t.threadId),
+        )
+      : null;
+
+    const prepareSummary: PrepareSummary = {
+      mode,
+      previous: previousBundle && mode !== 'fresh' ? {
+        preparedAt: previousBundle.preparedAt,
+        providerVersionId: previousBundle.target.providerVersionId,
+        headSha: previousBundle.target.diffRefs.headSha,
+      } : null,
+      current: {
+        providerVersionId: latestVersionId,
+        headSha: currentHeadSha,
+      },
+      codeChangedSincePreviousPrepare: codeChanged,
+      threadsChangedSincePreviousPrepare: threadsChanged,
+    };
+
+    // Incremental diff if code changed
+    if (codeChanged && previousBundle && versions.length > 0) {
       const latestVersion = versions[0];
       try {
         const incrementalDiffs = await this.provider.getIncrementalDiff(
           targetRef,
-          existingSession!.lastReviewedVersionId!,
+          previousBundle.target.providerVersionId!,
           latestVersion.versionId,
         );
         await this.workspace.writeIncrementalDiff(incrementalDiffs);
       } catch {
-        // Fall back gracefully — incremental diff is best-effort
+        // Fall back gracefully
       }
+    } else if (mode === 'refresh' && !codeChanged) {
+      await this.workspace.writeNoCodeChangeIncrementalPatch();
     }
 
-    // Prune stale replies from previous runs (incremental safety)
+    // Prune stale replies
     let prunedReplies = 0;
-    if (isIncremental) {
+    if (mode === 'refresh') {
       const activeIds = new Set(activeThreads.map((t) => t.threadId));
       prunedReplies = await this.workspace.pruneStaleReplies(activeIds, threadIndex);
     }
 
-    // Compute incremental stats
-    const previousThreadIdSet = isIncremental && existingSession?.knownThreadIds
-      ? new Set(existingSession.knownThreadIds)
-      : undefined;
+    // Carry over published actions from previous bundle
+    const previousActions = previousBundle && mode !== 'fresh'
+      ? previousBundle.publishedActions
+      : [];
 
-    let resolvedSinceLastReview = 0;
-    let newThreadCount = 0;
-    if (previousThreadIdSet) {
-      resolvedSinceLastReview = [...previousThreadIdSet].filter(
-        (id) => !activeThreads.some((t) => t.threadId === id),
-      ).length;
-      newThreadCount = activeThreads.filter(
-        (t) => t.resolvable && !t.resolved && !previousThreadIdSet.has(t.threadId),
-      ).length;
-    }
-
-    // Write CONTEXT.md — the agent entry point
-    const publishedActions = existingSession?.publishedActions ?? [];
+    // Write CONTEXT.md
     const contextPath = await this.workspace.writeContext(
       target,
       activeThreads,
       diffs,
       threadIndex,
-      { incremental: isIncremental, previousThreadIds: previousThreadIdSet, publishedActions },
+      { prepareSummary, publishedActions: previousActions },
     );
 
-    // Update session with latest version for future incremental runs
-    const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
-    await this.workspace.saveSession({
-      id: bundle.sessionId,
-      createdAt: bundle.createdAt,
-      targetRef,
-      bundlePath: this.workspace.bundlePath,
-      lastReviewedVersionId: latestVersionId,
-      knownThreadIds: activeThreads.map((t) => t.threadId),
-      publishedActions,
-    });
+    // Build and save bundle.json
+    const bundleState = this.workspace.buildBundleState(
+      target,
+      allThreads,
+      versions,
+      threadIndex,
+      prepareSummary,
+      previousActions,
+    );
+    await this.workspace.saveBundleState(bundleState);
 
-    // Check local branch sync status against the MR head commit
-    let localBranchStatus: ReviewResult['localBranchStatus'] = 'unknown';
+    // Check local branch sync status
+    let localBranchStatus: PrepareResult['localBranchStatus'] = 'unknown';
     try {
       const mrHeadSha = target.diffRefs.headSha;
       if (mrHeadSha) {
@@ -181,23 +208,24 @@ export class ReviewOrchestrator {
         }
       }
     } catch {
-      // Not a git repo or other error — leave as unknown
+      // Not a git repo or other error
     }
 
     return {
       bundle,
+      bundleState,
       contextPath,
-      incremental: isIncremental,
+      mode,
+      codeChanged,
+      threadsChanged,
       localBranchStatus,
       prunedReplies,
-      resolvedSinceLastReview,
-      newThreadCount,
-      publishedActionCount: publishedActions.length,
+      publishedActionCount: previousActions.length,
     };
   }
 
   /**
-   * Status: resolve ref, fetch snapshot, display summary info.
+   * Open: resolve ref, fetch snapshot.
    */
   async open(ref?: string, defaultRepo?: string): Promise<ReviewTarget> {
     const targetRef = await this.resolveRef(ref, defaultRepo);
@@ -205,34 +233,26 @@ export class ReviewOrchestrator {
   }
 
   /**
-   * Check if the current git branch matches the active session's target.
-   * Returns null if no session or no git info available.
+   * Check if the current git branch matches the active bundle's target.
+   * Returns null if no bundle or no git info available.
    */
   async checkBranchMismatch(): Promise<{ currentBranch: string; expectedBranch: string; targetId: string } | null> {
-    const session = await this.workspace.loadSession();
-    if (!session) return null;
+    const bundleState = await this.workspace.loadBundleState();
+    if (!bundleState) return null;
     try {
       const currentBranch = await this.git.currentBranch();
       if (!currentBranch || currentBranch === 'HEAD') return null;
-      const target = await this.provider.getTargetSnapshot(session.targetRef);
-      if (currentBranch !== target.sourceBranch) {
-        return { currentBranch, expectedBranch: target.sourceBranch, targetId: session.targetRef.targetId };
+      if (currentBranch !== bundleState.target.sourceBranch) {
+        return {
+          currentBranch,
+          expectedBranch: bundleState.target.sourceBranch,
+          targetId: bundleState.target.id,
+        };
       }
     } catch {
       // Can't check — not a git repo or API error
     }
     return null;
-  }
-
-  /**
-   * Reset: clear the active session and optionally the entire bundle.
-   */
-  async reset(options?: { full?: boolean }): Promise<void> {
-    if (options?.full) {
-      await this.workspace.removeBundle();
-    } else {
-      await this.workspace.clearSession();
-    }
   }
 
   /**
@@ -267,12 +287,6 @@ export class ReviewOrchestrator {
     // Fetch the source branch and switch to it
     await this.git.fetchBranch(target.sourceBranch);
     await this.git.switchBranch(target.sourceBranch);
-
-    // Clear any stale session for a different target
-    const existingSession = await this.workspace.loadSession();
-    if (existingSession && existingSession.targetRef.targetId !== targetRef.targetId) {
-      await this.workspace.clearSession();
-    }
 
     return { branch: target.sourceBranch, target };
   }
@@ -346,39 +360,40 @@ export class ReviewOrchestrator {
   // ─── Helpers ────────────────────────────────────────────
 
   private async resolveRef(ref?: string, defaultRepo?: string): Promise<ReviewTargetRef> {
-    // 1. Explicit ref provided — parse it
+    // 1. Explicit ref
     if (ref) {
       const targetRef = await this.provider.resolveTarget(ref);
-
       if (!targetRef.repository && defaultRepo) {
         targetRef.repository = defaultRepo;
       }
       if (!targetRef.repository) {
         targetRef.repository = await this.git.deriveRepoSlug();
       }
-
       return targetRef;
     }
 
-    // 2. Existing session — but validate branch match first
-    const session = await this.workspace.loadSession();
-    if (session) {
-      // If we can determine the current branch, check it matches the session's target
+    // 2. Existing bundle.json
+    const bundleState = await this.workspace.loadBundleState();
+    if (bundleState) {
+      // If we can determine the current branch, check it matches
       try {
         const currentBranch = await this.git.currentBranch();
-        const target = await this.provider.getTargetSnapshot(session.targetRef);
-        if (currentBranch && currentBranch !== 'HEAD' && currentBranch !== target.sourceBranch) {
+        if (currentBranch && currentBranch !== 'HEAD' && currentBranch !== bundleState.target.sourceBranch) {
           throw new Error(
             `Branch mismatch: current branch "${currentBranch}" does not match ` +
-            `the session's MR source branch "${target.sourceBranch}" (!${session.targetRef.targetId}).\n` +
-            `Run \`review-assist reset\` to clear the stale session, or switch to "${target.sourceBranch}".`,
+            `the bundle's MR source branch "${bundleState.target.sourceBranch}" (!${bundleState.target.id}).\n` +
+            `Run \`review-assist clean\` to remove the stale bundle, or switch to "${bundleState.target.sourceBranch}".`,
           );
         }
       } catch (err) {
-        // Re-throw branch mismatch errors; ignore git failures (not a repo, etc.)
         if (err instanceof Error && err.message.includes('Branch mismatch')) throw err;
       }
-      return session.targetRef;
+      return {
+        provider: bundleState.target.provider,
+        repository: bundleState.target.repository,
+        targetType: bundleState.target.type,
+        targetId: bundleState.target.id,
+      };
     }
 
     // 3. Auto-detect MR from current git branch
@@ -389,29 +404,35 @@ export class ReviewOrchestrator {
     if (repo) {
       try {
         const branch = await this.git.currentBranch();
-        if (branch && branch !== 'HEAD') { // HEAD means detached
+        if (branch && branch !== 'HEAD') {
           const targets = await this.provider.findTargetByBranch(repo, branch);
           if (targets.length === 1) {
-            return targets[0]; // ReviewTarget extends ReviewTargetRef
+            return targets[0];
           }
           if (targets.length > 1) {
             const ids = targets.map((t) => `!${t.targetId}`).join(', ');
             throw new Error(
               `Multiple open MRs found for branch "${branch}": ${ids}\n` +
-              'Specify one explicitly: `review-assist review !<id>`',
+              'Specify one explicitly: `review-assist prepare !<id>`',
             );
           }
         }
       } catch (err) {
-        // If it's our "multiple MRs" error, re-throw; otherwise fall through
         if (err instanceof Error && err.message.includes('Multiple open MRs')) throw err;
       }
     }
 
     throw new Error(
-      'Could not determine which MR to review.\n' +
-      'No ref provided, no active session, and no open MR found for the current branch.\n' +
-      'Run `review-assist review !<id>` to specify one explicitly.',
+      'Could not determine which MR to prepare.\n' +
+      'No ref provided, no existing bundle, and no open MR found for the current branch.\n' +
+      'Run `review-assist prepare !<id>` to specify one explicitly.',
     );
   }
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((v, i) => v === sortedB[i]);
 }

@@ -34,84 +34,108 @@ npx review-assist config set gitlabToken glpat-xxxxxxxxxxxx
 ## Quick Start
 
 ```bash
-# 1. One-time: set up your project for review-assist
-cd your-project
-review-assist init --prompts
+# Optional: add project-specific review guidance and Copilot prompts
+review-assist setup --prompts
 
-# 2. Switch to a MR branch and start reviewing:
-review-assist checkout !42
+# Prepare a review bundle for the MR/PR of the current branch
+review-assist prepare
 
-# Or from any empty directory — clones the repo automatically:
+# Or prepare a specific MR/PR
+review-assist prepare !42
+```
+
+Then ask your agent to follow:
+
+```text
+.review-assist/CONTEXT.md
+```
+
+The agent writes outputs to:
+
+```text
+.review-assist/outputs/
+```
+
+Check pending outputs:
+
+```bash
+review-assist status
+```
+
+Publish selected outputs:
+
+```bash
+review-assist publish findings
+review-assist publish replies
+review-assist publish notes
+review-assist publish description --from-summary
+```
+
+After new commits or new comments:
+
+```bash
+review-assist prepare
+```
+
+To discard local review-assist state:
+
+```bash
+review-assist clean
+```
+
+### Working on an MR/PR not checked out locally
+
+```bash
 review-assist checkout !42 --repo group/project
+review-assist prepare
+```
 
-# Or just run from a feature branch — auto-detects the open MR:
-review-assist review
+Convenience:
 
-# 3. Use with your agent (Copilot, Claude, etc.):
-#    - Open .review-assist/CONTEXT.md and tell your agent to follow it
-#    - Or use a Copilot prompt: /review
-
-# 4. After the developer pushes changes, just re-run (auto-incremental):
-review-assist review
-
-# 5. Publish results back to GitLab/GitHub:
-review-assist publish                             # publish everything pending
-review-assist publish replies                     # publish replies only
-review-assist publish findings                    # publish findings only
-review-assist publish description --from-summary  # update MR description
-review-assist publish notes                       # sync review notes
+```bash
+review-assist checkout !42 --repo group/project --prepare
 ```
 
 You can also paste a full GitLab URL instead of `!42`:
 ```bash
-review-assist review https://gitlab.example.com/group/project/-/merge_requests/42
+review-assist prepare https://gitlab.example.com/group/project/-/merge_requests/42
 ```
 
 ## Commands
 
-### `checkout <ref>` — Switch branch and start review
+### `prepare [ref]` — Primary workflow
 
-In a git repo: fetches the MR source branch from origin, switches to it, and runs a full review. Requires a clean working tree.
+Fetches MR metadata, threads, diffs, and writes the `.review-assist/` bundle with a `CONTEXT.md` entry point for agents.
 
-Outside a git repo: performs a shallow clone into a new directory (named after the project, like `git clone`), then runs the review there.
+Re-running on the same MR automatically produces a **refresh** (detects code and thread changes since the last prepare). Thread IDs (T-001, T-002, ...) are derived from position in the provider's all-threads list (creation order), so they stay stable as long as existing threads aren't deleted.
 
-```bash
-review-assist checkout !42                        # fetch + switch + auto-review
-review-assist checkout https://gitlab.example.com/group/project/-/merge_requests/42
-review-assist checkout !42 --no-review            # just switch, skip review
-review-assist checkout !42 --repo group/project   # clone when not in a git repo
-```
+**Auto-detection**: When no `ref` is given and no bundle exists, `prepare` looks up the current git branch and finds any open MR sourced from it — no need to pass `!42` manually.
 
-### `review [ref]` — Primary workflow (recommended)
-
-Fetches MR metadata, threads, diffs, and writes a `CONTEXT.md` entry point for agents.
-
-Re-running on the same MR automatically produces an **incremental** review (only changes since last run). Thread IDs (T-001, T-002, ...) are derived from position in the provider's all-threads list (creation order), so they stay stable as long as existing threads aren't deleted.
-
-**Auto-detection**: When no `ref` is given and no session exists, `review` looks up the current git branch and finds any open MR sourced from it — no need to pass `!42` manually.
-
-**Branch mismatch safety**: If a session exists but the current git branch doesn't match the MR's source branch, `review` refuses to proceed and tells you to run `reset` or switch branches.
+**Branch mismatch safety**: If a bundle exists but the current git branch doesn't match the MR's source branch, `prepare` refuses to proceed and tells you to run `clean` or switch branches.
 
 ```bash
-review-assist review                              # auto-detect from branch (or resume session)
-review-assist review !42                          # first review (full)
-review-assist review --full                       # discard session, start fresh
-review-assist review !42 --json
+review-assist prepare                             # auto-detect from branch (or refresh existing bundle)
+review-assist prepare !42                         # first prepare (fresh)
+review-assist prepare --fresh                     # discard bundle, start fresh
+review-assist prepare --discard-outputs           # clear output files before preparing
+review-assist prepare !42 --json
 ```
 
-Output shows MR state (opened/merged/closed), last updated date, thread counts, **local branch sync status** (up-to-date / behind / ahead of MR head), and warns if the MR is already merged or closed or if the local branch is behind.
+Output shows MR state (opened/merged/closed), prepare mode (fresh/refresh), code/thread change summary, and bundle path.
 
 Creates `.review-assist/`:
 ```
 .review-assist/
   CONTEXT.md              ← agent entry point (start here)
-  session.json            ← tracks MR ref + last reviewed version
-  target.json
+  INSTRUCTIONS.md         ← stable review workflow and output format rules
+  bundle.json             ← machine-readable bundle metadata and state
+  description.md          ← raw MR/PR description
   threads/
     T-001.md, T-001.json  ← one per unresolved thread (stable IDs)
   diffs/
     latest.patch           ← full MR diff
-    incremental.patch      ← changes since last review (auto on re-run)
+    incremental.patch      ← changes since last prepare (auto on refresh)
+    line-map.json          ← valid positional anchors
   outputs/
     replies.json          ← agent drafts (T-NNN references)
     new-findings.json     ← agent-created issues for proactive review
@@ -119,23 +143,28 @@ Creates `.review-assist/`:
     review-notes.md       ← review notes synced to MR comment
 ```
 
-### `status [ref]` — View MR/PR status
+### `checkout <ref>` — Switch to MR branch
 
-Shows MR state, author, branches, dates, labels, URL, description, session info, and pending outputs. Warns if the current git branch doesn't match the active session's MR.
+In a git repo: fetches the MR source branch from origin and switches to it. Requires a clean working tree.
+
+Outside a git repo: performs a shallow clone into a new directory (named after the project, like `git clone`).
+
+Does **not** prepare by default. Use `--prepare` to combine checkout and prepare in one command.
 
 ```bash
-review-assist status                              # show session's MR status
-review-assist status !42
-review-assist status !42 --json
+review-assist checkout !42                        # fetch + switch
+review-assist checkout !42 --prepare              # fetch + switch + prepare
+review-assist checkout !42 --repo group/project   # clone when not in a git repo
 ```
 
-### `reset` — Clear session
+### `status [ref]` — View MR/PR status
 
-Clears the active review session. Use when switching to a different MR or to start fresh.
+Shows MR state, author, branches, dates, labels, URL, prepare summary (mode, code/thread changes), pending outputs, and published actions. Reads from `bundle.json` when available, falls back to provider API fetch.
 
 ```bash
-review-assist reset                               # clear session only
-review-assist reset --full                        # remove entire .review-assist/ directory
+review-assist status                              # show bundle's MR status
+review-assist status !42
+review-assist status !42 --json
 ```
 
 ### `publish` — Publish outputs to the MR/PR
@@ -143,8 +172,8 @@ review-assist reset --full                        # remove entire .review-assist
 Publishes pending replies, findings, description updates, and review notes. After publishing, automatically refreshes the bundle to pick up the new comments.
 
 ```bash
-review-assist publish                                  # publish everything pending
-review-assist publish --no-refresh                     # skip auto-refresh after publishing
+review-assist publish all                              # publish everything pending
+review-assist publish all --no-refresh                 # skip auto-refresh after publishing
 review-assist publish replies                          # publish all from replies.json
 review-assist publish replies T-001                    # publish one thread
 review-assist publish replies T-001 --body "Fixed!"    # inline reply
@@ -155,15 +184,24 @@ review-assist publish description --from-summary       # update MR description
 review-assist publish description --from custom.md     # use any file
 review-assist publish description --from-summary --replace  # replace entire description
 review-assist publish notes                            # sync review notes to MR comment
-review-assist publish notes --from notes.md            # custom file
 ```
 
-### `init` — Set up a project for review-assist
+### `clean` — Remove local review-assist state
+
+Deletes the `.review-assist/` directory. The directory is disposable local state — run `prepare` to create a fresh bundle.
 
 ```bash
-review-assist init             # creates REVIEW.md
-review-assist init --prompts   # also creates .github/prompts/ with Copilot prompts
-review-assist init --dry-run   # preview without writing
+review-assist clean
+```
+
+### `setup` — Set up a project for review-assist
+
+Creates a `REVIEW.md` file in the repository root for project-specific review guidance.
+
+```bash
+review-assist setup             # creates REVIEW.md
+review-assist setup --prompts   # also creates .github/prompts/ with Copilot prompts
+review-assist setup --dry-run   # preview without writing
 ```
 
 ### `config` — Manage configuration
@@ -181,7 +219,7 @@ Five layers:
 1. **Core domain** (`src/core/`) — Provider-neutral types, schemas, errors
 2. **Provider adapters** (`src/providers/`) — GitLab (now), GitHub (future)
 3. **Workspace** (`src/workspace/`) — Git operations, bundle creation
-4. **Orchestration** (`src/orchestration/`) — Workflow coordination, summaries
+4. **Orchestration** (`src/orchestration/`) — Workflow coordination
 5. **CLI** (`src/cli/`) — Commander-based commands with `--json` support
 
 ### Key design decisions
@@ -190,7 +228,9 @@ Five layers:
 - **Position-based thread IDs** — T-NNN IDs derived from position in the provider's all-threads list (creation order), no separate mapping file needed
 - **Canonical finding schema** — Structured JSON output with severity, confidence, status, disposition
 - **Agent-ready bundles** — Context packaged for LLM consumption, not raw API dumps
+- **Prepare, not review** — `prepare` generates/refreshes the bundle; the agent performs the review; `publish` writes results back
 - **Read-first, write-guarded** — No auto-push/auto-post; write operations require explicit commands
+- **bundle.json as canonical state** — Single source of truth for bundle metadata, thread mappings, and published actions
 - **Marker-based description updates** — Preserves original MR description; review-assist content lives in a marked section
 - **No file copies in bundle** — Instruction files (REVIEW.md) and source code are read directly from the repo, not copied into the bundle
 
@@ -203,16 +243,17 @@ npm test
 ## Development
 
 ```bash
-npm run dev -- review !42    # run CLI with tsx (no build needed)
+npm run dev -- prepare !42    # run CLI with tsx (no build needed)
 ```
 
 ## Roadmap
 
 - **Phase 0** ✅ Spike — GitLab auth, MR fetch, discussions, workspace bundle
-- **Phase 1** ✅ Read-only assistant — `status`, `review`
-- **Phase 2** ✅ Assisted replies — `publish-reply`, `update-description`
-- **Phase 2.5** ✅ Unified workflow — `review` command, CONTEXT.md, incremental support
-- **Phase 2.7** ✅ Auto-detect & proactive review — Branch auto-detect, sync status, `publish-finding`
+- **Phase 1** ✅ Read-only assistant — `status`, `prepare`
+- **Phase 2** ✅ Assisted replies — `publish`, `update-description`
+- **Phase 2.5** ✅ Unified workflow — `prepare` command, CONTEXT.md, incremental support
+- **Phase 2.7** ✅ Auto-detect & proactive review — Branch auto-detect, sync status, `publish findings`
+- **Phase 2.8** ✅ Workflow redesign — `prepare`/`setup`/`clean`, `bundle.json`, structured context
 - **Phase 3** 🔜 Patch assistance — Generate/apply patches, run checks
 - **Phase 4** 🔜 Learnings & automation — Durable learnings, CI integration
 - **Phase 5** 🔜 Provider expansion & MCP — GitHub adapter, MCP server

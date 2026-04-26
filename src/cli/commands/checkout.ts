@@ -6,13 +6,13 @@ export function registerCheckoutCommand(program: Command): void {
   program
     .command('checkout <ref>')
     .description([
-      'Switch to the MR source branch and run a full review.',
-      '  In a git repo: fetches the branch, switches to it, runs `review --full`.',
+      'Fetch and check out the MR/PR source branch locally.',
+      '  In a git repo: fetches the branch and switches to it.',
       '  Outside a git repo: shallow-clones into a new directory first.',
     ].join('\n'))
-    .option('--no-review', 'Only switch branch, skip the automatic review')
+    .option('--prepare', 'Also run `prepare` after checkout')
     .option('--repo <repo>', 'Repository slug (group/project)')
-    .action(async (ref: string, opts: { review?: boolean; repo?: string }) => {
+    .action(async (ref: string, opts: { prepare?: boolean; repo?: string }) => {
       try {
         let orchestrator = await createOrchestrator();
         const defaultRepo = opts.repo ?? await getDefaultRepo();
@@ -37,25 +37,28 @@ export function registerCheckoutCommand(program: Command): void {
           console.log('');
         }
 
-        // Auto-review unless --no-review
-        if (opts.review !== false) {
-          console.log(chalk.dim('Running review...'));
+        // Auto-prepare if --prepare
+        if (opts.prepare) {
+          console.log(chalk.dim('Running prepare...'));
           console.log('');
 
-          const reviewResult = await orchestrator.review(ref, defaultRepo, { full: true });
-          const { bundle } = reviewResult;
+          const prepareResult = await orchestrator.prepare(ref, defaultRepo, { fresh: true });
+          const { bundle } = prepareResult;
 
-          console.log(chalk.green('✓ Review bundle ready'));
+          console.log(chalk.green('✓ Bundle prepared'));
           console.log(`  ${chalk.dim('Threads:')}  ${bundle.threads.length} unresolved`);
           console.log(`  ${chalk.dim('Files:')}    ${bundle.diffs.length} changed`);
-          console.log(`  ${chalk.dim('Context:')}  ${reviewResult.contextPath}`);
+          console.log(`  ${chalk.dim('Context:')}  ${prepareResult.contextPath}`);
           console.log('');
           console.log(chalk.dim('Next: open .review-assist/CONTEXT.md and point your agent at it'));
           if (clonedTo) {
             console.log(chalk.dim(`      cd ${clonedTo}`));
           }
-        } else if (clonedTo) {
-          console.log(chalk.dim(`Next: cd ${clonedTo}`));
+        } else {
+          console.log(chalk.dim('Next: run `review-assist prepare` to generate the review bundle'));
+          if (clonedTo) {
+            console.log(chalk.dim(`      cd ${clonedTo}`));
+          }
         }
       } catch (err) {
         handleError(err);

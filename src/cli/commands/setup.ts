@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
 
-interface InitFile {
+interface SetupFile {
   /** Path relative to the target project root. */
   target: string;
   /** Source: either a path relative to the templates/ dir, or inline content. */
@@ -14,27 +14,15 @@ interface InitFile {
   label: string;
 }
 
-const REVIEW_CONFIG_FILES: InitFile[] = [
+const REVIEW_CONFIG_FILES: SetupFile[] = [
   {
     target: 'REVIEW.md',
     source: 'REVIEW.md',
     label: 'Review guidelines',
   },
-  {
-    target: path.join('.review-assist', 'INSTRUCTIONS.md'),
-    source: 'INSTRUCTIONS.md',
-    label: 'Project review instructions',
-  },
-  {
-    target: path.join('.review-assist', '.gitignore'),
-    inline: [
-      '*',
-    ].join('\n'),
-    label: 'Runtime output gitignore',
-  },
 ];
 
-const PROMPT_FILES: InitFile[] = [
+const PROMPT_FILES: SetupFile[] = [
   {
     target: path.join('.github', 'prompts', 'review.prompt.md'),
     source: path.join('prompts', 'review.prompt.md'),
@@ -47,10 +35,10 @@ const PROMPT_FILES: InitFile[] = [
   },
 ];
 
-export function registerInitCommand(program: Command): void {
+export function registerSetupCommand(program: Command): void {
   program
-    .command('init')
-    .description('Set up the current project for review-assist')
+    .command('setup')
+    .description('Optional one-time project setup — creates REVIEW.md and optionally Copilot prompts')
     .option('--prompts', 'Also install Copilot Chat prompt files (.github/prompts/)')
     .option('--dry-run', 'Show what would be created without writing files')
     .action(async (opts: { prompts?: boolean; dryRun?: boolean }) => {
@@ -126,14 +114,14 @@ export function registerInitCommand(program: Command): void {
         if (!opts.prompts) {
           console.log(chalk.dim('  Tip: run with --prompts to also install Copilot Chat prompt files'));
         }
+        console.log(chalk.dim('  Then run `review-assist prepare` to prepare a review bundle.'));
       }
     });
 }
 
 function resolveTemplatesDir(): string {
-  // Templates live alongside the built CLI in the package
   const thisFile = fileURLToPath(import.meta.url);
-  // dist/cli/commands/init.js -> package root -> templates/
+  // dist/cli/commands/setup.js -> package root -> templates/
   return path.resolve(path.dirname(thisFile), '..', '..', '..', 'templates');
 }
 
