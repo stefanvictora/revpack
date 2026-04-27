@@ -266,27 +266,38 @@ export class ReviewOrchestrator {
     const inRepo = await this.git.isGitRepo();
 
     if (!inRepo) {
-      // No git repo — shallow clone into a sub-directory (like `git clone`)
+      // No git repo — shallow clone into a sub-directory, similar to `git clone`
       const cloneUrl = this.provider.getCloneUrl(targetRef.repository);
       const clonedDir = await GitHelper.clone(
-        cloneUrl,
-        target.sourceBranch,
-        this.git.cwd,
+          cloneUrl,
+          target.sourceBranch,
+          this.git.cwd,
       );
       return { branch: target.sourceBranch, target, clonedTo: clonedDir };
     }
 
-    // Existing repo — require clean tree, then fetch + switch
-    const isClean = await this.git.isClean();
-    if (!isClean) {
+    // Existing repo — fetch the MR source branch first.
+    await this.git.fetchBranch(target.sourceBranch);
+
+    try {
+      // Let Git decide whether switching is safe.
+      //
+      // This allows harmless local state, such as unrelated untracked files,
+      // while still refusing switches that would overwrite local changes.
+      await this.git.switchBranch(target.sourceBranch);
+    } catch (error) {
       throw new Error(
-        'Working tree has uncommitted changes. Commit or stash them before switching branches.',
+          [
+            `Could not switch to branch '${target.sourceBranch}'.`,
+            '',
+            'Git refused the switch because it would overwrite local changes or otherwise could not safely update the working tree.',
+            'Commit, stash, move, or remove the conflicting files, then try again.',
+            '',
+            `Original error: ${error instanceof Error ? error.message : String(error)}`,
+          ].join('\n'),
+          { cause: error },
       );
     }
-
-    // Fetch the source branch and switch to it
-    await this.git.fetchBranch(target.sourceBranch);
-    await this.git.switchBranch(target.sourceBranch);
 
     return { branch: target.sourceBranch, target };
   }

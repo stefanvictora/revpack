@@ -55,11 +55,6 @@ export class GitHelper {
     return url;
   }
 
-  /** Checkout a branch or ref. */
-  async checkout(ref: string): Promise<void> {
-    await exec('git', ['checkout', ref], { cwd: this.cwd });
-  }
-
   /** Switch to a branch, creating a tracking branch if needed. */
   async switchBranch(branch: string, remote = 'origin'): Promise<void> {
     try {
@@ -117,12 +112,6 @@ export class GitHelper {
   async isAtCommit(commitSha: string): Promise<boolean> {
     const head = await this.headSha();
     return head === commitSha;
-  }
-
-  /** Check if working tree is clean. */
-  async isClean(): Promise<boolean> {
-    const { stdout } = await exec('git', ['status', '--porcelain'], { cwd: this.cwd });
-    return stdout.trim().length === 0;
   }
 
   /** Generate a diff between two refs. */
