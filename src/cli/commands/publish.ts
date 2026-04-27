@@ -9,8 +9,8 @@ import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 
 // ─── Marker-based description merge ─────────────────────
 
-export const MARKER_START = '<!-- review-assist:start -->';
-export const MARKER_END   = '<!-- review-assist:end -->';
+export const MARKER_START = '<!-- revkit:start -->';
+export const MARKER_END   = '<!-- revkit:end -->';
 
 /**
  * Merge new content into the description using HTML comment markers.
@@ -31,9 +31,9 @@ export function mergeWithMarkers(existing: string, newContent: string): string {
   return existing.trimEnd() + separator + markedSection;
 }
 
-const DEFAULT_REPLIES_FILE = '.review-assist/outputs/replies.json';
-const DEFAULT_FINDINGS_FILE = '.review-assist/outputs/new-findings.json';
-const DEFAULT_REVIEW_NOTES_FILE = '.review-assist/outputs/review-notes.md';
+const DEFAULT_REPLIES_FILE = '.revkit/outputs/replies.json';
+const DEFAULT_FINDINGS_FILE = '.revkit/outputs/new-findings.json';
+const DEFAULT_REVIEW_NOTES_FILE = '.revkit/outputs/review-notes.md';
 
 // ─── JSON helpers ────────────────────────────────────────
 
@@ -214,14 +214,14 @@ async function publishFindings(opts: {
   if (rawFindings.length === 0) return 0;
 
   // Load line map for validation
-  const patchPath = '.review-assist/diffs/latest.patch';
+  const patchPath = '.revkit/diffs/latest.patch';
   let patchContent: string;
   try {
     patchContent = await fs.readFile(patchPath, 'utf-8');
   } catch {
     throw new Error(
       `Cannot validate findings: ${patchPath} not found.\n` +
-      `Run \`review-assist prepare\` first to generate the diff bundle.`,
+      `Run \`revkit prepare\` first to generate the diff bundle.`,
     );
   }
 
@@ -301,9 +301,9 @@ async function publishDescription(opts: {
     content = await fs.readFile(opts.from, 'utf-8');
   } else if (opts.fromSummary) {
     try {
-      content = await fs.readFile('.review-assist/outputs/summary.md', 'utf-8');
+      content = await fs.readFile('.revkit/outputs/summary.md', 'utf-8');
     } catch {
-      console.error(chalk.red('No summary found. Run `review-assist prepare` first.'));
+      console.error(chalk.red('No summary found. Run `revkit prepare` first.'));
       process.exit(1);
     }
   } else {
@@ -377,11 +377,11 @@ export function registerPublishCommand(program: Command): void {
   publish.action(async () => {
     console.log(chalk.yellow('Please specify what to publish:'));
     console.log('');
-    console.log('  review-assist publish all          Publish everything pending');
-    console.log('  review-assist publish findings      Publish findings only');
-    console.log('  review-assist publish replies       Publish replies only');
-    console.log('  review-assist publish description   Update MR description');
-    console.log('  review-assist publish notes         Sync review notes');
+    console.log('  revkit publish all          Publish everything pending');
+    console.log('  revkit publish findings      Publish findings only');
+    console.log('  revkit publish replies       Publish replies only');
+    console.log('  revkit publish description   Update MR description');
+    console.log('  revkit publish notes         Sync review notes');
     process.exit(1);
   });
 
@@ -452,7 +452,7 @@ export function registerPublishCommand(program: Command): void {
 
   // ── publish description ────────────────────────────────────
   publish.command('description')
-    .description('Update the MR/PR description with a review-assist section')
+    .description('Update the MR/PR description with a revkit section')
     .option('--from <file>', 'Read content from a file')
     .option('--from-summary', 'Use the generated summary.md')
     .option('--replace', 'Replace entire description')

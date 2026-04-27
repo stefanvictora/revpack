@@ -7,7 +7,7 @@ describe('configSchema', () => {
       provider: 'gitlab',
       gitlabUrl: 'https://gitlab.example.com',
       gitlabToken: 'glpat-abc123',
-      bundleDir: '.review-assist',
+      bundleDir: '.revkit',
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -24,7 +24,7 @@ describe('configSchema', () => {
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.bundleDir).toBe('.review-assist');
+      expect(result.data.bundleDir).toBe('.revkit');
     }
   });
 

@@ -62,7 +62,7 @@ describe('WorkspaceManager', () => {
   let manager: WorkspaceManager;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'review-assist-test-'));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revkit-test-'));
     manager = new WorkspaceManager(tmpDir);
   });
 
@@ -91,7 +91,7 @@ describe('WorkspaceManager', () => {
     expect(bundle.diffs).toHaveLength(1);
 
     // Verify directory structure
-    const bundleDir = path.join(tmpDir, '.review-assist');
+    const bundleDir = path.join(tmpDir, '.revkit');
     const entries = await fs.readdir(bundleDir);
     expect(entries).toContain('description.md');
     expect(entries).toContain('threads');
@@ -102,7 +102,7 @@ describe('WorkspaceManager', () => {
   it('writes description.md with MR description', async () => {
     await createBundle(manager, makeTarget(), []);
 
-    const descPath = path.join(tmpDir, '.review-assist', 'description.md');
+    const descPath = path.join(tmpDir, '.revkit', 'description.md');
     const content = await fs.readFile(descPath, 'utf-8');
 
     expect(content).toContain('A test merge request');
@@ -111,7 +111,7 @@ describe('WorkspaceManager', () => {
   it('writes thread JSON and markdown files', async () => {
     await createBundle(manager, makeTarget(), [makeThread()]);
 
-    const threadDir = path.join(tmpDir, '.review-assist', 'threads');
+    const threadDir = path.join(tmpDir, '.revkit', 'threads');
     const files = await fs.readdir(threadDir);
 
     expect(files).toContain('T-001.json');
@@ -129,7 +129,7 @@ describe('WorkspaceManager', () => {
   it('writes latest.patch', async () => {
     await createBundle(manager, makeTarget(), [], [makeDiff()]);
 
-    const patchPath = path.join(tmpDir, '.review-assist', 'diffs', 'latest.patch');
+    const patchPath = path.join(tmpDir, '.revkit', 'diffs', 'latest.patch');
     const patch = await fs.readFile(patchPath, 'utf-8');
 
     expect(patch).toContain('diff --git');
@@ -169,13 +169,13 @@ describe('WorkspaceManager', () => {
     // Two threads → T-001 and T-002 based on position
     await createBundle(manager, makeTarget(), [thread1, thread2]);
 
-    const threadDir = path.join(tmpDir, '.review-assist', 'threads');
+    const threadDir = path.join(tmpDir, '.revkit', 'threads');
     const files = (await fs.readdir(threadDir)).sort();
     expect(files).toContain('T-001.json');
     expect(files).toContain('T-002.json');
 
     // No thread-map.json file should exist
-    const mapPath = path.join(tmpDir, '.review-assist', 'thread-map.json');
+    const mapPath = path.join(tmpDir, '.revkit', 'thread-map.json');
     expect(await fileExists(mapPath)).toBe(false);
 
     // Second run with different threads: positions are recalculated
@@ -209,7 +209,7 @@ describe('WorkspaceManager', () => {
     const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
     // Write a replies.json with two entries
-    const repliesPath = path.join(tmpDir, '.review-assist', 'outputs', 'replies.json');
+    const repliesPath = path.join(tmpDir, '.revkit', 'outputs', 'replies.json');
     await fs.writeFile(repliesPath, JSON.stringify([
       { threadId: 'T-001', body: 'reply1', resolve: true },
       { threadId: 'T-999', body: 'stale reply', resolve: false },
@@ -234,7 +234,7 @@ describe('WorkspaceManager', () => {
   it('removeBundle removes entire directory', async () => {
     await createBundle(manager, makeTarget(), [makeThread()]);
 
-    const bundleDir = path.join(tmpDir, '.review-assist');
+    const bundleDir = path.join(tmpDir, '.revkit');
     expect(await fileExists(bundleDir)).toBe(true);
 
     await manager.removeBundle();
@@ -258,7 +258,7 @@ describe('WorkspaceManager', () => {
     };
     await manager.writeIncrementalDiff([incrementalDiff]);
 
-    const patchPath = path.join(tmpDir, '.review-assist', 'diffs', 'incremental.patch');
+    const patchPath = path.join(tmpDir, '.revkit', 'diffs', 'incremental.patch');
     const patch = await fs.readFile(patchPath, 'utf-8');
     expect(patch).toContain('diff --git a/src/foo.ts b/src/foo.ts');
     expect(patch).toContain('+new incremental line');
@@ -433,7 +433,7 @@ describe('WorkspaceManager', () => {
         position: { filePath: 'src/auth.ts', newLine: 42 },
         comments: [{
           id: 'self-note',
-          body: '<!-- review-assist -->\nUnsafe token comparison',
+          body: '<!-- revkit -->\nUnsafe token comparison',
           author: 'bot',
           createdAt: '2026-01-01T00:00:00Z',
           updatedAt: '2026-01-01T00:00:00Z',
@@ -474,7 +474,7 @@ describe('WorkspaceManager', () => {
           },
           {
             id: 'bot-reply',
-            body: '<!-- review-assist -->\nFixed, good catch!',
+            body: '<!-- revkit -->\nFixed, good catch!',
             author: 'bot',
             createdAt: '2026-01-01T01:00:00Z',
             updatedAt: '2026-01-01T01:00:00Z',

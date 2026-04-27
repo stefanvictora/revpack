@@ -114,7 +114,7 @@ export function registerSetupCommand(program: Command): void {
         if (!opts.prompts) {
           console.log(chalk.dim('  Tip: run with --prompts to also install Copilot Chat prompt files'));
         }
-        console.log(chalk.dim('  Then run `review-assist prepare` to prepare a review bundle.'));
+        console.log(chalk.dim('  Then run `revkit prepare` to prepare a review bundle.'));
       }
     });
 }

@@ -1,6 +1,6 @@
 # Review Instructions
 
-Read `.review-assist/CONTEXT.md` first. It contains the MR/PR-specific metadata, changed files, existing threads, previous actions, and bundle layout.
+Read `.revkit/CONTEXT.md` first. It contains the MR/PR-specific metadata, changed files, existing threads, previous actions, and bundle layout.
 
 These instructions are the stable contract for how an agent should review the prepared workspace bundle and write output files.
 
@@ -12,16 +12,16 @@ Do not modify source files directly. Your role is to produce comments, findings,
 
 ## Required output files
 
-Always write all expected output files under `.review-assist/outputs/`.
+Always write all expected output files under `.revkit/outputs/`.
 
 Use `[]` for empty JSON outputs.
 
 Required files:
 
-- `.review-assist/outputs/replies.json`
-- `.review-assist/outputs/new-findings.json`
-- `.review-assist/outputs/summary.md`
-- `.review-assist/outputs/review-notes.md`
+- `.revkit/outputs/replies.json`
+- `.revkit/outputs/new-findings.json`
+- `.revkit/outputs/summary.md`
+- `.revkit/outputs/review-notes.md`
 
 If there are no review notes worth publishing, write an empty file or a short neutral note, depending on the existing tool convention.
 
@@ -31,11 +31,11 @@ Do not omit output files.
 
 Start with:
 
-1. `.review-assist/CONTEXT.md`
-2. `.review-assist/INSTRUCTIONS.md`
+1. `.revkit/CONTEXT.md`
+2. `.revkit/INSTRUCTIONS.md`
 3. `REVIEW.md`, if present
-4. `.review-assist/diffs/latest.patch`
-5. `.review-assist/diffs/line-map.json`
+4. `.revkit/diffs/latest.patch`
+5. `.revkit/diffs/line-map.json`
 
 Use checked-out source files to understand the current MR/PR state when the diff alone is not enough.
 
@@ -45,7 +45,7 @@ Use checked-out source files to understand the current MR/PR state when the diff
 
 # Existing thread replies
 
-Use `.review-assist/threads/` and the unresolved thread overview in `.review-assist/CONTEXT.md`.
+Use `.revkit/threads/` and the unresolved thread overview in `.revkit/CONTEXT.md`.
 
 `outputs/replies.json` must contain only replies that should actually be posted back to the MR/PR.
 
@@ -62,7 +62,7 @@ Write a reply only when one of these is true:
 - the thread reports a concrete issue and you can provide a fix suggestion
 - the thread reports a concrete issue and you disagree with a clear technical reason
 - the thread has follow-up discussion that needs clarification
-- the thread was created by review-assist (**SELF**) and you can resolve it because the issue is now fixed
+- the thread was created by revkit (**SELF**) and you can resolve it because the issue is now fixed
 
 Do not reply to:
 
@@ -128,7 +128,7 @@ If the reply does not add technical value, omit it.
 
 # New findings
 
-Use `.review-assist/outputs/new-findings.json` only for concrete, actionable issues tied to a visible diff line.
+Use `.revkit/outputs/new-findings.json` only for concrete, actionable issues tied to a visible diff line.
 
 Prefer fewer, higher-value findings over many speculative findings.
 
@@ -163,7 +163,7 @@ Ask:
 - Does this change preserve existing API, database, security, audit, or compatibility behavior?
 - Are existing tests still meaningful, or did the change bypass them?
 
-Do not limit your reasoning to the added lines, but only create positional findings on lines listed in `.review-assist/diffs/line-map.json`.
+Do not limit your reasoning to the added lines, but only create positional findings on lines listed in `.revkit/diffs/line-map.json`.
 
 ## `outputs/new-findings.json`
 
@@ -195,7 +195,7 @@ For non-renamed files, `oldPath` and `newPath` are usually identical.
 
 ## Positional anchors
 
-Use `.review-assist/diffs/line-map.json` as the source of truth for valid positional anchors.
+Use `.revkit/diffs/line-map.json` as the source of truth for valid positional anchors.
 
 Do not calculate `oldLine` or `newLine` manually from the patch. Use `diffs/latest.patch` to understand the diff, not to derive line numbers.
 
@@ -205,7 +205,7 @@ Each finding location must exactly match one line-map entry:
 - `type: "removed"` → use `oldLine` only
 - `type: "context"` → use both `oldLine` and `newLine`
 
-Do not anchor a finding to a line that is not present in `.review-assist/diffs/line-map.json`.
+Do not anchor a finding to a line that is not present in `.revkit/diffs/line-map.json`.
 
 Prefer findings on added lines. They are usually the clearest anchors for issues introduced by the MR/PR.
 
@@ -220,7 +220,7 @@ A line that exists only in the checked-out source file but is not listed in `lin
 Before creating a new finding, check:
 
 1. Existing unresolved threads.
-2. Previous Actions in `.review-assist/CONTEXT.md`.
+2. Previous Actions in `.revkit/CONTEXT.md`.
 3. Other new findings you are about to write.
 
 Treat a finding as duplicate if it has the same root cause, even if it appears on a nearby line.
@@ -301,7 +301,7 @@ Prefer including a GitLab suggestion block when the core fix is a small, directl
 Use a suggestion block when all of these are true:
 
 - the replacement is complete for the local changed lines
-- the changed lines are visible in `.review-assist/diffs/line-map.json`
+- the changed lines are visible in `.revkit/diffs/line-map.json`
 - the suggestion is likely to compile
 - the suggestion does not require unrelated edits in the same block
 - the suggestion is easier for the developer to apply than rewriting the code manually
@@ -427,7 +427,7 @@ Add or update tests covering [specific scenario].
 
 # When to use review notes instead of findings
 
-Use `.review-assist/outputs/review-notes.md` instead of `.review-assist/outputs/new-findings.json` for:
+Use `.revkit/outputs/review-notes.md` instead of `.revkit/outputs/new-findings.json` for:
 
 - broad observations about the MR/PR
 - risks that are real but not tied to one changed line
@@ -443,7 +443,7 @@ Use `new-findings.json` only for concrete, actionable issues tied to a visible d
 
 This is a public note visible to other MR/PR participants.
 
-Do not reference internal bundle files such as `.review-assist/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `line-map.json`.
+Do not reference internal bundle files such as `.revkit/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `line-map.json`.
 
 Write as if addressing other developers looking at the MR/PR.
 
@@ -462,7 +462,7 @@ Keep it concise.
 
 ## `outputs/summary.md`
 
-`.review-assist/outputs/summary.md` describes what the MR/PR changes, not what the reviewer found.
+`.revkit/outputs/summary.md` describes what the MR/PR changes, not what the reviewer found.
 
 Write a concise, changelog-style summary for humans. The summary should be curated, not a file list, commit list, or code walkthrough.
 
@@ -572,7 +572,7 @@ Rules:
 * Describe what the developer changed, not what the reviewer found.
 * Do not include review findings, suspected bugs, risks, approval status, or quality judgments.
 * Do not include unresolved thread information.
-* Do not mention internal bundle files such as `.review-assist/`, `CONTEXT.md`, `outputs/`, `latest.patch`, or `line-map.json`.
+* Do not mention internal bundle files such as `.revkit/`, `CONTEXT.md`, `outputs/`, `latest.patch`, or `line-map.json`.
 * Do not include a file list.
 * Do not write a code walkthrough.
 * Do not include empty categories.
@@ -603,11 +603,11 @@ Before finishing, check that:
 - all required output files were written
 - JSON output files are syntactically valid JSON arrays
 - every finding has `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one line field
-- every finding is anchored to a line in `.review-assist/diffs/line-map.json`
+- every finding is anchored to a line in `.revkit/diffs/line-map.json`
 - there are no duplicate findings from existing threads or Previous Actions
 - source files were not modified
 - findings are concise, concrete, and actionable
 - `summary.md` describes MR/PR changes, not review findings
-- `review-notes.md` does not reference internal review-assist files
+- `review-notes.md` does not reference internal revkit files
 
 Do not run publishing commands unless the developer explicitly asks.

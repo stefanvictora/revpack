@@ -42,7 +42,7 @@ export class ReviewOrchestrator {
   readonly workspace: WorkspaceManager;
   private readonly git: GitHelper;
 
-  static readonly COMMENT_MARKER = '<!-- review-assist -->';
+  static readonly COMMENT_MARKER = '<!-- revkit -->';
 
   constructor(options: OrchestratorOptions) {
     this.provider = options.provider;
@@ -54,7 +54,7 @@ export class ReviewOrchestrator {
 
   /**
    * Prepare: the primary workflow.
-   * Fetches MR data, generates/refreshes the .review-assist/ bundle.
+   * Fetches MR data, generates/refreshes the .revkit/ bundle.
    * Does NOT perform a review or create findings.
    */
   async prepare(
@@ -335,7 +335,7 @@ export class ReviewOrchestrator {
   }
 
   /** Review comment marker for finding/updating the synced comment. */
-  static readonly REVIEW_COMMENT_MARKER = '<!-- review-assist:review-comment -->';
+  static readonly REVIEW_COMMENT_MARKER = '<!-- revkit:review-comment -->';
 
   /**
    * Create or update the synced review comment on the MR/PR.
@@ -382,7 +382,7 @@ export class ReviewOrchestrator {
           throw new Error(
             `Branch mismatch: current branch "${currentBranch}" does not match ` +
             `the bundle's MR source branch "${bundleState.target.sourceBranch}" (!${bundleState.target.id}).\n` +
-            `Run \`review-assist clean\` to remove the stale bundle, or switch to "${bundleState.target.sourceBranch}".`,
+            `Run \`revkit clean\` to remove the stale bundle, or switch to "${bundleState.target.sourceBranch}".`,
           );
         }
       } catch (err) {
@@ -413,7 +413,7 @@ export class ReviewOrchestrator {
             const ids = targets.map((t) => `!${t.targetId}`).join(', ');
             throw new Error(
               `Multiple open MRs found for branch "${branch}": ${ids}\n` +
-              'Specify one explicitly: `review-assist prepare !<id>`',
+              'Specify one explicitly: `revkit prepare !<id>`',
             );
           }
         }
@@ -425,7 +425,7 @@ export class ReviewOrchestrator {
     throw new Error(
       'Could not determine which MR to prepare.\n' +
       'No ref provided, no existing bundle, and no open MR found for the current branch.\n' +
-      'Run `review-assist prepare !<id>` to specify one explicitly.',
+      'Run `revkit prepare !<id>` to specify one explicitly.',
     );
   }
 }

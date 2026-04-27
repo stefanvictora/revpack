@@ -19,10 +19,10 @@ export function registerStatusCommand(program: Command): void {
         const bundleState = await ws.loadBundleState();
 
         // Count unpublished outputs
-        const pendingReplies = await countJsonArray('.review-assist/outputs/replies.json');
-        const pendingFindings = await countJsonArray('.review-assist/outputs/new-findings.json');
-        const hasSummary = await fileHasContent('.review-assist/outputs/summary.md');
-        const hasReviewNotes = await fileHasContent('.review-assist/outputs/review-notes.md');
+        const pendingReplies = await countJsonArray('.revkit/outputs/replies.json');
+        const pendingFindings = await countJsonArray('.revkit/outputs/new-findings.json');
+        const hasSummary = await fileHasContent('.revkit/outputs/summary.md');
+        const hasReviewNotes = await fileHasContent('.revkit/outputs/review-notes.md');
 
         if (opts.json) {
           const target = ref
@@ -75,7 +75,7 @@ export function registerStatusCommand(program: Command): void {
           if (mismatch) {
             console.log('');
             console.log(chalk.yellow(`  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but bundle targets "${mismatch.expectedBranch}" (!${mismatch.targetId})`));
-            console.log(chalk.yellow(`    Run \`review-assist clean\` to remove the stale bundle, or switch to "${mismatch.expectedBranch}".`));
+            console.log(chalk.yellow(`    Run \`revkit clean\` to remove the stale bundle, or switch to "${mismatch.expectedBranch}".`));
           }
 
           // Pending outputs
@@ -103,7 +103,7 @@ export function registerStatusCommand(program: Command): void {
           console.log('');
           if (pendingFindings > 0 || pendingReplies > 0) {
             console.log(chalk.dim('Next:'));
-            console.log(chalk.dim('  review-assist publish'));
+            console.log(chalk.dim('  revkit publish'));
           }
 
         } else {
@@ -119,7 +119,7 @@ export function registerStatusCommand(program: Command): void {
           console.log(`  ${chalk.dim('Branch:')}    ${target.sourceBranch} → ${target.targetBranch}`);
           console.log(`  ${chalk.dim('URL:')}       ${target.webUrl}`);
           console.log('');
-          console.log(chalk.dim('No bundle prepared. Run `review-assist prepare` to create one.'));
+          console.log(chalk.dim('No bundle prepared. Run `revkit prepare` to create one.'));
         }
       } catch (err) {
         handleError(err);

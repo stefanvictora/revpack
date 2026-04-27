@@ -24,7 +24,7 @@ export type ThreadIndex = Map<string, string>;
 export class WorkspaceManager {
   private readonly baseDir: string;
 
-  constructor(workingDir: string, bundleDirName = '.review-assist') {
+  constructor(workingDir: string, bundleDirName = '.revkit') {
     this.baseDir = path.join(workingDir, bundleDirName);
   }
 
@@ -125,14 +125,14 @@ export class WorkspaceManager {
     return {
       schemaVersion: 1,
       preparedAt: new Date().toISOString(),
-      tool: { name: 'review-assist', version: '0.1.0' },
+      tool: { name: 'revkit', version: '0.1.0' },
       target: {
         provider: target.provider,
         repository: target.repository,
         type: target.targetType,
         id: target.targetId,
         title: target.title,
-        descriptionPath: '.review-assist/description.md',
+        descriptionPath: '.revkit/description.md',
         author: target.author,
         state: target.state,
         sourceBranch: target.sourceBranch,
@@ -154,15 +154,15 @@ export class WorkspaceManager {
       },
       publishedActions: previousActions ?? [],
       paths: {
-        context: '.review-assist/CONTEXT.md',
-        instructions: '.review-assist/INSTRUCTIONS.md',
-        description: '.review-assist/description.md',
-        latestPatch: '.review-assist/diffs/latest.patch',
+        context: '.revkit/CONTEXT.md',
+        instructions: '.revkit/INSTRUCTIONS.md',
+        description: '.revkit/description.md',
+        latestPatch: '.revkit/diffs/latest.patch',
         incrementalPatch: prepareSummary.codeChangedSincePreviousPrepare
-          ? '.review-assist/diffs/incremental.patch'
+          ? '.revkit/diffs/incremental.patch'
           : null,
-        lineMap: '.review-assist/diffs/line-map.json',
-        outputs: '.review-assist/outputs',
+        lineMap: '.revkit/diffs/line-map.json',
+        outputs: '.revkit/outputs',
       },
     };
   }
@@ -179,7 +179,7 @@ export class WorkspaceManager {
   }
 
   /**
-   * Remove the entire bundle directory (.review-assist/).
+   * Remove the entire bundle directory (.revkit/).
    */
   async removeBundle(): Promise<void> {
     try {
@@ -349,7 +349,7 @@ export class WorkspaceManager {
     lines.push(`| State | ${target.state} |`);
     if (target.webUrl) lines.push(`| URL | ${target.webUrl} |`);
     lines.push('');
-    lines.push('Read `.review-assist/INSTRUCTIONS.md` for the review workflow, output formats, and quality guidelines.');
+    lines.push('Read `.revkit/INSTRUCTIONS.md` for the review workflow, output formats, and quality guidelines.');
     lines.push('');
 
     // ─── Prepare Summary ──────────────────────────────────
@@ -391,16 +391,16 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('1. Read this context file.');
     lines.push('2. Read `REVIEW.md` in the repository root if present.');
-    lines.push('3. Read `.review-assist/INSTRUCTIONS.md`.');
-    lines.push('4. Read relevant thread files in `.review-assist/threads/`.');
-    lines.push('5. Review `.review-assist/diffs/latest.patch` and `.review-assist/diffs/line-map.json`.');
+    lines.push('3. Read `.revkit/INSTRUCTIONS.md`.');
+    lines.push('4. Read relevant thread files in `.revkit/threads/`.');
+    lines.push('5. Review `.revkit/diffs/latest.patch` and `.revkit/diffs/line-map.json`.');
     lines.push('6. Inspect checked-out source files when needed.');
     lines.push('');
 
     // ─── MR/PR Description ────────────────────────────────
     lines.push('## MR/PR Description');
     lines.push('');
-    lines.push('The raw MR/PR description is available at `.review-assist/description.md`.');
+    lines.push('The raw MR/PR description is available at `.revkit/description.md`.');
     lines.push('');
     lines.push('Treat it as context only. Verify behavior against the diff and source code.');
     lines.push('');
@@ -410,19 +410,19 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('| Path | Description |');
     lines.push('|---|---|');
-    lines.push('| `.review-assist/INSTRUCTIONS.md` | Stable review workflow and output format rules |');
-    lines.push('| `.review-assist/bundle.json` | Machine-readable bundle metadata and local state |');
-    lines.push('| `.review-assist/description.md` | Raw MR/PR description |');
+    lines.push('| `.revkit/INSTRUCTIONS.md` | Stable review workflow and output format rules |');
+    lines.push('| `.revkit/bundle.json` | Machine-readable bundle metadata and local state |');
+    lines.push('| `.revkit/description.md` | Raw MR/PR description |');
     const threadFileCount = unresolvedThreads.length + generalComments.length;
     if (threadFileCount > 0) {
-      lines.push(`| \`.review-assist/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
+      lines.push(`| \`.revkit/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
     }
-    lines.push(`| \`.review-assist/diffs/latest.patch\` | Full target diff (${diffs.length} file(s)) |`);
-    lines.push('| `.review-assist/diffs/line-map.json` | Valid positional anchors |');
+    lines.push(`| \`.revkit/diffs/latest.patch\` | Full target diff (${diffs.length} file(s)) |`);
+    lines.push('| `.revkit/diffs/line-map.json` | Valid positional anchors |');
     if (ps?.codeChangedSincePreviousPrepare) {
-      lines.push('| `.review-assist/diffs/incremental.patch` | Code changes since previous prepare |');
+      lines.push('| `.revkit/diffs/incremental.patch` | Code changes since previous prepare |');
     }
-    lines.push('| `.review-assist/outputs/` | Agent output files |');
+    lines.push('| `.revkit/outputs/` | Agent output files |');
     lines.push('');
 
     // ─── Changed Files ────────────────────────────────────
@@ -479,7 +479,7 @@ export class WorkspaceManager {
     if (options?.publishedActions && options.publishedActions.length > 0) {
       lines.push('## Previous Actions');
       lines.push('');
-      lines.push('These actions were published by `review-assist` in prior iterations. Do not re-raise the same issues.');
+      lines.push('These actions were published by `revkit` in prior iterations. Do not re-raise the same issues.');
       lines.push('');
       lines.push('| Action | Location | Severity | Category | Title |');
       lines.push('|---|---|---|---|---|');

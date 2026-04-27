@@ -7,19 +7,19 @@ import { handleError } from '../helpers.js';
 export function registerCleanCommand(program: Command): void {
   program
     .command('clean')
-    .description('Delete local .review-assist/ bundle (disposable generated state)')
+    .description('Delete local .revkit/ bundle (disposable generated state)')
     .action(async () => {
       try {
-        const bundleDir = path.join(process.cwd(), '.review-assist');
+        const bundleDir = path.join(process.cwd(), '.revkit');
         try {
           await fs.rm(bundleDir, { recursive: true, force: true });
-          console.log(chalk.green('✓ Removed .review-assist/'));
+          console.log(chalk.green('✓ Removed .revkit/'));
         } catch {
-          console.log(chalk.dim('Nothing to clean — .review-assist/ does not exist.'));
+          console.log(chalk.dim('Nothing to clean — .revkit/ does not exist.'));
         }
         console.log('');
-        console.log(chalk.dim('.review-assist/ is disposable local state. This does not affect the MR/PR or published comments.'));
-        console.log(chalk.dim('Run `review-assist prepare` to create a fresh bundle.'));
+        console.log(chalk.dim('.revkit/ is disposable local state. This does not affect the MR/PR or published comments.'));
+        console.log(chalk.dim('Run `revkit prepare` to create a fresh bundle.'));
       } catch (err) {
         handleError(err);
       }

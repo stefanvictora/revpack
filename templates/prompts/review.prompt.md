@@ -5,14 +5,14 @@ description: "Full code review: address threads, find issues, suggest fixes"
 
 # Code Review
 
-A review workspace has been prepared in `.review-assist/`.
+A review workspace has been prepared in `.revkit/`.
 
 Your role is to review and provide feedback. Do **not** modify source files directly.
 
 ## Read first
 
-1. `.review-assist/CONTEXT.md` — MR-specific metadata, changed files, existing threads, previous actions, and output locations.
-2. `.review-assist/INSTRUCTIONS.md` — stable review workflow, output schemas, finding quality bar, positional anchor rules, and formatting rules.
+1. `.revkit/CONTEXT.md` — MR-specific metadata, changed files, existing threads, previous actions, and output locations.
+2. `.revkit/INSTRUCTIONS.md` — stable review workflow, output schemas, finding quality bar, positional anchor rules, and formatting rules.
 3. `REVIEW.md`, if present — project-specific review priorities and conventions.
 
 ## Work to perform
@@ -25,7 +25,7 @@ Your role is to review and provide feedback. Do **not** modify source files dire
 ## Non-negotiables
 
 - Do **not** modify source files.
-- Use `.review-assist/diffs/line-map.json` as the source of truth for positional finding anchors.
+- Use `.revkit/diffs/line-map.json` as the source of truth for positional finding anchors.
 - Prefer fewer, high-confidence findings over many speculative findings.
 - Do not duplicate existing unresolved threads or previous actions.
 - Always write:
@@ -36,4 +36,4 @@ Your role is to review and provide feedback. Do **not** modify source files dire
 - Use `[]` for empty JSON outputs.
 - Do not publish anything unless the developer explicitly asks you to publish.
 
-Follow `.review-assist/INSTRUCTIONS.md` for all schemas, formatting rules, quality rules, and GitLab positional anchor rules.
+Follow `.revkit/INSTRUCTIONS.md` for all schemas, formatting rules, quality rules, and GitLab positional anchor rules.

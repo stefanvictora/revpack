@@ -459,8 +459,8 @@ export class GitLabProvider implements ReviewProvider {
 
   private detectOrigin(note: GitLabNote): CommentOrigin {
     if (note.system) return 'bot';
-    // Comments published by review-assist contain a marker
-    if (note.body?.startsWith('<!-- review-assist')) return 'bot';
+    // Comments published by revkit contain a marker
+    if (note.body?.startsWith('<!-- revkit')) return 'bot';
     if (note.author?.username?.includes('bot') || note.author?.username?.includes('[bot]')) return 'bot';
     return 'human';
   }

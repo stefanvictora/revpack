@@ -4,17 +4,17 @@ import * as os from 'node:os';
 import { configSchema, type AppConfig } from '../core/schemas.js';
 import { ConfigError } from '../core/errors.js';
 
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'review-assist');
+const CONFIG_DIR = path.join(os.homedir(), '.config', 'revkit');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 /** Default configuration. */
 const DEFAULTS: Partial<AppConfig> = {
   provider: 'gitlab',
-  bundleDir: '.review-assist',
+  bundleDir: '.revkit',
 };
 
 /**
- * Load config from ~/.config/review-assist/config.json,
+ * Load config from ~/.config/revkit/config.json,
  * merging with environment variables and defaults.
  */
 export async function loadConfig(): Promise<AppConfig> {
@@ -30,13 +30,13 @@ export async function loadConfig(): Promise<AppConfig> {
     ...DEFAULTS,
     ...fileConfig,
     // Environment variables take precedence
-    ...(process.env.REVIEW_ASSIST_PROVIDER && { provider: process.env.REVIEW_ASSIST_PROVIDER }),
-    ...(process.env.REVIEW_ASSIST_GITLAB_URL && { gitlabUrl: process.env.REVIEW_ASSIST_GITLAB_URL }),
-    ...(process.env.REVIEW_ASSIST_GITLAB_TOKEN && { gitlabToken: process.env.REVIEW_ASSIST_GITLAB_TOKEN }),
-    ...(process.env.GITLAB_TOKEN && !fileConfig.gitlabToken && !process.env.REVIEW_ASSIST_GITLAB_TOKEN && { gitlabToken: process.env.GITLAB_TOKEN }),
-    ...(process.env.REVIEW_ASSIST_GITHUB_TOKEN && { githubToken: process.env.REVIEW_ASSIST_GITHUB_TOKEN }),
-    ...(process.env.GITHUB_TOKEN && !fileConfig.githubToken && !process.env.REVIEW_ASSIST_GITHUB_TOKEN && { githubToken: process.env.GITHUB_TOKEN }),
-    ...(process.env.REVIEW_ASSIST_REPO && { defaultRepository: process.env.REVIEW_ASSIST_REPO }),
+    ...(process.env.REVKIT_PROVIDER && { provider: process.env.REVKIT_PROVIDER }),
+    ...(process.env.REVKIT_GITLAB_URL && { gitlabUrl: process.env.REVKIT_GITLAB_URL }),
+    ...(process.env.REVKIT_GITLAB_TOKEN && { gitlabToken: process.env.REVKIT_GITLAB_TOKEN }),
+    ...(process.env.GITLAB_TOKEN && !fileConfig.gitlabToken && !process.env.REVKIT_GITLAB_TOKEN && { gitlabToken: process.env.GITLAB_TOKEN }),
+    ...(process.env.REVKIT_GITHUB_TOKEN && { githubToken: process.env.REVKIT_GITHUB_TOKEN }),
+    ...(process.env.GITHUB_TOKEN && !fileConfig.githubToken && !process.env.REVKIT_GITHUB_TOKEN && { githubToken: process.env.GITHUB_TOKEN }),
+    ...(process.env.REVKIT_REPO && { defaultRepository: process.env.REVKIT_REPO }),
   };
 
   const result = configSchema.safeParse(merged);

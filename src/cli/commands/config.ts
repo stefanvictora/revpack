@@ -61,20 +61,20 @@ export function registerConfigCommand(program: Command): void {
       try {
         console.log(chalk.bold('Review Assist — Configuration'));
         console.log('');
-        console.log('Set environment variables or use `review-assist config set`:');
+        console.log('Set environment variables or use `revkit config set`:');
         console.log('');
-        console.log(`  ${chalk.cyan('REVIEW_ASSIST_PROVIDER')}        gitlab | github`);
-        console.log(`  ${chalk.cyan('REVIEW_ASSIST_GITLAB_URL')}      https://gitlab.example.com`);
-        console.log(`  ${chalk.cyan('REVIEW_ASSIST_GITLAB_TOKEN')}    your-token`);
-        console.log(`  ${chalk.cyan('GITLAB_TOKEN')}                  (fallback for GitLab token)`);
-        console.log(`  ${chalk.cyan('REVIEW_ASSIST_REPO')}            group/project`);
+        console.log(`  ${chalk.cyan('REVKIT_PROVIDER')}        gitlab | github`);
+        console.log(`  ${chalk.cyan('REVKIT_GITLAB_URL')}      https://gitlab.example.com`);
+        console.log(`  ${chalk.cyan('REVKIT_GITLAB_TOKEN')}    your-token`);
+        console.log(`  ${chalk.cyan('GITLAB_TOKEN')}           (fallback for GitLab token)`);
+        console.log(`  ${chalk.cyan('REVKIT_REPO')}            group/project`);
         console.log('');
         console.log('Or configure via file:');
         console.log(`  ${chalk.dim(CONFIG_FILE)}`);
         console.log('');
         console.log('Example:');
-        console.log(`  ${chalk.cyan('review-assist config set gitlabUrl https://gitlab.example.com')}`);
-        console.log(`  ${chalk.cyan('review-assist config set gitlabToken glpat-xxxxxxxxxxxx')}`);
+        console.log(`  ${chalk.cyan('revkit config set gitlabUrl https://gitlab.example.com')}`);
+        console.log(`  ${chalk.cyan('revkit config set gitlabToken glpat-xxxxxxxxxxxx')}`);
       } catch (err) {
         handleError(err);
       }

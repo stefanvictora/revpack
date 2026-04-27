@@ -125,7 +125,7 @@ describe('ReviewOrchestrator', () => {
       expect(mockProvider.postReply).toHaveBeenCalledWith(
         targetRef,
         'thread-1',
-        `<!-- review-assist -->\nThanks, fixed!`,
+        `<!-- revkit -->\nThanks, fixed!`,
       );
     });
   });
@@ -164,7 +164,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      const bundleDir = path.join(tmpDir, '.review-assist');
+      const bundleDir = path.join(tmpDir, '.revkit');
       const contextMd = await fs.readFile(path.join(bundleDir, 'CONTEXT.md'), 'utf-8');
 
       expect(contextMd).toContain('Test MR');
@@ -174,7 +174,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      const bundlePath = path.join(tmpDir, '.review-assist', 'bundle.json');
+      const bundlePath = path.join(tmpDir, '.revkit', 'bundle.json');
       const bundleState = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
       expect(bundleState.schemaVersion).toBe(1);
       expect(bundleState.target.id).toBe('42');
@@ -336,7 +336,7 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundle.threads.map((t) => t.threadId)).toEqual(['thread-1', 'general-comment-1']);
 
       // Thread files: T-001 = mockThread (index 0 after filtering), T-002 = generalComment
-      const threadDir = path.join(tmpDir, '.review-assist', 'threads');
+      const threadDir = path.join(tmpDir, '.revkit', 'threads');
       const files = (await fs.readdir(threadDir)).filter(f => f.endsWith('.json')).sort();
       expect(files).toEqual(['T-001.json', 'T-002.json']);
 
@@ -367,7 +367,7 @@ describe('ReviewOrchestrator', () => {
       expect(threadId).toBe('new-thread-id');
       expect(mockProvider.createThread).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
-        `<!-- review-assist -->\nPotential null dereference here`,
+        `<!-- revkit -->\nPotential null dereference here`,
         { oldPath: 'src/app.ts', newPath: 'src/app.ts', newLine: 42, oldLine: undefined },
       );
     });

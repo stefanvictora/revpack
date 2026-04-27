@@ -64,7 +64,7 @@ export const configSchema = z.object({
   gitlabToken: z.string().min(1).optional(),
   githubToken: z.string().min(1).optional(),
   defaultRepository: z.string().optional(),
-  bundleDir: z.string().default('.review-assist'),
+  bundleDir: z.string().default('.revkit'),
   /** Path to a PEM-encoded CA certificate file for self-signed/internal TLS. */
   caFile: z.string().optional(),
   /** Set to false to disable TLS certificate verification (not recommended). */
