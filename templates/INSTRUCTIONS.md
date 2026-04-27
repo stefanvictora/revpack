@@ -456,6 +456,16 @@ A useful review note may include:
 
 Keep it concise.
 
+When updating `outputs/review-notes.md`, treat the existing file as the current desired public review note.
+
+Preserve still-relevant information from the existing note.
+
+Remove or update stale information.
+
+Do not append repetitive status updates.
+
+The note should remain concise and useful as a single updatable MR/PR comment.
+
 ---
 
 # MR/PR summary
