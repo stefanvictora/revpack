@@ -6,6 +6,7 @@ import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { parsePatch } from '../../workspace/patch-parser.js';
 import { validateFindings, formatValidationErrors } from '../../workspace/finding-validator.js';
 import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
+import { computeContentHash } from '../../workspace/thread-digest.js';
 
 // ─── Marker-based description merge ─────────────────────
 
@@ -324,6 +325,18 @@ async function publishDescription(opts: {
 
   await orchestrator.updateDescription(undefined, body, defaultRepo);
   console.log(chalk.green(`✓ Description updated${opts.replace ? '' : ' (marked section)'}`));
+
+  // Store publish hash for summary tracking
+  if (opts.fromSummary) {
+    const ws = new WorkspaceManager(process.cwd());
+    const bundleState = await ws.loadBundleState();
+    if (bundleState) {
+      const summaryContent = await fs.readFile('.revkit/outputs/summary.md', 'utf-8');
+      const hash = computeContentHash(summaryContent);
+      await ws.updateOutputPublishState('summary', hash, bundleState.target.diffRefs.headSha);
+    }
+  }
+
   return 1;
 }
 
@@ -350,6 +363,20 @@ async function publishNotes(opts: {
   } else {
     console.log(chalk.green('✓ Review comment updated on the MR'));
   }
+
+  // Store publish hash for review notes tracking
+  const ws = new WorkspaceManager(process.cwd());
+  const bundleState = await ws.loadBundleState();
+  if (bundleState) {
+    const hash = computeContentHash(content);
+    await ws.updateOutputPublishState(
+      'reviewNotes',
+      hash,
+      bundleState.target.diffRefs.headSha,
+      result.noteId,
+    );
+  }
+
   return 1;
 }
 

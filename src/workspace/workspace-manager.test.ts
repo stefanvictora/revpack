@@ -338,9 +338,10 @@ describe('WorkspaceManager', () => {
         {
           prepareSummary: {
             mode: 'refresh',
-            previous: { preparedAt: '2026-01-01T00:00:00Z', providerVersionId: 'v0', headSha: 'aaa' },
-            current: { providerVersionId: 'v1', headSha: 'bbb' },
-            codeChangedSincePreviousPrepare: true,
+            previous: { preparedAt: '2026-01-01T00:00:00Z', providerVersionId: 'v0', targetHeadSha: 'aaa', localHeadSha: 'aaa', threadsDigest: null },
+            current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+            targetCodeChangedSincePreviousPrepare: true,
+            localCheckoutChangedSincePreviousPrepare: true,
             threadsChangedSincePreviousPrepare: true,
           },
         },
@@ -349,7 +350,7 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Prepare Summary');
       expect(content).toContain('refresh');
-      expect(content).toContain('Code changed since previous prepare');
+      expect(content).toContain('Target code changed since previous prepare');
       expect(content).toContain('yes');
     });
 

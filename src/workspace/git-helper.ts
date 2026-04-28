@@ -114,6 +114,18 @@ export class GitHelper {
     return head === commitSha;
   }
 
+  /** Check if working tree is clean. */
+  async isClean(): Promise<boolean> {
+    const { stdout } = await exec('git', ['status', '--porcelain'], { cwd: this.cwd });
+    return stdout.trim().length === 0;
+  }
+
+  /** Get the repository root directory. */
+  async repositoryRoot(): Promise<string> {
+    const { stdout } = await exec('git', ['rev-parse', '--show-toplevel'], { cwd: this.cwd });
+    return stdout.trim();
+  }
+
   /** Generate a diff between two refs. */
   async diff(baseRef: string, headRef: string): Promise<string> {
     const { stdout } = await exec('git', ['diff', baseRef, headRef], { cwd: this.cwd });

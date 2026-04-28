@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
+import { GitHelper } from '../../workspace/git-helper.js';
 import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../helpers.js';
 
 export function registerStatusCommand(program: Command): void {
@@ -21,8 +22,10 @@ export function registerStatusCommand(program: Command): void {
         // Count unpublished outputs
         const pendingReplies = await countJsonArray('.revkit/outputs/replies.json');
         const pendingFindings = await countJsonArray('.revkit/outputs/new-findings.json');
-        const hasSummary = await fileHasContent('.revkit/outputs/summary.md');
-        const hasReviewNotes = await fileHasContent('.revkit/outputs/review-notes.md');
+
+        // Compute output states
+        const summaryState = await ws.getOutputState('summary');
+        const reviewNotesState = await ws.getOutputState('reviewNotes');
 
         if (opts.json) {
           const target = ref
@@ -36,11 +39,17 @@ export function registerStatusCommand(program: Command): void {
             bundle: bundleState ? {
               preparedAt: bundleState.preparedAt,
               mode: bundleState.prepare.mode,
-              codeChanged: bundleState.prepare.codeChangedSincePreviousPrepare,
+              targetCodeChanged: bundleState.prepare.targetCodeChangedSincePreviousPrepare,
               threadsChanged: bundleState.prepare.threadsChangedSincePreviousPrepare,
               publishedActionCount: bundleState.publishedActions.length,
             } : null,
-            pending: { replies: pendingReplies, findings: pendingFindings, summary: hasSummary, notes: hasReviewNotes },
+            local: bundleState?.local ?? null,
+            pending: {
+              replies: pendingReplies,
+              findings: pendingFindings,
+              summary: summaryState,
+              reviewNotes: reviewNotesState,
+            },
           });
           return;
         }
@@ -60,14 +69,43 @@ export function registerStatusCommand(program: Command): void {
 
           // Bundle info
           console.log(chalk.dim('─ Bundle ─'));
-          console.log(`  ${chalk.dim('Prepared:')}   ${formatDate(bundleState.preparedAt)}`);
-          console.log(`  ${chalk.dim('Head SHA:')}   ${t.diffRefs.headSha.slice(0, 7)}`);
-          const ps = bundleState.prepare;
-          if (ps.codeChangedSincePreviousPrepare !== null) {
-            console.log(`  ${chalk.dim('Code changed since previous prepare:')} ${ps.codeChangedSincePreviousPrepare ? 'yes' : 'no'}`);
+          console.log(`  ${chalk.dim('Prepared:')}      ${formatDate(bundleState.preparedAt)}`);
+          console.log(`  ${chalk.dim('Target head:')}   ${t.diffRefs.headSha.slice(0, 7)}`);
+          if (bundleState.local) {
+            console.log(`  ${chalk.dim('Local head then:')} ${bundleState.local.headSha.slice(0, 7)}`);
           }
-          if (ps.threadsChangedSincePreviousPrepare !== null) {
-            console.log(`  ${chalk.dim('Threads changed since previous prepare:')} ${ps.threadsChangedSincePreviousPrepare ? 'yes' : 'no'}`);
+          console.log('');
+
+          // Local checkout info
+          const git = new GitHelper(process.cwd());
+          try {
+            const [currentHead, currentBranch, isClean] = await Promise.all([
+              git.headSha(),
+              git.currentBranch(),
+              git.isClean(),
+            ]);
+            const matchesTarget = currentHead === t.diffRefs.headSha;
+
+            console.log(chalk.dim('─ Local checkout ─'));
+            console.log(`  ${chalk.dim('Branch:')}         ${currentBranch}`);
+            console.log(`  ${chalk.dim('Current HEAD:')}   ${currentHead.slice(0, 7)}`);
+            if (matchesTarget) {
+              console.log(`  ${chalk.dim('Matches target:')} ${chalk.green('yes')}`);
+            } else {
+              const isAncestor = await git.isAncestor(t.diffRefs.headSha).catch(() => false);
+              const relation = isAncestor ? 'ahead of MR head' : 'behind MR head';
+              console.log(`  ${chalk.dim('Target head:')}   ${t.diffRefs.headSha.slice(0, 7)}`);
+              console.log(`  ${chalk.dim('Matches target:')} ${chalk.yellow(`no — ${relation}`)}`);
+              console.log('');
+              console.log(chalk.dim('Next:'));
+              if (!isAncestor) {
+                console.log(chalk.dim('  git pull'));
+              }
+              console.log(chalk.dim('  revkit prepare'));
+            }
+            console.log(`  ${chalk.dim('Working tree:')}  ${isClean ? 'clean' : chalk.yellow('dirty')}`);
+          } catch {
+            // Not a git repo — skip local checkout info
           }
 
           // Branch mismatch
@@ -79,18 +117,12 @@ export function registerStatusCommand(program: Command): void {
           }
 
           // Pending outputs
-          if (pendingReplies > 0 || pendingFindings > 0 || hasSummary || hasReviewNotes) {
-            console.log('');
-            console.log(chalk.dim('─ Pending outputs ─'));
-            if (pendingReplies > 0) console.log(`  ${chalk.yellow('⬡')} replies: ${pendingReplies}`);
-            if (pendingFindings > 0) console.log(`  ${chalk.yellow('⬡')} findings: ${pendingFindings}`);
-            if (hasSummary) console.log(`  ${chalk.yellow('⬡')} summary: changed`);
-            if (hasReviewNotes) console.log(`  ${chalk.yellow('⬡')} notes: changed`);
-          } else {
-            console.log('');
-            console.log(chalk.dim('─ Pending outputs ─'));
-            console.log(chalk.dim('  (none)'));
-          }
+          console.log('');
+          console.log(chalk.dim('─ Pending outputs ─'));
+          console.log(`  ${chalk.dim('replies:')}       ${pendingReplies > 0 ? pendingReplies : 'none'}`);
+          console.log(`  ${chalk.dim('findings:')}      ${pendingFindings > 0 ? pendingFindings : 'none'}`);
+          console.log(`  ${chalk.dim('summary:')}       ${formatOutputState(summaryState)}`);
+          console.log(`  ${chalk.dim('review notes:')}  ${formatOutputState(reviewNotesState)}`);
 
           // Published actions
           if (bundleState.publishedActions.length > 0) {
@@ -147,12 +179,13 @@ async function countJsonArray(filePath: string): Promise<number> {
   }
 }
 
-async function fileHasContent(filePath: string): Promise<boolean> {
-  try {
-    const raw = await fs.readFile(filePath, 'utf-8');
-    return raw.trim().length > 0;
-  } catch {
-    return false;
+function formatOutputState(state: string): string {
+  switch (state) {
+    case 'empty': return chalk.dim('empty');
+    case 'pending': return chalk.yellow('pending');
+    case 'published': return chalk.green('published');
+    case 'modified since publish': return chalk.yellow('modified since publish');
+    default: return state;
   }
 }
 

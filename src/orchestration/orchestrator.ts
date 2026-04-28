@@ -4,11 +4,13 @@ import type {
   ReviewTargetRef,
   WorkspaceBundle,
   BundleState,
+  BundleLocal,
   NewFinding,
   PrepareSummary,
 } from '../core/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
+import { computeAggregateThreadsDigest } from '../workspace/thread-digest.js';
 
 export interface OrchestratorOptions {
   provider: ReviewProvider;
@@ -21,9 +23,9 @@ export interface PrepareResult {
   bundleState: BundleState;
   contextPath: string;
   mode: 'fresh' | 'refresh' | 'target_changed';
-  codeChanged: boolean | null;
+  targetCodeChanged: boolean | null;
+  localCheckoutChanged: boolean | null;
   threadsChanged: boolean | null;
-  localBranchStatus?: 'up-to-date' | 'behind' | 'ahead' | 'unknown';
   prunedReplies: number;
   publishedActionCount: number;
 }
@@ -95,6 +97,67 @@ export class ReviewOrchestrator {
       this.provider.getDiffVersions(targetRef),
     ]);
 
+    // ─── Source consistency check ─────────────────────────
+    // Must verify local checkout matches MR/PR head BEFORE writing anything.
+    const mrHeadSha = target.diffRefs.headSha;
+    let localHeadSha: string;
+    let localBranch: string;
+    let localRepoRoot: string;
+    let localClean: boolean;
+
+    try {
+      [localHeadSha, localBranch, localRepoRoot, localClean] = await Promise.all([
+        this.git.headSha(),
+        this.git.currentBranch(),
+        this.git.repositoryRoot(),
+        this.git.isClean(),
+      ]);
+    } catch {
+      throw new Error(
+        'Cannot prepare: not inside a git repository.\n' +
+        'Run `revkit checkout` first to clone or switch to the MR source branch.',
+      );
+    }
+
+    // Check branch matches MR source branch
+    if (localBranch !== 'HEAD' && localBranch !== target.sourceBranch) {
+      throw new Error(
+        `Cannot prepare because the current branch does not match the MR source branch.\n\n` +
+        `MR source branch: ${target.sourceBranch}\n` +
+        `Current branch:   ${localBranch}\n\n` +
+        `Run:\n\n` +
+        `  revkit checkout !${target.targetId}\n` +
+        `  revkit prepare`,
+      );
+    }
+
+    // Check local HEAD matches MR/PR head
+    if (localHeadSha !== mrHeadSha) {
+      const isAncestor = await this.git.isAncestor(mrHeadSha).catch(() => false);
+      if (isAncestor) {
+        // Local is ahead of MR head
+        throw new Error(
+          `Cannot prepare an agent-ready bundle because the local checkout is ahead of the MR head.\n\n` +
+          `MR head:     ${mrHeadSha}\n` +
+          `Local HEAD:  ${localHeadSha}\n\n` +
+          `Push your commits or reset/switch to the MR head, then run:\n\n` +
+          `  revkit prepare`,
+        );
+      } else {
+        // Local is behind MR head
+        throw new Error(
+          `Cannot prepare an agent-ready bundle because the local checkout is behind the MR head.\n\n` +
+          `MR head:     ${mrHeadSha}\n` +
+          `Local HEAD:  ${localHeadSha}\n\n` +
+          `Run:\n\n` +
+          `  git pull\n` +
+          `  revkit prepare`,
+        );
+      }
+    }
+
+    // ─── Source consistency verified — proceed with writes ─
+
     // Filter out system-only threads
     const allThreads = rawThreads.filter(
       (t) => !t.comments.every((c) => c.system),
@@ -117,17 +180,20 @@ export class ReviewOrchestrator {
 
     // Compute prepare summary
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
-    const currentHeadSha = target.diffRefs.headSha;
+    const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
 
-    const codeChanged = previousBundle && mode === 'refresh'
-      ? previousBundle.target.diffRefs.headSha !== currentHeadSha
+    const targetCodeChanged = previousBundle && mode === 'refresh'
+      ? previousBundle.target.diffRefs.headSha !== mrHeadSha
       : null;
 
-    const threadsChanged = previousBundle && mode === 'refresh'
-      ? !arraysEqual(
-          previousBundle.threads.knownProviderThreadIds,
-          allThreads.map((t) => t.threadId),
-        )
+    const previousLocalHeadSha = previousBundle?.local?.headSha;
+    const localCheckoutChanged = previousBundle && mode === 'refresh' && previousLocalHeadSha
+      ? previousLocalHeadSha !== localHeadSha
+      : null;
+
+    const previousThreadsDigest = previousBundle?.threads?.digest ?? null;
+    const threadsChanged = previousBundle && mode === 'refresh' && previousThreadsDigest
+      ? previousThreadsDigest !== currentThreadsDigest
       : null;
 
     const prepareSummary: PrepareSummary = {
@@ -135,18 +201,34 @@ export class ReviewOrchestrator {
       previous: previousBundle && mode !== 'fresh' ? {
         preparedAt: previousBundle.preparedAt,
         providerVersionId: previousBundle.target.providerVersionId,
-        headSha: previousBundle.target.diffRefs.headSha,
+        targetHeadSha: previousBundle.target.diffRefs.headSha,
+        localHeadSha: previousLocalHeadSha ?? previousBundle.target.diffRefs.headSha,
+        threadsDigest: previousThreadsDigest,
       } : null,
       current: {
         providerVersionId: latestVersionId,
-        headSha: currentHeadSha,
+        targetHeadSha: mrHeadSha,
+        localHeadSha,
+        threadsDigest: currentThreadsDigest,
       },
-      codeChangedSincePreviousPrepare: codeChanged,
+      targetCodeChangedSincePreviousPrepare: targetCodeChanged,
+      localCheckoutChangedSincePreviousPrepare: localCheckoutChanged,
       threadsChangedSincePreviousPrepare: threadsChanged,
     };
 
+    // Build local metadata
+    const localMetadata: BundleLocal = {
+      repositoryRoot: localRepoRoot,
+      branch: localBranch,
+      headSha: localHeadSha,
+      matchesTargetSourceBranch: localBranch === target.sourceBranch,
+      matchesTargetHead: localHeadSha === mrHeadSha,
+      workingTreeClean: localClean,
+      checkedAt: new Date().toISOString(),
+    };
+
     // Incremental diff if code changed
-    if (codeChanged && previousBundle && versions.length > 0) {
+    if (targetCodeChanged && previousBundle && versions.length > 0) {
       const latestVersion = versions[0];
       try {
         const incrementalDiffs = await this.provider.getIncrementalDiff(
@@ -158,7 +240,7 @@ export class ReviewOrchestrator {
       } catch {
         // Fall back gracefully
       }
-    } else if (mode === 'refresh' && !codeChanged) {
+    } else if (mode === 'refresh' && !targetCodeChanged) {
       await this.workspace.writeNoCodeChangeIncrementalPatch();
     }
 
@@ -169,10 +251,13 @@ export class ReviewOrchestrator {
       prunedReplies = await this.workspace.pruneStaleReplies(activeIds, threadIndex);
     }
 
-    // Carry over published actions from previous bundle
+    // Carry over published actions and output state from previous bundle
     const previousActions = previousBundle && mode !== 'fresh'
       ? previousBundle.publishedActions
       : [];
+    const previousOutputs = previousBundle && mode !== 'fresh'
+      ? previousBundle.outputs
+      : undefined;
 
     // Write CONTEXT.md
     const contextPath = await this.workspace.writeContext(
@@ -190,35 +275,20 @@ export class ReviewOrchestrator {
       versions,
       threadIndex,
       prepareSummary,
+      localMetadata,
       previousActions,
+      previousOutputs,
     );
     await this.workspace.saveBundleState(bundleState);
-
-    // Check local branch sync status
-    let localBranchStatus: PrepareResult['localBranchStatus'] = 'unknown';
-    try {
-      const mrHeadSha = target.diffRefs.headSha;
-      if (mrHeadSha) {
-        const isAtHead = await this.git.isAtCommit(mrHeadSha);
-        if (isAtHead) {
-          localBranchStatus = 'up-to-date';
-        } else {
-          const isAncestor = await this.git.isAncestor(mrHeadSha);
-          localBranchStatus = isAncestor ? 'ahead' : 'behind';
-        }
-      }
-    } catch {
-      // Not a git repo or other error
-    }
 
     return {
       bundle,
       bundleState,
       contextPath,
       mode,
-      codeChanged,
+      targetCodeChanged,
+      localCheckoutChanged,
       threadsChanged,
-      localBranchStatus,
       prunedReplies,
       publishedActionCount: previousActions.length,
     };
@@ -353,7 +423,7 @@ export class ReviewOrchestrator {
    * This is a standalone note (not a discussion thread) that gets
    * updated in-place on each sync.
    */
-  async syncReviewComment(body: string, defaultRepo?: string): Promise<{ created: boolean }> {
+  async syncReviewComment(body: string, defaultRepo?: string): Promise<{ created: boolean; noteId?: string }> {
     const targetRef = await this.resolveRef(undefined, defaultRepo);
     const marker = ReviewOrchestrator.REVIEW_COMMENT_MARKER;
     const fullBody = `${marker}\n${body}`;
@@ -361,10 +431,10 @@ export class ReviewOrchestrator {
     const existingNoteId = await this.provider.findNoteByMarker(targetRef, marker);
     if (existingNoteId) {
       await this.provider.updateNote(targetRef, existingNoteId, fullBody);
-      return { created: false };
+      return { created: false, noteId: existingNoteId };
     } else {
-      await this.provider.createNote(targetRef, fullBody);
-      return { created: true };
+      const noteId = await this.provider.createNote(targetRef, fullBody);
+      return { created: true, noteId };
     }
   }
 
@@ -441,9 +511,3 @@ export class ReviewOrchestrator {
   }
 }
 
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const sortedA = [...a].sort();
-  const sortedB = [...b].sort();
-  return sortedA.every((v, i) => v === sortedB[i]);
-}

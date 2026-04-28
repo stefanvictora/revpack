@@ -8,11 +8,16 @@ import type {
   ReviewVersion,
   WorkspaceBundle,
   BundleState,
+  BundleLocal,
   BundlePublishedAction,
-  PrepareSummary
+  BundleOutputs,
+  BundleThreadItem,
+  OutputState,
+  PrepareSummary,
 } from '../core/types.js';
 import { WorkspaceError } from '../core/errors.js';
 import { parsePatch } from './patch-parser.js';
+import { computeThreadDigest, computeContentHash, DIGEST_VERSION } from './thread-digest.js';
 
 /**
  * Map from thread SHA → stable T-NNN short ID.
@@ -118,14 +123,37 @@ export class WorkspaceManager {
     versions: ReviewVersion[],
     threadIndex: ThreadIndex,
     prepareSummary: PrepareSummary,
+    localMetadata: BundleLocal,
     previousActions?: BundlePublishedAction[],
+    previousOutputs?: BundleOutputs,
   ): BundleState {
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
 
+    // Build thread items with digests
+    const threadItems: BundleThreadItem[] = threads
+      .filter((t) => !t.comments.every((c) => c.system))
+      .map((t) => {
+        const shortId = threadIndex.get(t.threadId) ?? '?';
+        const latestComment = t.comments
+          .filter((c) => !c.system)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+        return {
+          shortId,
+          providerThreadId: t.threadId,
+          file: `.revkit/threads/${shortId}.json`,
+          markdownFile: `.revkit/threads/${shortId}.md`,
+          resolved: t.resolved,
+          resolvable: t.resolvable,
+          commentsCount: t.comments.length,
+          latestCommentAt: latestComment?.createdAt ?? null,
+          digest: computeThreadDigest(t),
+        };
+      });
+
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       preparedAt: new Date().toISOString(),
-      tool: { name: 'revkit', version: '0.1.0' },
+      tool: { name: 'revkit', version: '0.2.0' },
       target: {
         provider: target.provider,
         repository: target.repository,
@@ -144,13 +172,21 @@ export class WorkspaceManager {
         diffRefs: target.diffRefs,
         providerVersionId: latestVersionId,
       },
+      local: localMetadata,
       prepare: prepareSummary,
       threads: {
+        digestVersion: DIGEST_VERSION,
+        digest: prepareSummary.current.threadsDigest,
         knownProviderThreadIds: threads.map((t) => t.threadId),
         shortIdMapping: [...threadIndex].map(([providerThreadId, shortId]) => ({
           shortId,
           providerThreadId,
         })),
+        items: threadItems,
+      },
+      outputs: previousOutputs ?? {
+        summary: { path: '.revkit/outputs/summary.md' },
+        reviewNotes: { path: '.revkit/outputs/review-notes.md' },
       },
       publishedActions: previousActions ?? [],
       paths: {
@@ -158,7 +194,7 @@ export class WorkspaceManager {
         instructions: '.revkit/INSTRUCTIONS.md',
         description: '.revkit/description.md',
         latestPatch: '.revkit/diffs/latest.patch',
-        incrementalPatch: prepareSummary.codeChangedSincePreviousPrepare
+        incrementalPatch: prepareSummary.targetCodeChangedSincePreviousPrepare
           ? '.revkit/diffs/incremental.patch'
           : null,
         lineMap: '.revkit/diffs/line-map.json',
@@ -176,6 +212,48 @@ export class WorkspaceManager {
     state.publishedActions.push(action);
     await this.saveBundleState(state);
     return true;
+  }
+
+  /**
+   * Update the publish hash for an output file in bundle.json.
+   */
+  async updateOutputPublishState(
+    outputKey: 'summary' | 'reviewNotes',
+    hash: string,
+    targetHeadSha: string,
+    providerNoteId?: string,
+  ): Promise<boolean> {
+    const state = await this.loadBundleState();
+    if (!state) return false;
+    const entry = state.outputs[outputKey];
+    entry.lastPublishedHash = hash;
+    entry.lastPublishedAt = new Date().toISOString();
+    entry.lastPublishedTargetHeadSha = targetHeadSha;
+    if (providerNoteId !== undefined) {
+      entry.providerNoteId = providerNoteId;
+    }
+    await this.saveBundleState(state);
+    return true;
+  }
+
+  /**
+   * Compute the current state of an output file relative to its publish hash.
+   */
+  async getOutputState(outputKey: 'summary' | 'reviewNotes'): Promise<OutputState> {
+    const state = await this.loadBundleState();
+    if (!state) return 'empty';
+    const entry = state.outputs[outputKey];
+    const filePath = path.join(this.baseDir, '..', entry.path);
+    let content: string;
+    try {
+      content = await fs.readFile(filePath, 'utf-8');
+    } catch {
+      return 'empty';
+    }
+    if (!content.trim()) return 'empty';
+    if (!entry.lastPublishedHash) return 'pending';
+    const currentHash = computeContentHash(content);
+    return currentHash === entry.lastPublishedHash ? 'published' : 'modified since publish';
   }
 
   /**
@@ -361,27 +439,41 @@ export class WorkspaceManager {
       lines.push('|---|---|');
       lines.push(`| Prepared at | ${new Date().toISOString()} |`);
       lines.push(`| Mode | ${ps.mode} |`);
-      if (ps.codeChangedSincePreviousPrepare !== null) {
-        lines.push(`| Code changed since previous prepare | ${ps.codeChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
+      if (ps.targetCodeChangedSincePreviousPrepare !== null) {
+        lines.push(`| Target code changed since previous prepare | ${ps.targetCodeChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
+      }
+      if (ps.localCheckoutChangedSincePreviousPrepare !== null) {
+        lines.push(`| Local checkout changed since previous prepare | ${ps.localCheckoutChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
       }
       if (ps.threadsChangedSincePreviousPrepare !== null) {
-        lines.push(`| Threads changed since previous prepare | ${ps.threadsChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
+        lines.push(`| Threads/replies changed since previous prepare | ${ps.threadsChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
       }
       if (ps.previous) {
-        lines.push(`| Previous head SHA | \`${ps.previous.headSha}\` |`);
+        lines.push(`| Previous target head SHA | \`${ps.previous.targetHeadSha}\` |`);
       }
-      lines.push(`| Current head SHA | \`${ps.current.headSha}\` |`);
+      lines.push(`| Current target head SHA | \`${ps.current.targetHeadSha}\` |`);
+      lines.push(`| Local HEAD at prepare | \`${ps.current.localHeadSha}\` |`);
+      lines.push('| Local checkout verified | yes |');
       lines.push('');
 
       // Mode-specific context guidance
       if (ps.mode === 'fresh') {
         lines.push('This is a fresh prepared bundle. There is no previous prepare to compare against.');
         lines.push('');
-      } else if (ps.codeChangedSincePreviousPrepare) {
-        lines.push('This refresh detected new code changes since the previous prepare. Focus proactive review on the incremental patch and unresolved thread updates.');
+      } else if (ps.targetCodeChangedSincePreviousPrepare) {
+        lines.push('This refresh detected target code changes since the previous prepare.');
+        lines.push('');
+        lines.push('Focus proactive review on the updated diff and unresolved thread updates.');
+        lines.push('');
+      } else if (ps.threadsChangedSincePreviousPrepare) {
+        lines.push('This refresh did not detect target code changes since the previous prepare, but it did detect thread or reply updates.');
+        lines.push('');
+        lines.push('Focus on updated unresolved threads, newly added replies, and pending outputs. Do not perform a full proactive code review unless requested.');
         lines.push('');
       } else {
-        lines.push('This refresh did not detect code changes since the previous prepare. Focus on new or unresolved thread updates and pending outputs. Do not perform a full proactive review unless requested.');
+        lines.push('This refresh did not detect target code or thread/reply changes since the previous prepare.');
+        lines.push('');
+        lines.push('Focus on pending outputs, if any. Do not perform a full proactive code review unless requested.');
         lines.push('');
       }
     }
@@ -419,7 +511,7 @@ export class WorkspaceManager {
     }
     lines.push(`| \`.revkit/diffs/latest.patch\` | Full target diff (${diffs.length} file(s)) |`);
     lines.push('| `.revkit/diffs/line-map.json` | Valid positional anchors |');
-    if (ps?.codeChangedSincePreviousPrepare) {
+    if (ps?.targetCodeChangedSincePreviousPrepare) {
       lines.push('| `.revkit/diffs/incremental.patch` | Code changes since previous prepare |');
     }
     lines.push('| `.revkit/outputs/` | Agent output files |');

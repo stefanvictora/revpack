@@ -193,10 +193,22 @@ export interface BundleState {
   preparedAt: string;
   tool: { name: string; version: string };
   target: BundleTarget;
+  local: BundleLocal;
   prepare: PrepareSummary;
   threads: BundleThreads;
+  outputs: BundleOutputs;
   publishedActions: BundlePublishedAction[];
   paths: BundlePaths;
+}
+
+export interface BundleLocal {
+  repositoryRoot: string;
+  branch: string;
+  headSha: string;
+  matchesTargetSourceBranch: boolean;
+  matchesTargetHead: boolean;
+  workingTreeClean: boolean;
+  checkedAt: string;
 }
 
 export interface BundleTarget {
@@ -223,19 +235,54 @@ export interface PrepareSummary {
   previous: {
     preparedAt: string;
     providerVersionId?: string;
-    headSha: string;
+    targetHeadSha: string;
+    localHeadSha: string;
+    threadsDigest: string | null;
   } | null;
   current: {
     providerVersionId?: string;
-    headSha: string;
+    targetHeadSha: string;
+    localHeadSha: string;
+    threadsDigest: string | null;
   };
-  codeChangedSincePreviousPrepare: boolean | null;
+  targetCodeChangedSincePreviousPrepare: boolean | null;
+  localCheckoutChangedSincePreviousPrepare: boolean | null;
   threadsChangedSincePreviousPrepare: boolean | null;
 }
 
 export interface BundleThreads {
+  digestVersion: number;
+  digest: string | null;
   knownProviderThreadIds: string[];
   shortIdMapping: { shortId: string; providerThreadId: string }[];
+  items: BundleThreadItem[];
+}
+
+export interface BundleThreadItem {
+  shortId: string;
+  providerThreadId: string;
+  file: string;
+  markdownFile: string;
+  resolved: boolean;
+  resolvable: boolean;
+  commentsCount: number;
+  latestCommentAt: string | null;
+  digest: string;
+}
+
+export type OutputState = 'empty' | 'pending' | 'published' | 'modified since publish';
+
+export interface BundleOutputEntry {
+  path: string;
+  lastPublishedHash?: string;
+  lastPublishedAt?: string;
+  lastPublishedTargetHeadSha?: string;
+  providerNoteId?: string;
+}
+
+export interface BundleOutputs {
+  summary: BundleOutputEntry;
+  reviewNotes: BundleOutputEntry;
 }
 
 export interface BundlePublishedAction {

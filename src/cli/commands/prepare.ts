@@ -26,9 +26,9 @@ export function registerPrepareCommand(program: Command): void {
             title: result.bundle.target.title,
             state: result.bundle.target.state,
             mode: result.mode,
-            codeChanged: result.codeChanged,
+            targetCodeChanged: result.targetCodeChanged,
+            localCheckoutChanged: result.localCheckoutChanged,
             threadsChanged: result.threadsChanged,
-            localBranchStatus: result.localBranchStatus,
             threadCount: result.bundle.threads.length,
             diffCount: result.bundle.diffs.length,
             contextPath: result.contextPath,
@@ -50,25 +50,29 @@ export function registerPrepareCommand(program: Command): void {
         console.log(`  ${chalk.dim('Updated:')}     ${formatDate(target.updatedAt)}`);
         console.log(`  ${chalk.dim('Threads:')}     ${bundle.threads.length} unresolved`);
         console.log(`  ${chalk.dim('Files:')}       ${bundle.diffs.length} changed`);
-
-        // Branch sync status
-        if (result.localBranchStatus && result.localBranchStatus !== 'unknown') {
-          const syncLabel = getBranchSyncLabel(result.localBranchStatus);
-          console.log(`  ${chalk.dim('Local:')}       ${syncLabel}`);
-        }
         console.log('');
 
-        // Prepare summary
+        // Prepare summary — changes
         if (mode === 'refresh') {
-          const parts: string[] = [];
-          if (result.codeChanged) parts.push('code changed');
-          if (result.threadsChanged) parts.push('threads changed');
-          if (result.prunedReplies > 0) parts.push(`${result.prunedReplies} stale replies pruned`);
-          if (result.publishedActionCount > 0) parts.push(`${result.publishedActionCount} prior action(s) tracked`);
-          if (parts.length > 0) {
-            console.log(`  ${chalk.dim('Changes:')}     ${parts.join(', ')}`);
+          console.log(`  ${chalk.dim('Changes:')}`);
+          console.log(`    ${chalk.dim('Target code since previous prepare:')}  ${result.targetCodeChanged ? 'yes' : 'no'}`);
+          console.log(`    ${chalk.dim('Threads/replies since previous prepare:')} ${result.threadsChanged ? 'yes' : 'no'}`);
+
+          if (result.prunedReplies > 0) {
+            console.log(`    ${chalk.dim('Stale replies pruned:')} ${result.prunedReplies}`);
+          }
+          if (result.publishedActionCount > 0) {
+            console.log(`    ${chalk.dim('Prior actions tracked:')} ${result.publishedActionCount}`);
+          }
+          console.log('');
+
+          // Focus guidance
+          if (result.targetCodeChanged) {
+            console.log(`  ${chalk.dim('Focus: updated diff and unresolved thread updates')}`);
+          } else if (result.threadsChanged) {
+            console.log(`  ${chalk.dim('Focus: updated threads/replies and pending outputs')}`);
           } else {
-            console.log(`  ${chalk.dim('Changes:')}     no changes detected`);
+            console.log(`  ${chalk.dim('Focus: pending outputs, if any')}`);
           }
           console.log('');
         }
@@ -85,10 +89,6 @@ export function registerPrepareCommand(program: Command): void {
           console.log('');
         } else if (target.state === 'closed') {
           console.log(chalk.yellow('  ⚠ This MR is closed'));
-          console.log('');
-        }
-        if (result.localBranchStatus === 'behind') {
-          console.log(chalk.yellow('  ⚠ Local branch is behind the MR — consider pulling'));
           console.log('');
         }
 
@@ -110,15 +110,6 @@ function getStateColor(state: string): (text: string) => string {
     case 'closed': return chalk.red;
     case 'locked': return chalk.yellow;
     default: return chalk.white;
-  }
-}
-
-function getBranchSyncLabel(status: string): string {
-  switch (status) {
-    case 'up-to-date': return chalk.green('up-to-date with MR');
-    case 'behind': return chalk.yellow('behind MR head');
-    case 'ahead': return chalk.cyan('ahead of MR head');
-    default: return status;
   }
 }
 
