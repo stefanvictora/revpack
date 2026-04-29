@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn as nodeSpawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
@@ -12,7 +12,8 @@ export class GitHelper {
 
   /**
    * Shallow-clone a repository into a new directory.
-   * Creates `<parentDir>/<dirName>` (like `git clone` derives from the URL).
+   * Creates `<parentDir>/<dirName>` where dirName defaults to `<repoName>-<branch>`.
+   * Streams git output to the terminal for progress visibility.
    * Returns the absolute path of the cloned directory.
    */
   static async clone(
@@ -21,14 +22,28 @@ export class GitHelper {
     parentDir: string,
     dirName?: string,
   ): Promise<string> {
-    const args = ['clone', '--depth', '1', '--branch', branch, cloneUrl];
-    if (dirName) args.push(dirName);
-    await exec('git', args, { cwd: parentDir });
+    // Derive directory name: <repo>-<branch> for easy multi-branch checkout
+    const repoName = cloneUrl.replace(/\.git$/, '').split('/').pop()!;
+    const sanitizedBranch = branch.replace(/[/\\:*?"<>|]/g, '-');
+    const resolvedName = dirName ?? `${repoName}-${sanitizedBranch}`;
 
-    // Determine the actual directory name (git uses the repo name from the URL)
-    const resolvedName = dirName ?? cloneUrl.replace(/\.git$/, '').split('/').pop()!;
-    const { resolve } = await import('node:path');
-    return resolve(parentDir, resolvedName);
+    const args = ['clone', '--depth', '1', '--branch', branch, '--progress', cloneUrl, resolvedName];
+
+    // Use spawn with inherited stdio so clone progress is shown in terminal
+    await new Promise<void>((resolve, reject) => {
+      const child = nodeSpawn('git', args, {
+        cwd: parentDir,
+        stdio: ['ignore', 'inherit', 'inherit'],
+      });
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`git clone exited with code ${code}`));
+      });
+      child.on('error', reject);
+    });
+
+    const { resolve: pathResolve } = await import('node:path');
+    return pathResolve(parentDir, resolvedName);
   }
 
   /** Get current branch name. */

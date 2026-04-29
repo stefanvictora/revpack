@@ -73,7 +73,7 @@ export interface ReviewProvider {
   findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<string | null>;
 
   /** Create a standalone note (not a discussion thread) on the MR/PR. */
-  createNote(ref: ReviewTargetRef, body: string): Promise<string>;
+  createNote(ref: ReviewTargetRef, body: string, options?: { internal?: boolean }): Promise<string>;
 
   /** Update an existing standalone note on the MR/PR. */
   updateNote(ref: ReviewTargetRef, noteId: string, body: string): Promise<void>;

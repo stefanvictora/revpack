@@ -621,3 +621,35 @@ Before finishing, check that:
 - `review.md` does not reference internal revkit files
 
 Do not run publishing commands unless the developer explicitly asks.
+
+---
+
+# Language and encoding
+
+## Reply language
+
+Match the language of the thread you are replying to.
+
+If the thread comments are in German, reply in German. If in English, reply in English. If mixed, prefer the language of the most recent human comment.
+
+Do not switch languages within a single reply.
+
+## UTF-8 encoding
+
+All output files are read and written as UTF-8. Use proper Unicode characters — including umlauts (ä, ö, ü, ß), accented characters, and other non-ASCII text.
+
+Do not omit, escape, or transliterate special characters. For example, write "Änderung" not "Aenderung".
+
+---
+
+# System events in threads
+
+Thread files in `.revkit/threads/` may contain **system events** (e.g. "changed this line in version 3 of the diff").
+
+These events indicate that the MR author may have pushed changes that address the feedback in the thread, even if no comment was left.
+
+When you see a system event in a thread:
+
+1. Check the current source code to see if the issue was actually fixed.
+2. If the issue is fixed, you may resolve the thread (if it is a **SELF** thread) or note that it appears fixed.
+3. Do not assume the issue is fixed just because a system event exists — verify in the code.

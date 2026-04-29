@@ -81,7 +81,7 @@ export class WorkspaceManager {
 
     // Write thread files
     await this.clearThreadFiles();
-    await this.writeThreads(threads, threadIndex);
+    await this.writeThreads(threads, threadIndex, diffs);
 
     // Write diffs and line map
     await this.writeDiffs(diffs);
@@ -283,6 +283,34 @@ export class WorkspaceManager {
       try {
         await fs.writeFile(filePath, content, 'utf-8');
       } catch { /* outputs dir may not exist yet */ }
+    }
+  }
+
+  /**
+   * Prefill an output file with content from the last published review note,
+   * but only if the file is currently empty. This lets agents see and update
+   * existing content in incremental mode without triggering a "changed" state
+   * on the next status check (the publish hash stays matched).
+   */
+  async prefillOutputIfEmpty(filename: string, content: string): Promise<void> {
+    const filePath = path.join(this.baseDir, 'outputs', filename);
+    try {
+      const existing = await fs.readFile(filePath, 'utf-8');
+      if (existing.trim()) return; // already has content — don't overwrite
+    } catch {
+      // File doesn't exist — write it
+    }
+    await fs.writeFile(filePath, content, 'utf-8');
+
+    // Update the publish hash so status doesn't detect this as "pending"
+    const state = await this.loadBundleState();
+    if (state) {
+      const outputKey = filename === 'review.md' ? 'review' : filename === 'summary.md' ? 'summary' : null;
+      if (outputKey) {
+        const entry = state.outputs[outputKey];
+        entry.lastPublishedHash = computeContentHash(content);
+        await this.saveBundleState(state);
+      }
     }
   }
 
@@ -506,7 +534,8 @@ export class WorkspaceManager {
       lines.push(`| \`.revkit/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
     }
     lines.push(`| \`.revkit/diffs/latest.patch\` | Full target diff (${diffs.length} file(s)) |`);
-    lines.push('| `.revkit/diffs/line-map.json` | Valid positional anchors |');
+    lines.push('| `.revkit/diffs/line-map.json` | Valid positional anchors (JSON) |');
+    lines.push('| `.revkit/diffs/anchors.tsv` | Compact positional anchors index (TSV) |');
     if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
       lines.push('| `.revkit/diffs/incremental.patch` | Code changes since last review checkpoint |');
     }
@@ -594,7 +623,7 @@ export class WorkspaceManager {
   // ─── Line map & output scaffolding ──────────────────────
 
   /**
-   * Parse diffs/latest.patch and write diffs/line-map.json.
+   * Parse diffs/latest.patch and write diffs/line-map.json + diffs/anchors.tsv.
    */
   private async writeLineMap(): Promise<void> {
     const patchPath = path.join(this.baseDir, 'diffs', 'latest.patch');
@@ -606,6 +635,20 @@ export class WorkspaceManager {
     }
     const lineMap = parsePatch(patchContent);
     await this.writeJson(path.join(this.baseDir, 'diffs', 'line-map.json'), lineMap);
+
+    // Write a compact TSV index of valid positional anchors for quick lookup.
+    // Format: type\toldLine\tnewLine\toldPath\tnewPath
+    const tsvLines: string[] = ['type\toldLine\tnewLine\toldPath\tnewPath'];
+    for (const file of lineMap.files) {
+      for (const line of file.lines) {
+        tsvLines.push(`${line.type}\t${line.oldLine ?? ''}\t${line.newLine ?? ''}\t${file.oldPath}\t${file.newPath}`);
+      }
+    }
+    await fs.writeFile(
+      path.join(this.baseDir, 'diffs', 'anchors.tsv'),
+      tsvLines.join('\n'),
+      'utf-8',
+    );
   }
 
   /**
@@ -698,7 +741,11 @@ export class WorkspaceManager {
     );
   }
 
-  private async writeThreads(threads: ReviewThread[], threadIndex: ThreadIndex): Promise<void> {
+  private async writeThreads(threads: ReviewThread[], threadIndex: ThreadIndex, diffs: ReviewDiff[]): Promise<void> {
+    // Build line map from diffs for embedding diff context in thread files
+    const patchContent = diffs.map((d) => `diff --git a/${d.oldPath} b/${d.newPath}\n${d.diff}`).join('\n');
+    const lineMap = parsePatch(patchContent);
+
     for (const thread of threads) {
       const prefix = threadIndex.get(thread.threadId) ?? `T-${String(threads.indexOf(thread) + 1).padStart(3, '0')}`;
 
@@ -706,7 +753,7 @@ export class WorkspaceManager {
       await this.writeJson(path.join(this.baseDir, 'threads', `${prefix}.json`), thread);
 
       // Markdown version for human/agent reading
-      const md = this.threadToMarkdown(thread, prefix);
+      const md = this.threadToMarkdown(thread, prefix, lineMap);
       await fs.writeFile(path.join(this.baseDir, 'threads', `${prefix}.md`), md, 'utf-8');
     }
   }
@@ -739,7 +786,7 @@ export class WorkspaceManager {
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), diffOutput, 'utf-8');
   }
 
-  private threadToMarkdown(thread: ReviewThread, prefix: string): string {
+  private threadToMarkdown(thread: ReviewThread, prefix: string, lineMap?: import('./patch-parser.js').LineMap): string {
     const lines: string[] = [];
     lines.push(`# ${prefix}: Thread ${thread.threadId}`);
     lines.push('');
@@ -750,13 +797,33 @@ export class WorkspaceManager {
       if (thread.position.newLine) lines.push(`- **Line**: ${thread.position.newLine}`);
     }
     lines.push('');
+
+    // Embed diff context around the thread's position
+    if (thread.position && lineMap) {
+      const diffSnippet = this.extractDiffContext(thread.position, lineMap);
+      if (diffSnippet) {
+        lines.push('## Diff Context');
+        lines.push('');
+        lines.push('```diff');
+        lines.push(diffSnippet);
+        lines.push('```');
+        lines.push('');
+      }
+    }
+
     lines.push('## Comments');
     lines.push('');
     for (const comment of thread.comments) {
       if (comment.system) {
-        // System comments (e.g. "changed this line in version 5") — shown dimmed
-        lines.push(`> **System** — ${comment.createdAt}`);
-        lines.push(`> ${comment.body}`);
+        // System events (e.g. "changed this line in version 5", "added commits")
+        // These often indicate the MR author pushed changes that may address feedback.
+        lines.push('> ℹ️ **System event** — ' + comment.createdAt);
+        lines.push('>');
+        for (const bodyLine of comment.body.split('\n')) {
+          lines.push(`> ${bodyLine}`);
+        }
+        lines.push('>');
+        lines.push('> *This system event may indicate that the MR author pushed changes related to this thread. Check the current source code to verify.*');
         lines.push('');
       } else {
         lines.push(`### ${comment.author} (${comment.origin}) — ${comment.createdAt}`);
@@ -768,6 +835,45 @@ export class WorkspaceManager {
       lines.push('');
     }
     return lines.join('\n');
+  }
+
+  /**
+   * Extract a few lines of diff context around a thread's position.
+   * Shows ~3 lines of context above the referenced line and the line itself,
+   * similar to GitLab's inline diff viewer.
+   */
+  private extractDiffContext(
+    position: { filePath: string; newLine?: number; oldLine?: number; newPath?: string; oldPath?: string },
+    lineMap: import('./patch-parser.js').LineMap,
+  ): string | null {
+    const targetPath = position.newPath || position.filePath;
+    const file = lineMap.files.find((f) => f.newPath === targetPath || f.oldPath === targetPath);
+    if (!file || file.lines.length === 0) return null;
+
+    const targetLine = position.newLine ?? position.oldLine;
+    if (!targetLine) return null;
+
+    // Find the index of the referenced line
+    const lineIdx = file.lines.findIndex((l) => {
+      if (position.newLine && l.newLine === position.newLine) return true;
+      if (position.oldLine && l.oldLine === position.oldLine) return true;
+      return false;
+    });
+    if (lineIdx === -1) return null;
+
+    // Show 3 context lines above and 1 below
+    const start = Math.max(0, lineIdx - 3);
+    const end = Math.min(file.lines.length - 1, lineIdx + 1);
+
+    const snippetLines: string[] = [];
+    for (let i = start; i <= end; i++) {
+      const entry = file.lines[i];
+      const prefix = entry.type === 'added' ? '+' : entry.type === 'removed' ? '-' : ' ';
+      const lineNum = entry.newLine ?? entry.oldLine ?? '';
+      const marker = i === lineIdx ? ' ◀' : '';
+      snippetLines.push(`${prefix} ${String(lineNum).padStart(4)} | ${entry.text}${marker}`);
+    }
+    return snippetLines.join('\n');
   }
 
   private async ensureDir(dir: string): Promise<void> {

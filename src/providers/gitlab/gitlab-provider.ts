@@ -271,11 +271,13 @@ export class GitLabProvider implements ReviewProvider {
     return match ? String(match.id) : null;
   }
 
-  async createNote(ref: ReviewTargetRef, body: string): Promise<string> {
+  async createNote(ref: ReviewTargetRef, body: string, options?: { internal?: boolean }): Promise<string> {
     const projectId = encodeURIComponent(ref.repository);
+    const payload: Record<string, unknown> = { body };
+    if (options?.internal) payload.internal = true;
     const result = await this.request<GitLabNote>(
       `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/notes`,
-      { method: 'POST', body: { body } },
+      { method: 'POST', body: payload },
     );
     return String(result.id);
   }

@@ -5,6 +5,12 @@ import * as os from 'node:os';
 import { ReviewOrchestrator } from '../orchestration/orchestrator.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
+import { computeContentHash } from '../workspace/thread-digest.js';
+import {
+  buildCheckpointState,
+  buildReviewNoteBody,
+  parseCheckpointMarker,
+} from '../workspace/checkpoint.js';
 import type { ReviewProvider } from '../providers/provider.js';
 import type { ReviewTarget, ReviewThread, ReviewDiff, ReviewVersion, ReviewTargetRef } from '../core/types.js';
 
@@ -93,6 +99,28 @@ function createMockProvider(): ReviewProvider {
   };
 }
 
+/**
+ * Helper to create a review note thread mock for checkpoint tests.
+ */
+function createReviewNoteThread(noteId: string, noteBody: string): ReviewThread {
+  return {
+    provider: 'gitlab',
+    targetRef,
+    threadId: 'review-note-thread',
+    resolved: false,
+    resolvable: false,
+    comments: [{
+      id: noteId,
+      body: noteBody,
+      author: 'revkit-bot',
+      createdAt: '2026-04-27T12:00:00Z',
+      updatedAt: '2026-04-27T12:00:00Z',
+      origin: 'bot',
+      system: false,
+    }],
+  };
+}
+
 describe('ReviewOrchestrator', () => {
   let mockProvider: ReviewProvider;
   let tmpDir: string;
@@ -141,7 +169,7 @@ describe('ReviewOrchestrator', () => {
       expect(mockProvider.postReply).toHaveBeenCalledWith(
         targetRef,
         'thread-1',
-        `<!-- revkit -->\nThanks, fixed!`,
+        expect.stringContaining('Thanks, fixed!'),
       );
     });
   });
@@ -389,7 +417,7 @@ describe('ReviewOrchestrator', () => {
       expect(threadId).toBe('new-thread-id');
       expect(mockProvider.createThread).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
-        `<!-- revkit -->\nPotential null dereference here`,
+        expect.stringContaining('Potential null dereference here'),
         { oldPath: 'src/app.ts', newPath: 'src/app.ts', newLine: 42, oldLine: undefined },
       );
     });
@@ -715,7 +743,6 @@ describe('ReviewOrchestrator', () => {
 
       // Simulate publish by storing hash
       const ws = new WorkspaceManager(tmpDir);
-      const { computeContentHash } = await import('../workspace/thread-digest.js');
       await ws.updateOutputPublishState('summary', computeContentHash(content), 'bbb');
 
       const state = await ws.getOutputState('summary');
@@ -730,7 +757,6 @@ describe('ReviewOrchestrator', () => {
       await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'summary.md'), original, 'utf-8');
 
       const ws = new WorkspaceManager(tmpDir);
-      const { computeContentHash } = await import('../workspace/thread-digest.js');
       await ws.updateOutputPublishState('summary', computeContentHash(original), 'bbb');
 
       // Edit the file
@@ -768,7 +794,6 @@ describe('ReviewOrchestrator', () => {
       await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'review.md'), content, 'utf-8');
 
       const ws = new WorkspaceManager(tmpDir);
-      const { computeContentHash } = await import('../workspace/thread-digest.js');
       await ws.updateOutputPublishState('review', computeContentHash(content), 'bbb');
 
       const state = await ws.getOutputState('review');
@@ -783,7 +808,6 @@ describe('ReviewOrchestrator', () => {
       await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'review.md'), original, 'utf-8');
 
       const ws = new WorkspaceManager(tmpDir);
-      const { computeContentHash } = await import('../workspace/thread-digest.js');
       await ws.updateOutputPublishState('review', computeContentHash(original), 'bbb');
 
       await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'review.md'), '## Notes\nEdited', 'utf-8');
@@ -847,7 +871,6 @@ describe('ReviewOrchestrator', () => {
 
     it('prepare with checkpoint compares checkpoint head to current head', async () => {
       // Simulate a managed review note with checkpoint
-      const { buildCheckpointState, buildReviewNoteBody, REVIEW_NOTE_MARKER } = await import('../workspace/checkpoint.js');
       const checkpointState = buildCheckpointState(
         targetRef,
         'old-head-sha', // checkpoint head differs from current
@@ -859,30 +882,9 @@ describe('ReviewOrchestrator', () => {
       );
       const noteBody = buildReviewNoteBody('Previous review notes.', checkpointState);
 
-      // Mock: findNoteByMarker returns the note ID
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
-
-      // Mock: the note body is returned via thread comments
-      const reviewNoteThread: ReviewThread = {
-        provider: 'gitlab',
-        targetRef,
-        threadId: 'review-note-thread',
-        resolved: false,
-        resolvable: false,
-        comments: [
-          {
-            id: 'note-42',
-            body: noteBody,
-            author: 'revkit-bot',
-            createdAt: '2026-04-27T12:00:00Z',
-            updatedAt: '2026-04-27T12:00:00Z',
-            origin: 'bot',
-            system: false,
-          },
-        ],
-      };
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([mockThread, reviewNoteThread]);
+        .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
@@ -900,31 +902,14 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('repeated prepare does not advance checkpoint', async () => {
-      const { buildCheckpointState, buildReviewNoteBody, REVIEW_NOTE_MARKER } = await import('../workspace/checkpoint.js');
       const checkpointState = buildCheckpointState(
         targetRef, 'bbb', 'aaa', 'aaa', null, 'v1',
       );
       const noteBody = buildReviewNoteBody('Review notes.', checkpointState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
-      const reviewNoteThread: ReviewThread = {
-        provider: 'gitlab',
-        targetRef,
-        threadId: 'review-note-thread',
-        resolved: false,
-        resolvable: false,
-        comments: [{
-          id: 'note-42',
-          body: noteBody,
-          author: 'revkit-bot',
-          createdAt: '2026-04-27T12:00:00Z',
-          updatedAt: '2026-04-27T12:00:00Z',
-          origin: 'bot',
-          system: false,
-        }],
-      };
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([mockThread, reviewNoteThread]);
+        .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
@@ -945,31 +930,14 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('repeated prepare before publishing keeps target-code-changed status stable', async () => {
-      const { buildCheckpointState, buildReviewNoteBody } = await import('../workspace/checkpoint.js');
       const checkpointState = buildCheckpointState(
         targetRef, 'old-head', 'aaa', 'aaa', 'sha256:old-threads', 'v1',
       );
       const noteBody = buildReviewNoteBody('Review notes.', checkpointState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
-      const reviewNoteThread: ReviewThread = {
-        provider: 'gitlab',
-        targetRef,
-        threadId: 'review-note-thread',
-        resolved: false,
-        resolvable: false,
-        comments: [{
-          id: 'note-42',
-          body: noteBody,
-          author: 'revkit-bot',
-          createdAt: '2026-04-27T12:00:00Z',
-          updatedAt: '2026-04-27T12:00:00Z',
-          origin: 'bot',
-          system: false,
-        }],
-      };
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([mockThread, reviewNoteThread]);
+        .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
@@ -984,31 +952,14 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('incremental patch is generated from checkpoint head to current head', async () => {
-      const { buildCheckpointState, buildReviewNoteBody } = await import('../workspace/checkpoint.js');
       const checkpointState = buildCheckpointState(
         targetRef, 'old-head', 'aaa', 'aaa', null, 'v-old',
       );
       const noteBody = buildReviewNoteBody('Review notes.', checkpointState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
-      const reviewNoteThread: ReviewThread = {
-        provider: 'gitlab',
-        targetRef,
-        threadId: 'review-note-thread',
-        resolved: false,
-        resolvable: false,
-        comments: [{
-          id: 'note-42',
-          body: noteBody,
-          author: 'revkit-bot',
-          createdAt: '2026-04-27T12:00:00Z',
-          updatedAt: '2026-04-27T12:00:00Z',
-          origin: 'bot',
-          system: false,
-        }],
-      };
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([mockThread, reviewNoteThread]);
+        .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -1040,42 +991,24 @@ describe('ReviewOrchestrator', () => {
       expect(mockProvider.createNote).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
         expect.stringContaining('Looks good overall'),
+        { internal: true },
       );
 
       // The created note should contain the checkpoint marker
       const noteBody = (mockProvider.createNote as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      const { parseCheckpointMarker: parse } = await import('../workspace/checkpoint.js');
-      const parsed = parse(noteBody);
+      const parsed = parseCheckpointMarker(noteBody);
       expect(parsed).not.toBeNull();
       expect(parsed!.state.checkpoint.headSha).toBe('bbb');
     });
 
     it('updates existing managed note instead of creating duplicate', async () => {
-      // First, create a note by having the marker exist
-      const { buildCheckpointState, buildReviewNoteBody, REVIEW_NOTE_MARKER } = await import('../workspace/checkpoint.js');
       const oldState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null);
       const existingBody = buildReviewNoteBody('Old review notes.', oldState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('existing-note-id');
-      // Return the note body via threads
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         mockThread,
-        {
-          provider: 'gitlab',
-          targetRef,
-          threadId: 'review-note-thread',
-          resolved: false,
-          resolvable: false,
-          comments: [{
-            id: 'existing-note-id',
-            body: existingBody,
-            author: 'revkit-bot',
-            createdAt: '2026-04-27T12:00:00Z',
-            updatedAt: '2026-04-27T12:00:00Z',
-            origin: 'bot',
-            system: false,
-          }],
-        },
+        createReviewNoteThread('existing-note-id', existingBody),
       ]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
@@ -1103,8 +1036,7 @@ describe('ReviewOrchestrator', () => {
       await orchestrator.publishReview('Review notes.', 'group/project');
 
       const noteBody = (mockProvider.createNote as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      const { parseCheckpointMarker: parse } = await import('../workspace/checkpoint.js');
-      const parsed = parse(noteBody);
+      const parsed = parseCheckpointMarker(noteBody);
 
       expect(parsed).not.toBeNull();
       expect(parsed!.state.schemaVersion).toBe(1);
@@ -1113,29 +1045,13 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('with empty review.md preserves existing visible note and updates marker', async () => {
-      const { buildCheckpointState, buildReviewNoteBody } = await import('../workspace/checkpoint.js');
       const oldState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null);
       const existingBody = buildReviewNoteBody('Important review notes to keep.', oldState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('existing-note-id');
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         mockThread,
-        {
-          provider: 'gitlab',
-          targetRef,
-          threadId: 'review-note-thread',
-          resolved: false,
-          resolvable: false,
-          comments: [{
-            id: 'existing-note-id',
-            body: existingBody,
-            author: 'revkit-bot',
-            createdAt: '2026-04-27T12:00:00Z',
-            updatedAt: '2026-04-27T12:00:00Z',
-            origin: 'bot',
-            system: false,
-          }],
-        },
+        createReviewNoteThread('existing-note-id', existingBody),
       ]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
@@ -1148,8 +1064,7 @@ describe('ReviewOrchestrator', () => {
       const updatedBody = (mockProvider.updateNote as ReturnType<typeof vi.fn>).mock.calls[0][2];
       expect(updatedBody).toContain('Important review notes to keep.');
 
-      const { parseCheckpointMarker: parse } = await import('../workspace/checkpoint.js');
-      const parsed = parse(updatedBody);
+      const parsed = parseCheckpointMarker(updatedBody);
       expect(parsed!.state.checkpoint.headSha).toBe('bbb'); // advanced to current head
     });
 
@@ -1166,8 +1081,7 @@ describe('ReviewOrchestrator', () => {
       const createdBody = (mockProvider.createNote as ReturnType<typeof vi.fn>).mock.calls[0][1];
       expect(createdBody).toContain('Reviewed current changes. No additional review notes.');
 
-      const { parseCheckpointMarker: parse } = await import('../workspace/checkpoint.js');
-      const parsed = parse(createdBody);
+      const parsed = parseCheckpointMarker(createdBody);
       expect(parsed).not.toBeNull();
     });
   });
@@ -1176,7 +1090,6 @@ describe('ReviewOrchestrator', () => {
 
   describe('state recovery', () => {
     it('reconstructs checkpoint from managed note after deleting .revkit/', async () => {
-      const { buildCheckpointState, buildReviewNoteBody } = await import('../workspace/checkpoint.js');
       const checkpointState = buildCheckpointState(
         targetRef, 'old-head', 'aaa', 'aaa', 'sha256:old-threads', 'v1',
       );
@@ -1185,22 +1098,7 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         mockThread,
-        {
-          provider: 'gitlab',
-          targetRef,
-          threadId: 'review-note-thread',
-          resolved: false,
-          resolvable: false,
-          comments: [{
-            id: 'note-42',
-            body: noteBody,
-            author: 'revkit-bot',
-            createdAt: '2026-04-27T12:00:00Z',
-            updatedAt: '2026-04-27T12:00:00Z',
-            origin: 'bot',
-            system: false,
-          }],
-        },
+        createReviewNoteThread('note-42', noteBody),
       ]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
