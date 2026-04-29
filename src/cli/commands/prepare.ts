@@ -27,8 +27,9 @@ export function registerPrepareCommand(program: Command): void {
             state: result.bundle.target.state,
             mode: result.mode,
             targetCodeChanged: result.targetCodeChanged,
-            localCheckoutChanged: result.localCheckoutChanged,
             threadsChanged: result.threadsChanged,
+            descriptionChanged: result.descriptionChanged,
+            hasCheckpoint: result.hasCheckpoint,
             threadCount: result.bundle.threads.length,
             diffCount: result.bundle.diffs.length,
             contextPath: result.contextPath,
@@ -53,10 +54,11 @@ export function registerPrepareCommand(program: Command): void {
         console.log('');
 
         // Prepare summary — changes
-        if (mode === 'refresh') {
-          console.log(`  ${chalk.dim('Changes:')}`);
-          console.log(`    ${chalk.dim('Target code since previous prepare:')}  ${result.targetCodeChanged ? 'yes' : 'no'}`);
-          console.log(`    ${chalk.dim('Threads/replies since previous prepare:')} ${result.threadsChanged ? 'yes' : 'no'}`);
+        if (result.hasCheckpoint) {
+          console.log(`  ${chalk.dim('Changes since last review checkpoint:')}`);
+          console.log(`    ${chalk.dim('Target code:')}     ${result.targetCodeChanged ? 'yes' : 'no'}`);
+          console.log(`    ${chalk.dim('Threads/replies:')} ${result.threadsChanged != null ? (result.threadsChanged ? 'yes' : 'no') : 'unknown'}`);
+          console.log(`    ${chalk.dim('Description:')}     ${result.descriptionChanged != null ? (result.descriptionChanged ? 'yes' : 'no') : 'unknown'}`);
 
           if (result.prunedReplies > 0) {
             console.log(`    ${chalk.dim('Stale replies pruned:')} ${result.prunedReplies}`);
@@ -74,6 +76,9 @@ export function registerPrepareCommand(program: Command): void {
           } else {
             console.log(`  ${chalk.dim('Focus: pending outputs, if any')}`);
           }
+          console.log('');
+        } else if (mode !== 'fresh') {
+          console.log(`  ${chalk.dim('No review checkpoint found — treat as fresh review')}`);
           console.log('');
         }
 

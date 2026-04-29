@@ -34,7 +34,7 @@ Do not write or update:
 
 - `.revkit/outputs/replies.json`
 - `.revkit/outputs/new-findings.json`
-- `.revkit/outputs/review-notes.md`
+- `.revkit/outputs/review.md`
 
 Do not mention review findings, suspected issues, approval status, unresolved threads, or internal revkit files in the summary.
 

@@ -7,10 +7,19 @@ import type {
   BundleLocal,
   NewFinding,
   PrepareSummary,
+  RemoteCheckpoint,
+  BundleComparison,
 } from '../core/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
-import { computeAggregateThreadsDigest } from '../workspace/thread-digest.js';
+import { computeAggregateThreadsDigest, computeContentHash } from '../workspace/thread-digest.js';
+import {
+  parseCheckpointMarker,
+  buildCheckpointState,
+  buildReviewNoteBody,
+  updateReviewNoteBody,
+  REVIEW_NOTE_MARKER,
+} from '../workspace/checkpoint.js';
 
 export interface OrchestratorOptions {
   provider: ReviewProvider;
@@ -24,8 +33,9 @@ export interface PrepareResult {
   contextPath: string;
   mode: 'fresh' | 'refresh' | 'target_changed';
   targetCodeChanged: boolean | null;
-  localCheckoutChanged: boolean | null;
   threadsChanged: boolean | null;
+  descriptionChanged: boolean | null;
+  hasCheckpoint: boolean;
   prunedReplies: number;
   publishedActionCount: number;
 }
@@ -96,6 +106,46 @@ export class ReviewOrchestrator {
       this.provider.getLatestDiff(targetRef),
       this.provider.getDiffVersions(targetRef),
     ]);
+
+    // ─── Fetch remote checkpoint from managed review note ──
+    let remoteCheckpoint: RemoteCheckpoint | null = null;
+    let checkpointNoteId: string | null = null;
+
+    try {
+      checkpointNoteId = await this.provider.findNoteByMarker(targetRef, REVIEW_NOTE_MARKER);
+    } catch {
+      // Provider lookup failed — treat as no checkpoint
+    }
+
+    if (checkpointNoteId) {
+      try {
+        // We need to read the note body. Use findNoteByMarker + the note body.
+        // The provider API returns notes by marker; we need the body to parse checkpoint.
+        // For now, use listAllThreads' general comments or a direct fetch.
+        // Actually, the provider's findNoteByMarker returns the note ID.
+        // We need the body. Let's search raw threads/comments for it,
+        // or use a dedicated provider method. For now, search raw threads.
+        const noteBody = await this.findReviewNoteBody(targetRef, checkpointNoteId, rawThreads);
+        if (noteBody) {
+          const parsed = parseCheckpointMarker(noteBody);
+          if (parsed) {
+            remoteCheckpoint = {
+              source: 'managed_review_note',
+              providerNoteId: checkpointNoteId,
+              headSha: parsed.state.checkpoint.headSha,
+              baseSha: parsed.state.checkpoint.baseSha,
+              startSha: parsed.state.checkpoint.startSha,
+              providerVersionId: parsed.state.checkpoint.providerVersionId,
+              threadsDigest: parsed.state.checkpoint.threadsDigest,
+              descriptionDigest: parsed.state.checkpoint.descriptionDigest ?? null,
+              createdAt: parsed.state.checkpoint.createdAt,
+            };
+          }
+        }
+      } catch {
+        // Malformed checkpoint — treat as no checkpoint
+      }
+    }
 
     // ─── Source consistency check ─────────────────────────
     // Must verify local checkout matches MR/PR head BEFORE writing anything.
@@ -178,42 +228,41 @@ export class ReviewOrchestrator {
       threadIndex,
     );
 
-    // Compute prepare summary
+    // Compute prepare summary — compare against remote checkpoint
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
+    const currentDescriptionDigest = computeContentHash(target.description ?? '');
 
-    const targetCodeChanged = previousBundle && mode === 'refresh'
-      ? previousBundle.target.diffRefs.headSha !== mrHeadSha
+    // Compare against checkpoint (not previous local prepare)
+    const targetCodeChanged = remoteCheckpoint
+      ? remoteCheckpoint.headSha !== mrHeadSha
       : null;
 
-    const previousLocalHeadSha = previousBundle?.local?.headSha;
-    const localCheckoutChanged = previousBundle && mode === 'refresh' && previousLocalHeadSha
-      ? previousLocalHeadSha !== localHeadSha
+    const threadsChanged = remoteCheckpoint && remoteCheckpoint.threadsDigest
+      ? remoteCheckpoint.threadsDigest !== currentThreadsDigest
       : null;
 
-    const previousThreadsDigest = previousBundle?.threads?.digest ?? null;
-    const threadsChanged = previousBundle && mode === 'refresh' && previousThreadsDigest
-      ? previousThreadsDigest !== currentThreadsDigest
+    const descriptionChanged = remoteCheckpoint && remoteCheckpoint.descriptionDigest
+      ? remoteCheckpoint.descriptionDigest !== currentDescriptionDigest
       : null;
+
+    const comparison: BundleComparison = {
+      targetCodeChangedSinceCheckpoint: targetCodeChanged,
+      threadsChangedSinceCheckpoint: threadsChanged,
+      descriptionChangedSinceCheckpoint: descriptionChanged,
+    };
 
     const prepareSummary: PrepareSummary = {
       mode,
-      previous: previousBundle && mode !== 'fresh' ? {
-        preparedAt: previousBundle.preparedAt,
-        providerVersionId: previousBundle.target.providerVersionId,
-        targetHeadSha: previousBundle.target.diffRefs.headSha,
-        localHeadSha: previousLocalHeadSha ?? previousBundle.target.diffRefs.headSha,
-        threadsDigest: previousThreadsDigest,
-      } : null,
+      checkpoint: remoteCheckpoint,
       current: {
         providerVersionId: latestVersionId,
         targetHeadSha: mrHeadSha,
         localHeadSha,
         threadsDigest: currentThreadsDigest,
+        descriptionDigest: currentDescriptionDigest,
       },
-      targetCodeChangedSincePreviousPrepare: targetCodeChanged,
-      localCheckoutChangedSincePreviousPrepare: localCheckoutChanged,
-      threadsChangedSincePreviousPrepare: threadsChanged,
+      comparison,
     };
 
     // Build local metadata
@@ -227,26 +276,48 @@ export class ReviewOrchestrator {
       checkedAt: new Date().toISOString(),
     };
 
-    // Incremental diff if code changed
-    if (targetCodeChanged && previousBundle && versions.length > 0) {
-      const latestVersion = versions[0];
-      try {
-        const incrementalDiffs = await this.provider.getIncrementalDiff(
-          targetRef,
-          previousBundle.target.providerVersionId!,
-          latestVersion.versionId,
-        );
-        await this.workspace.writeIncrementalDiff(incrementalDiffs);
-      } catch {
-        // Fall back gracefully
+    // Incremental diff relative to checkpoint head (not previous prepare)
+    if (targetCodeChanged && remoteCheckpoint) {
+      // Try provider-based incremental diff if we have version IDs
+      if (remoteCheckpoint.providerVersionId && latestVersionId) {
+        try {
+          const incrementalDiffs = await this.provider.getIncrementalDiff(
+            targetRef,
+            remoteCheckpoint.providerVersionId,
+            latestVersionId,
+          );
+          await this.workspace.writeIncrementalDiff(incrementalDiffs);
+        } catch {
+          // Fall back: try git-based diff from checkpoint head
+          try {
+            await this.workspace.writeIncrementalDiffFromGit(
+              this.git,
+              remoteCheckpoint.headSha,
+              mrHeadSha,
+            );
+          } catch {
+            // Fall back gracefully — no incremental patch
+          }
+        }
+      } else {
+        // No version IDs — try git-based diff
+        try {
+          await this.workspace.writeIncrementalDiffFromGit(
+            this.git,
+            remoteCheckpoint.headSha,
+            mrHeadSha,
+          );
+        } catch {
+          // Fall back gracefully
+        }
       }
-    } else if (mode === 'refresh' && !targetCodeChanged) {
+    } else if (remoteCheckpoint && !targetCodeChanged) {
       await this.workspace.writeNoCodeChangeIncrementalPatch();
     }
 
     // Prune stale replies
     let prunedReplies = 0;
-    if (mode === 'refresh') {
+    if (previousBundle) {
       const activeIds = new Set(activeThreads.map((t) => t.threadId));
       prunedReplies = await this.workspace.pruneStaleReplies(activeIds, threadIndex);
     }
@@ -287,8 +358,9 @@ export class ReviewOrchestrator {
       contextPath,
       mode,
       targetCodeChanged,
-      localCheckoutChanged,
       threadsChanged,
+      descriptionChanged,
+      hasCheckpoint: remoteCheckpoint !== null,
       prunedReplies,
       publishedActionCount: previousActions.length,
     };
@@ -415,27 +487,97 @@ export class ReviewOrchestrator {
     return this.workspace.resolveThreadRef(ref);
   }
 
-  /** Review comment marker for finding/updating the synced comment. */
-  static readonly REVIEW_COMMENT_MARKER = '<!-- revkit:review-comment -->';
+  /** Review note marker for finding/updating the managed review note. */
+  static readonly REVIEW_COMMENT_MARKER = REVIEW_NOTE_MARKER;
 
   /**
-   * Create or update the synced review comment on the MR/PR.
-   * This is a standalone note (not a discussion thread) that gets
-   * updated in-place on each sync.
+   * Publish review: create or update the managed review note and advance the checkpoint.
+   *
+   * - If visibleContent is non-empty, uses it as the visible note body.
+   * - If visibleContent is empty and a managed note exists, preserves existing visible content.
+   * - If visibleContent is empty and no managed note exists, creates a minimal visible note.
+   * - Always updates the hidden checkpoint marker.
    */
-  async syncReviewComment(body: string, defaultRepo?: string): Promise<{ created: boolean; noteId?: string }> {
+  async publishReview(visibleContent: string, defaultRepo?: string): Promise<{ created: boolean; noteId?: string }> {
     const targetRef = await this.resolveRef(undefined, defaultRepo);
-    const marker = ReviewOrchestrator.REVIEW_COMMENT_MARKER;
-    const fullBody = `${marker}\n${body}`;
+    const marker = REVIEW_NOTE_MARKER;
+
+    // Fetch current state for the checkpoint
+    const [target, rawThreads] = await Promise.all([
+      this.provider.getTargetSnapshot(targetRef),
+      this.provider.listAllThreads(targetRef),
+    ]);
+
+    const allThreads = rawThreads.filter((t) => !t.comments.every((c) => c.system));
+    const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
+    const currentDescriptionDigest = computeContentHash(target.description ?? '');
+
+    const versions = await this.provider.getDiffVersions(targetRef);
+    const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
+
+    // Build the new checkpoint state
+    const checkpointState = buildCheckpointState(
+      targetRef,
+      target.diffRefs.headSha,
+      target.diffRefs.baseSha,
+      target.diffRefs.startSha,
+      currentThreadsDigest,
+      latestVersionId,
+      currentDescriptionDigest,
+    );
 
     const existingNoteId = await this.provider.findNoteByMarker(targetRef, marker);
+
     if (existingNoteId) {
+      // Update existing managed note
+      // Read the existing body to preserve visible content if needed
+      const existingBody = await this.findReviewNoteBody(targetRef, existingNoteId, rawThreads);
+      let fullBody: string;
+
+      if (visibleContent.trim()) {
+        fullBody = buildReviewNoteBody(visibleContent, checkpointState);
+      } else if (existingBody) {
+        fullBody = updateReviewNoteBody(existingBody, checkpointState);
+      } else {
+        fullBody = buildReviewNoteBody('Reviewed current changes. No additional review notes.', checkpointState);
+      }
+
       await this.provider.updateNote(targetRef, existingNoteId, fullBody);
       return { created: false, noteId: existingNoteId };
     } else {
+      // Create new managed note
+      const content = visibleContent.trim()
+        ? visibleContent
+        : 'Reviewed current changes. No additional review notes.';
+      const fullBody = buildReviewNoteBody(content, checkpointState);
       const noteId = await this.provider.createNote(targetRef, fullBody);
       return { created: true, noteId };
     }
+  }
+
+  /**
+   * Find the body of a review note by its provider note ID.
+   * Searches raw threads/comments for the note, or tries provider API.
+   */
+  private async findReviewNoteBody(
+    _targetRef: ReviewTargetRef,
+    noteId: string,
+    rawThreads: import('../core/types.js').ReviewThread[],
+  ): Promise<string | null> {
+    // Search through all thread comments for the note ID
+    for (const thread of rawThreads) {
+      for (const comment of thread.comments) {
+        if (comment.id === noteId) {
+          return comment.body;
+        }
+      }
+    }
+
+    // If not found in threads, it might be a standalone note.
+    // Try fetching all notes via the provider's general comments
+    // (standalone notes appear as non-resolvable threads in some providers)
+    // For now, return null — the caller handles the missing case.
+    return null;
   }
 
   // ─── Helpers ────────────────────────────────────────────

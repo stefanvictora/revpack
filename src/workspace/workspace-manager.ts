@@ -186,7 +186,7 @@ export class WorkspaceManager {
       },
       outputs: previousOutputs ?? {
         summary: { path: '.revkit/outputs/summary.md' },
-        reviewNotes: { path: '.revkit/outputs/review-notes.md' },
+        review: { path: '.revkit/outputs/review.md' },
       },
       publishedActions: previousActions ?? [],
       paths: {
@@ -194,7 +194,7 @@ export class WorkspaceManager {
         instructions: '.revkit/INSTRUCTIONS.md',
         description: '.revkit/description.md',
         latestPatch: '.revkit/diffs/latest.patch',
-        incrementalPatch: prepareSummary.targetCodeChangedSincePreviousPrepare
+        incrementalPatch: prepareSummary.comparison.targetCodeChangedSinceCheckpoint
           ? '.revkit/diffs/incremental.patch'
           : null,
         lineMap: '.revkit/diffs/line-map.json',
@@ -218,7 +218,7 @@ export class WorkspaceManager {
    * Update the publish hash for an output file in bundle.json.
    */
   async updateOutputPublishState(
-    outputKey: 'summary' | 'reviewNotes',
+    outputKey: 'summary' | 'review',
     hash: string,
     targetHeadSha: string,
     providerNoteId?: string,
@@ -239,7 +239,7 @@ export class WorkspaceManager {
   /**
    * Compute the current state of an output file relative to its publish hash.
    */
-  async getOutputState(outputKey: 'summary' | 'reviewNotes'): Promise<OutputState> {
+  async getOutputState(outputKey: 'summary' | 'review'): Promise<OutputState> {
     const state = await this.loadBundleState();
     if (!state) return 'empty';
     const entry = state.outputs[outputKey];
@@ -276,7 +276,7 @@ export class WorkspaceManager {
       ['replies.json', '[]'],
       ['new-findings.json', '[]'],
       ['summary.md', ''],
-      ['review-notes.md', ''],
+      ['review.md', ''],
     ];
     for (const [name, content] of defaults) {
       const filePath = path.join(outputDir, name);
@@ -430,50 +430,46 @@ export class WorkspaceManager {
     lines.push('Read `.revkit/INSTRUCTIONS.md` for the review workflow, output formats, and quality guidelines.');
     lines.push('');
 
-    // ─── Prepare Summary ──────────────────────────────────
+    // ─── Review Checkpoint Summary ──────────────────────────
     const ps = options?.prepareSummary;
     if (ps) {
-      lines.push('## Prepare Summary');
-      lines.push('');
-      lines.push('| Field | Value |');
-      lines.push('|---|---|');
-      lines.push(`| Prepared at | ${new Date().toISOString()} |`);
-      lines.push(`| Mode | ${ps.mode} |`);
-      if (ps.targetCodeChangedSincePreviousPrepare !== null) {
-        lines.push(`| Target code changed since previous prepare | ${ps.targetCodeChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
-      }
-      if (ps.localCheckoutChangedSincePreviousPrepare !== null) {
-        lines.push(`| Local checkout changed since previous prepare | ${ps.localCheckoutChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
-      }
-      if (ps.threadsChangedSincePreviousPrepare !== null) {
-        lines.push(`| Threads/replies changed since previous prepare | ${ps.threadsChangedSincePreviousPrepare ? 'yes' : 'no'} |`);
-      }
-      if (ps.previous) {
-        lines.push(`| Previous target head SHA | \`${ps.previous.targetHeadSha}\` |`);
-      }
-      lines.push(`| Current target head SHA | \`${ps.current.targetHeadSha}\` |`);
-      lines.push(`| Local HEAD at prepare | \`${ps.current.localHeadSha}\` |`);
-      lines.push('| Local checkout verified | yes |');
+      lines.push('## Review Checkpoint Summary');
       lines.push('');
 
-      // Mode-specific context guidance
-      if (ps.mode === 'fresh') {
-        lines.push('This is a fresh prepared bundle. There is no previous prepare to compare against.');
+      if (ps.checkpoint) {
+        lines.push('| Field | Value |');
+        lines.push('|---|---|');
+        lines.push(`| Last review checkpoint | ${ps.checkpoint.createdAt} |`);
+        lines.push(`| Last reviewed head SHA | \`${ps.checkpoint.headSha}\` |`);
+        lines.push(`| Current target head SHA | \`${ps.current.targetHeadSha}\` |`);
+        lines.push(`| Target code changed since checkpoint | ${ps.comparison.targetCodeChangedSinceCheckpoint ? 'yes' : 'no'} |`);
+        lines.push(`| Threads/replies changed since checkpoint | ${ps.comparison.threadsChangedSinceCheckpoint != null ? (ps.comparison.threadsChangedSinceCheckpoint ? 'yes' : 'no') : 'unknown'} |`);
+        lines.push(`| Description changed since checkpoint | ${ps.comparison.descriptionChangedSinceCheckpoint != null ? (ps.comparison.descriptionChangedSinceCheckpoint ? 'yes' : 'no') : 'unknown'} |`);
+        lines.push(`| Local HEAD at prepare | \`${ps.current.localHeadSha}\` |`);
+        lines.push('| Local checkout verified | yes |');
         lines.push('');
-      } else if (ps.targetCodeChangedSincePreviousPrepare) {
-        lines.push('This refresh detected target code changes since the previous prepare.');
-        lines.push('');
-        lines.push('Focus proactive review on the updated diff and unresolved thread updates.');
-        lines.push('');
-      } else if (ps.threadsChangedSincePreviousPrepare) {
-        lines.push('This refresh did not detect target code changes since the previous prepare, but it did detect thread or reply updates.');
-        lines.push('');
-        lines.push('Focus on updated unresolved threads, newly added replies, and pending outputs. Do not perform a full proactive code review unless requested.');
-        lines.push('');
+
+        // Checkpoint-specific context guidance
+        if (ps.comparison.targetCodeChangedSinceCheckpoint) {
+          lines.push('Target code has changed since the last review checkpoint.');
+          lines.push('');
+          lines.push('Focus proactive review on the updated diff and unresolved thread updates.');
+          lines.push('');
+        } else if (ps.comparison.threadsChangedSinceCheckpoint) {
+          lines.push('No target code changes since the last review checkpoint, but threads or replies have been updated.');
+          lines.push('');
+          lines.push('Focus on updated unresolved threads, newly added replies, and pending outputs. Do not perform a full proactive code review unless requested.');
+          lines.push('');
+        } else {
+          lines.push('No target code or thread/reply changes since the last review checkpoint.');
+          lines.push('');
+          lines.push('Focus on pending outputs, if any. Do not perform a full proactive code review unless requested.');
+          lines.push('');
+        }
       } else {
-        lines.push('This refresh did not detect target code or thread/reply changes since the previous prepare.');
+        lines.push('No previous revkit review checkpoint was found for this MR/PR.');
         lines.push('');
-        lines.push('Focus on pending outputs, if any. Do not perform a full proactive code review unless requested.');
+        lines.push('Treat this as a fresh review.');
         lines.push('');
       }
     }
@@ -511,8 +507,8 @@ export class WorkspaceManager {
     }
     lines.push(`| \`.revkit/diffs/latest.patch\` | Full target diff (${diffs.length} file(s)) |`);
     lines.push('| `.revkit/diffs/line-map.json` | Valid positional anchors |');
-    if (ps?.targetCodeChangedSincePreviousPrepare) {
-      lines.push('| `.revkit/diffs/incremental.patch` | Code changes since previous prepare |');
+    if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
+      lines.push('| `.revkit/diffs/incremental.patch` | Code changes since last review checkpoint |');
     }
     lines.push('| `.revkit/outputs/` | Agent output files |');
     lines.push('');
@@ -622,7 +618,7 @@ export class WorkspaceManager {
       ['replies.json', '[]'],
       ['new-findings.json', '[]'],
       ['summary.md', ''],
-      ['review-notes.md', ''],
+      ['review.md', ''],
     ];
     for (const [name, content] of defaults) {
       const filePath = path.join(outputDir, name);
@@ -697,7 +693,7 @@ export class WorkspaceManager {
     await this.ensureDir(path.join(this.baseDir, 'diffs'));
     await fs.writeFile(
       path.join(this.baseDir, 'diffs', 'incremental.patch'),
-      '# No code changes since previous prepare.\n',
+      '# No code changes since last review checkpoint.\n',
       'utf-8',
     );
   }
@@ -732,6 +728,15 @@ export class WorkspaceManager {
     }).join('\n');
 
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), patchContent, 'utf-8');
+  }
+
+  /**
+   * Write an incremental diff using git diff between two commit SHAs.
+   */
+  async writeIncrementalDiffFromGit(git: import('./git-helper.js').GitHelper, fromSha: string, toSha: string): Promise<void> {
+    await this.ensureDir(path.join(this.baseDir, 'diffs'));
+    const diffOutput = await git.diff(fromSha, toSha);
+    await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), diffOutput, 'utf-8');
   }
 
   private threadToMarkdown(thread: ReviewThread, prefix: string): string {

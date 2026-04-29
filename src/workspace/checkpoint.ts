@@ -1,0 +1,161 @@
+import type { ReviewTargetRef } from '../core/types.js';
+
+// ─── Checkpoint types ────────────────────────────────────
+
+export interface CheckpointState {
+  schemaVersion: number;
+  tool: { name: string; version: string };
+  target: {
+    provider: string;
+    repository: string;
+    type: string;
+    id: string;
+  };
+  checkpoint: {
+    createdAt: string;
+    headSha: string;
+    baseSha: string;
+    startSha: string;
+    providerVersionId?: string;
+    threadsDigest: string | null;
+    descriptionDigest?: string | null;
+  };
+}
+
+export interface ParsedCheckpoint {
+  state: CheckpointState;
+  providerNoteId: string;
+  visibleContent: string;
+}
+
+// ─── Constants ───────────────────────────────────────────
+
+export const CHECKPOINT_MARKER_START = '<!-- revkit:state';
+export const CHECKPOINT_MARKER_END = '-->';
+export const REVIEW_NOTE_MARKER = '<!-- revkit:review-note -->';
+
+// ─── Parser ──────────────────────────────────────────────
+
+/**
+ * Parse the hidden revkit:state marker from a managed review note body.
+ * Returns the decoded CheckpointState and the visible (human-readable) content, or null if no marker found.
+ */
+export function parseCheckpointMarker(noteBody: string): { state: CheckpointState; visibleContent: string } | null {
+  const startIdx = noteBody.indexOf(CHECKPOINT_MARKER_START);
+  if (startIdx === -1) return null;
+
+  const afterStart = startIdx + CHECKPOINT_MARKER_START.length;
+  const endIdx = noteBody.indexOf(CHECKPOINT_MARKER_END, afterStart);
+  if (endIdx === -1) return null;
+
+  const encoded = noteBody.slice(afterStart, endIdx).trim();
+  if (!encoded) return null;
+
+  let state: CheckpointState;
+  try {
+    // Try base64url-decoded JSON first
+    const decoded = Buffer.from(encoded, 'base64url').toString('utf-8');
+    state = JSON.parse(decoded) as CheckpointState;
+  } catch {
+    try {
+      // Fallback: raw JSON inside the comment
+      state = JSON.parse(encoded) as CheckpointState;
+    } catch {
+      return null;
+    }
+  }
+
+  // Validate minimum required fields
+  if (!state || typeof state !== 'object') return null;
+  if (!state.checkpoint || typeof state.checkpoint.headSha !== 'string') return null;
+
+  // Extract visible content (everything outside the marker block)
+  const markerBlock = noteBody.slice(startIdx, endIdx + CHECKPOINT_MARKER_END.length);
+  const visibleContent = noteBody
+    .replace(markerBlock, '')
+    .replace(REVIEW_NOTE_MARKER, '')
+    .trim();
+
+  return { state, visibleContent };
+}
+
+// ─── Serializer ──────────────────────────────────────────
+
+/**
+ * Build a CheckpointState from the current review context.
+ */
+export function buildCheckpointState(
+  targetRef: ReviewTargetRef,
+  headSha: string,
+  baseSha: string,
+  startSha: string,
+  threadsDigest: string | null,
+  providerVersionId?: string,
+  descriptionDigest?: string | null,
+): CheckpointState {
+  return {
+    schemaVersion: 1,
+    tool: { name: 'revkit', version: '0.2.0' },
+    target: {
+      provider: targetRef.provider,
+      repository: targetRef.repository,
+      type: targetRef.targetType,
+      id: targetRef.targetId,
+    },
+    checkpoint: {
+      createdAt: new Date().toISOString(),
+      headSha,
+      baseSha,
+      startSha,
+      providerVersionId,
+      threadsDigest,
+      descriptionDigest: descriptionDigest ?? null,
+    },
+  };
+}
+
+/**
+ * Encode a CheckpointState as a base64url JSON string for embedding in HTML comments.
+ */
+export function encodeCheckpointState(state: CheckpointState): string {
+  const json = JSON.stringify(state);
+  return Buffer.from(json, 'utf-8').toString('base64url');
+}
+
+/**
+ * Build the full managed review note body with visible content and hidden checkpoint marker.
+ */
+export function buildReviewNoteBody(visibleContent: string, state: CheckpointState): string {
+  const encoded = encodeCheckpointState(state);
+  const parts: string[] = [];
+
+  parts.push(REVIEW_NOTE_MARKER);
+
+  if (visibleContent.trim()) {
+    parts.push(visibleContent.trim());
+  }
+
+  parts.push('');
+  parts.push(`${CHECKPOINT_MARKER_START}`);
+  parts.push(encoded);
+  parts.push(CHECKPOINT_MARKER_END);
+
+  return parts.join('\n');
+}
+
+/**
+ * Update an existing note body: replace only the checkpoint marker, preserve visible content.
+ * If `newVisibleContent` is provided and non-empty, use it; otherwise preserve existing visible content.
+ */
+export function updateReviewNoteBody(
+  existingBody: string,
+  newState: CheckpointState,
+  newVisibleContent?: string,
+): string {
+  const parsed = parseCheckpointMarker(existingBody);
+  const visibleContent = (newVisibleContent?.trim())
+    ? newVisibleContent.trim()
+    : (parsed?.visibleContent ?? '');
+
+  return buildReviewNoteBody(visibleContent, newState);
+}

@@ -21,7 +21,7 @@ Required files:
 - `.revkit/outputs/replies.json`
 - `.revkit/outputs/new-findings.json`
 - `.revkit/outputs/summary.md`
-- `.revkit/outputs/review-notes.md`
+- `.revkit/outputs/review.md`
 
 If there are no review notes worth publishing, write an empty file or a short neutral note, depending on the existing tool convention.
 
@@ -427,7 +427,7 @@ Add or update tests covering [specific scenario].
 
 # When to use review notes instead of findings
 
-Use `.revkit/outputs/review-notes.md` instead of `.revkit/outputs/new-findings.json` for:
+Use `.revkit/outputs/review.md` instead of `.revkit/outputs/new-findings.json` for:
 
 - broad observations about the MR/PR
 - risks that are real but not tied to one changed line
@@ -439,7 +439,7 @@ Use `.revkit/outputs/review-notes.md` instead of `.revkit/outputs/new-findings.j
 
 Use `new-findings.json` only for concrete, actionable issues tied to a visible diff line.
 
-## `outputs/review-notes.md`
+## `outputs/review.md`
 
 This is a public note visible to other MR/PR participants.
 
@@ -456,7 +456,7 @@ A useful review note may include:
 
 Keep it concise.
 
-When updating `outputs/review-notes.md`, treat the existing file as the current desired public review note.
+When updating `outputs/review.md`, treat the existing file as the current desired public review note.
 
 Preserve still-relevant information from the existing note.
 
@@ -618,6 +618,6 @@ Before finishing, check that:
 - source files were not modified
 - findings are concise, concrete, and actionable
 - `summary.md` describes MR/PR changes, not review findings
-- `review-notes.md` does not reference internal revkit files
+- `review.md` does not reference internal revkit files
 
 Do not run publishing commands unless the developer explicitly asks.

@@ -34,7 +34,7 @@ export function mergeWithMarkers(existing: string, newContent: string): string {
 
 const DEFAULT_REPLIES_FILE = '.revkit/outputs/replies.json';
 const DEFAULT_FINDINGS_FILE = '.revkit/outputs/new-findings.json';
-const DEFAULT_REVIEW_NOTES_FILE = '.revkit/outputs/review-notes.md';
+const DEFAULT_REVIEW_FILE = '.revkit/outputs/review.md';
 
 // ─── JSON helpers ────────────────────────────────────────
 
@@ -340,37 +340,35 @@ async function publishDescription(opts: {
   return 1;
 }
 
-async function publishNotes(opts: {
+async function publishReviewCmd(opts: {
   from?: string;
   repo?: string;
 }): Promise<number> {
-  const filePath = opts.from ?? DEFAULT_REVIEW_NOTES_FILE;
+  const filePath = opts.from ?? DEFAULT_REVIEW_FILE;
   let content: string;
   try {
     content = await fs.readFile(filePath, 'utf-8');
   } catch {
-    return 0;
+    content = '';
   }
-
-  if (!content.trim()) return 0;
 
   const orchestrator = await createOrchestrator();
   const defaultRepo = opts.repo ?? await getDefaultRepo();
 
-  const result = await orchestrator.syncReviewComment(content, defaultRepo);
+  const result = await orchestrator.publishReview(content, defaultRepo);
   if (result.created) {
-    console.log(chalk.green('✓ Review comment created on the MR'));
+    console.log(chalk.green('✓ Review note created on the MR (checkpoint advanced)'));
   } else {
-    console.log(chalk.green('✓ Review comment updated on the MR'));
+    console.log(chalk.green('✓ Review note updated on the MR (checkpoint advanced)'));
   }
 
-  // Store publish hash for review notes tracking
+  // Store publish hash for review tracking
   const ws = new WorkspaceManager(process.cwd());
   const bundleState = await ws.loadBundleState();
   if (bundleState) {
     const hash = computeContentHash(content);
     await ws.updateOutputPublishState(
-      'reviewNotes',
+      'review',
       hash,
       bundleState.target.diffRefs.headSha,
       result.noteId,
@@ -408,7 +406,7 @@ export function registerPublishCommand(program: Command): void {
     console.log('  revkit publish findings      Publish findings only');
     console.log('  revkit publish replies       Publish replies only');
     console.log('  revkit publish description   Update MR description');
-    console.log('  revkit publish notes         Sync review notes');
+    console.log('  revkit publish review        Publish/update review note and advance checkpoint');
     process.exit(1);
   });
 
@@ -419,7 +417,7 @@ export function registerPublishCommand(program: Command): void {
       try {
         const parentOpts = cmd.parent?.opts() as { refresh?: boolean } | undefined;
         let total = 0;
-        try { total += await publishNotes({}); } catch { /* no notes */ }
+        try { total += await publishReviewCmd({}); } catch { /* no review */ }
         try { total += await publishDescription({ fromSummary: true }); } catch { /* no description */ }
 
         const replyCount = await publishReplies({ noRefresh: true });
@@ -496,15 +494,15 @@ export function registerPublishCommand(program: Command): void {
       }
     });
 
-  // ── publish notes ──────────────────────────────────────────
-  publish.command('notes')
-    .description('Create or update the review comment on the MR/PR')
-    .option('--from <file>', `Review notes file (default: ${DEFAULT_REVIEW_NOTES_FILE})`)
+  // ── publish review ──────────────────────────────────────────
+  publish.command('review')
+    .description('Publish/update the managed review note and advance the review checkpoint')
+    .option('--from <file>', `Review file (default: ${DEFAULT_REVIEW_FILE})`)
     .option('--repo <repo>', 'Repository slug')
     .action(async (opts: { from?: string; repo?: string }, cmd: Command) => {
       try {
         const parentOpts = cmd.parent?.opts() as { refresh?: boolean } | undefined;
-        await publishNotes(opts);
+        await publishReviewCmd(opts);
         if (parentOpts?.refresh !== false) {
           await autoRefresh();
         }

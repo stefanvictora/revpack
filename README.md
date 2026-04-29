@@ -67,7 +67,7 @@ Publish selected outputs:
 ```bash
 revkit publish findings
 revkit publish replies
-revkit publish notes
+revkit publish review
 revkit publish description --from-summary
 ```
 
@@ -134,13 +134,13 @@ Creates `.revkit/`:
     T-001.md, T-001.json  ← one per unresolved thread (stable IDs)
   diffs/
     latest.patch           ← full MR diff
-    incremental.patch      ← changes since last prepare (auto on refresh)
+    incremental.patch      ← changes since last review checkpoint (auto on refresh)
     line-map.json          ← valid positional anchors
   outputs/
     replies.json          ← agent drafts (T-NNN references)
     new-findings.json     ← agent-created issues for proactive review
     summary.md            ← changelog for MR description
-    review-notes.md       ← review notes synced to MR comment
+    review.md            ← review note synced to MR comment (checkpoint)
 ```
 
 ### `checkout <ref>` — Switch to MR branch
@@ -183,7 +183,7 @@ revkit publish findings --dry-run               # preview without posting
 revkit publish description --from-summary       # update MR description
 revkit publish description --from custom.md     # use any file
 revkit publish description --from-summary --replace  # replace entire description
-revkit publish notes                            # sync review notes to MR comment
+revkit publish review                           # publish/update review note and advance checkpoint
 ```
 
 ### `clean` — Remove local revkit state

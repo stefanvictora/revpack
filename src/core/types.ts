@@ -232,22 +232,34 @@ export interface BundleTarget {
 
 export interface PrepareSummary {
   mode: 'fresh' | 'refresh' | 'target_changed';
-  previous: {
-    preparedAt: string;
-    providerVersionId?: string;
-    targetHeadSha: string;
-    localHeadSha: string;
-    threadsDigest: string | null;
-  } | null;
+  checkpoint: RemoteCheckpoint | null;
   current: {
     providerVersionId?: string;
     targetHeadSha: string;
     localHeadSha: string;
     threadsDigest: string | null;
+    descriptionDigest?: string | null;
   };
-  targetCodeChangedSincePreviousPrepare: boolean | null;
-  localCheckoutChangedSincePreviousPrepare: boolean | null;
-  threadsChangedSincePreviousPrepare: boolean | null;
+  comparison: BundleComparison;
+}
+
+/** Remote checkpoint parsed from the managed review note. */
+export interface RemoteCheckpoint {
+  source: 'managed_review_note';
+  providerNoteId: string;
+  headSha: string;
+  baseSha: string;
+  startSha: string;
+  providerVersionId?: string;
+  threadsDigest: string | null;
+  descriptionDigest?: string | null;
+  createdAt: string;
+}
+
+export interface BundleComparison {
+  targetCodeChangedSinceCheckpoint: boolean | null;
+  threadsChangedSinceCheckpoint: boolean | null;
+  descriptionChangedSinceCheckpoint: boolean | null;
 }
 
 export interface BundleThreads {
@@ -282,7 +294,7 @@ export interface BundleOutputEntry {
 
 export interface BundleOutputs {
   summary: BundleOutputEntry;
-  reviewNotes: BundleOutputEntry;
+  review: BundleOutputEntry;
 }
 
 export interface BundlePublishedAction {

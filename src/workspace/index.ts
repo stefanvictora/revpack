@@ -5,3 +5,14 @@ export type { LineMap, FileEntry, LineEntry, LineType, FileStatus } from './patc
 export { validateFindings, formatValidationErrors } from './finding-validator.js';
 export type { ValidationError, ValidationResult } from './finding-validator.js';
 export { computeThreadDigest, computeAggregateThreadsDigest, computeContentHash } from './thread-digest.js';
+export {
+  parseCheckpointMarker,
+  buildCheckpointState,
+  encodeCheckpointState,
+  buildReviewNoteBody,
+  updateReviewNoteBody,
+  CHECKPOINT_MARKER_START,
+  CHECKPOINT_MARKER_END,
+  REVIEW_NOTE_MARKER,
+} from './checkpoint.js';
+export type { CheckpointState, ParsedCheckpoint } from './checkpoint.js';

@@ -25,7 +25,7 @@ export function registerStatusCommand(program: Command): void {
 
         // Compute output states
         const summaryState = await ws.getOutputState('summary');
-        const reviewNotesState = await ws.getOutputState('reviewNotes');
+        const reviewState = await ws.getOutputState('review');
 
         if (opts.json) {
           const target = ref
@@ -39,8 +39,8 @@ export function registerStatusCommand(program: Command): void {
             bundle: bundleState ? {
               preparedAt: bundleState.preparedAt,
               mode: bundleState.prepare.mode,
-              targetCodeChanged: bundleState.prepare.targetCodeChangedSincePreviousPrepare,
-              threadsChanged: bundleState.prepare.threadsChangedSincePreviousPrepare,
+              targetCodeChanged: bundleState.prepare.comparison.targetCodeChangedSinceCheckpoint,
+              threadsChanged: bundleState.prepare.comparison.threadsChangedSinceCheckpoint,
               publishedActionCount: bundleState.publishedActions.length,
             } : null,
             local: bundleState?.local ?? null,
@@ -48,7 +48,7 @@ export function registerStatusCommand(program: Command): void {
               replies: pendingReplies,
               findings: pendingFindings,
               summary: summaryState,
-              reviewNotes: reviewNotesState,
+              review: reviewState,
             },
           });
           return;
@@ -69,8 +69,8 @@ export function registerStatusCommand(program: Command): void {
 
           // Bundle info
           console.log(chalk.dim('─ Bundle ─'));
-          console.log(`  ${chalk.dim('Prepared:')}      ${formatDate(bundleState.preparedAt)}`);
-          console.log(`  ${chalk.dim('Target head:')}   ${t.diffRefs.headSha.slice(0, 7)}`);
+          console.log(`  ${chalk.dim('Prepared:')}        ${formatDate(bundleState.preparedAt)}`);
+          console.log(`  ${chalk.dim('Target head:')}     ${t.diffRefs.headSha.slice(0, 7)}`);
           if (bundleState.local) {
             console.log(`  ${chalk.dim('Local head then:')} ${bundleState.local.headSha.slice(0, 7)}`);
           }
@@ -94,7 +94,7 @@ export function registerStatusCommand(program: Command): void {
             } else {
               const isAncestor = await git.isAncestor(t.diffRefs.headSha).catch(() => false);
               const relation = isAncestor ? 'ahead of MR head' : 'behind MR head';
-              console.log(`  ${chalk.dim('Target head:')}   ${t.diffRefs.headSha.slice(0, 7)}`);
+              console.log(`  ${chalk.dim('Target head:')}    ${t.diffRefs.headSha.slice(0, 7)}`);
               console.log(`  ${chalk.dim('Matches target:')} ${chalk.yellow(`no — ${relation}`)}`);
               console.log('');
               console.log(chalk.dim('Next:'));
@@ -103,7 +103,7 @@ export function registerStatusCommand(program: Command): void {
               }
               console.log(chalk.dim('  revkit prepare'));
             }
-            console.log(`  ${chalk.dim('Working tree:')}  ${isClean ? 'clean' : chalk.yellow('dirty')}`);
+            console.log(`  ${chalk.dim('Working tree:')}   ${isClean ? 'clean' : chalk.yellow('dirty')}`);
           } catch {
             // Not a git repo — skip local checkout info
           }
@@ -122,7 +122,7 @@ export function registerStatusCommand(program: Command): void {
           console.log(`  ${chalk.dim('replies:')}       ${pendingReplies > 0 ? pendingReplies : 'none'}`);
           console.log(`  ${chalk.dim('findings:')}      ${pendingFindings > 0 ? pendingFindings : 'none'}`);
           console.log(`  ${chalk.dim('summary:')}       ${formatOutputState(summaryState)}`);
-          console.log(`  ${chalk.dim('review notes:')}  ${formatOutputState(reviewNotesState)}`);
+          console.log(`  ${chalk.dim('review:')}        ${formatOutputState(reviewState)}`);
 
           // Published actions
           if (bundleState.publishedActions.length > 0) {

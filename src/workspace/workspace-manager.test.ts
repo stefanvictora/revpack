@@ -326,7 +326,7 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('added');
     });
 
-    it('shows prepare summary with refresh mode and code changes', async () => {
+    it('shows review checkpoint summary with checkpoint and code changes', async () => {
       const threads = [makeThread()];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
@@ -338,19 +338,30 @@ describe('WorkspaceManager', () => {
         {
           prepareSummary: {
             mode: 'refresh',
-            previous: { preparedAt: '2026-01-01T00:00:00Z', providerVersionId: 'v0', targetHeadSha: 'aaa', localHeadSha: 'aaa', threadsDigest: null },
+            checkpoint: {
+              source: 'managed_review_note',
+              providerNoteId: 'note-1',
+              headSha: 'aaa',
+              baseSha: 'xxx',
+              startSha: 'xxx',
+              threadsDigest: null,
+              descriptionDigest: null,
+              createdAt: '2026-01-01T00:00:00Z',
+            },
             current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
-            targetCodeChangedSincePreviousPrepare: true,
-            localCheckoutChangedSincePreviousPrepare: true,
-            threadsChangedSincePreviousPrepare: true,
+            comparison: {
+              targetCodeChangedSinceCheckpoint: true,
+              threadsChangedSinceCheckpoint: null,
+              descriptionChangedSinceCheckpoint: null,
+            },
           },
         },
       );
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Prepare Summary');
-      expect(content).toContain('refresh');
-      expect(content).toContain('Target code changed since previous prepare');
+      expect(content).toContain('## Review Checkpoint Summary');
+      expect(content).toContain('Last review checkpoint');
+      expect(content).toContain('Target code changed since checkpoint');
       expect(content).toContain('yes');
     });
 
@@ -528,10 +539,9 @@ describe('WorkspaceManager', () => {
       const bundleState = manager.buildBundleState(
         makeTarget(), [], [], new Map(), {
           mode: 'fresh',
-          previous: null,
-          current: { headSha: 'bbb' },
-          codeChangedSincePreviousPrepare: null,
-          threadsChangedSincePreviousPrepare: null,
+          checkpoint: null,
+          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: { targetCodeChangedSinceCheckpoint: null, threadsChangedSinceCheckpoint: null, descriptionChangedSinceCheckpoint: null },
         },
       );
       await manager.saveBundleState(bundleState);
@@ -555,10 +565,9 @@ describe('WorkspaceManager', () => {
       const bundleState = manager.buildBundleState(
         makeTarget(), [], [], new Map(), {
           mode: 'fresh',
-          previous: null,
-          current: { headSha: 'bbb' },
-          codeChangedSincePreviousPrepare: null,
-          threadsChangedSincePreviousPrepare: null,
+          checkpoint: null,
+          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: { targetCodeChangedSinceCheckpoint: null, threadsChangedSinceCheckpoint: null, descriptionChangedSinceCheckpoint: null },
         },
       );
       await manager.saveBundleState(bundleState);
