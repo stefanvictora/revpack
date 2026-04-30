@@ -6,6 +6,7 @@ import { ReviewOrchestrator } from '../orchestration/orchestrator.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
 import { computeContentHash } from '../workspace/thread-digest.js';
+import { mergeWithMarkers } from '../workspace/description-summary.js';
 import { buildCheckpointState, buildReviewNoteBody, parseCheckpointMarker } from '../workspace/checkpoint.js';
 import type { ReviewProvider } from '../providers/provider.js';
 import type { ReviewTarget, ReviewThread, ReviewDiff, ReviewVersion, ReviewTargetRef } from '../core/types.js';
@@ -772,6 +773,42 @@ describe('ReviewOrchestrator', () => {
       const ws = new WorkspaceManager(tmpDir);
       const state = await ws.getOutputState('summary');
       expect(state).toBe('empty');
+    });
+
+    it('prefills summary from published description marker and marks it as published', async () => {
+      const summary = '## Changed\n\n- Updated the login flow.';
+      const targetWithPublishedSummary = {
+        ...mockTarget,
+        description: mergeWithMarkers('Original MR description', summary),
+      };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithPublishedSummary);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const summaryPath = path.join(tmpDir, '.revkit', 'outputs', 'summary.md');
+      await expect(fs.readFile(summaryPath, 'utf-8')).resolves.toBe(summary);
+
+      const ws = new WorkspaceManager(tmpDir);
+      await expect(ws.getOutputState('summary')).resolves.toBe('published');
+    });
+
+    it('does not overwrite a non-empty summary with the published description marker', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const summaryPath = path.join(tmpDir, '.revkit', 'outputs', 'summary.md');
+      await fs.writeFile(summaryPath, '## Changed\n\n- Local draft.', 'utf-8');
+
+      const targetWithPublishedSummary = {
+        ...mockTarget,
+        description: mergeWithMarkers('Original MR description', '## Changed\n\n- Published summary.'),
+      };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithPublishedSummary);
+
+      await orchestrator.prepare('!42', 'group/project');
+
+      await expect(fs.readFile(summaryPath, 'utf-8')).resolves.toBe('## Changed\n\n- Local draft.');
     });
 
     it('review without publish hash shows as pending', async () => {

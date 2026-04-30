@@ -13,6 +13,7 @@ import type {
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
 import { computeAggregateThreadsDigest, computeContentHash } from '../workspace/thread-digest.js';
+import { extractMarkedSummary } from '../workspace/description-summary.js';
 import {
   parseCheckpointMarker,
   buildCheckpointState,
@@ -328,12 +329,15 @@ export class ReviewOrchestrator {
     );
     await this.workspace.saveBundleState(bundleState);
 
-    // Prefill review.md from the last published review note
+    // Prefill outputs from the last published remote content
     // so agents can see and update existing content in incremental mode.
     // Must happen AFTER saveBundleState so the hash update persists.
+    const publishedSummary = extractMarkedSummary(target.description ?? '');
+    if (publishedSummary) {
+      await this.workspace.prefillOutputIfEmpty('summary.md', publishedSummary);
+    }
     if (reviewNoteVisibleContent && remoteCheckpoint) {
       await this.workspace.prefillOutputIfEmpty('review.md', reviewNoteVisibleContent);
-      // todo: also prefill summary.md
     }
 
     return {

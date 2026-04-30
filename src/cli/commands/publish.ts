@@ -7,30 +7,9 @@ import { parsePatch } from '../../workspace/patch-parser.js';
 import { validateFindings, formatValidationErrors } from '../../workspace/finding-validator.js';
 import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
 import { computeContentHash } from '../../workspace/thread-digest.js';
+import { mergeWithMarkers, MARKER_START, MARKER_END } from '../../workspace/description-summary.js';
 
-// ─── Marker-based description merge ─────────────────────
-
-export const MARKER_START = '<!-- revkit:start -->';
-export const MARKER_END = '<!-- revkit:end -->';
-
-/**
- * Merge new content into the description using HTML comment markers.
- * If markers exist, replaces the content between them.
- * If no markers exist, appends a new marked section.
- */
-export function mergeWithMarkers(existing: string, newContent: string): string {
-  const markedSection = `${MARKER_START}\n${newContent.trim()}\n${MARKER_END}`;
-
-  const startIdx = existing.indexOf(MARKER_START);
-  const endIdx = existing.indexOf(MARKER_END);
-
-  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-    return existing.slice(0, startIdx) + markedSection + existing.slice(endIdx + MARKER_END.length);
-  }
-
-  const separator = existing.trim() ? '\n\n---\n\n' : '';
-  return existing.trimEnd() + separator + markedSection;
-}
+export { mergeWithMarkers, MARKER_START, MARKER_END };
 
 const DEFAULT_REPLIES_FILE = '.revkit/outputs/replies.json';
 const DEFAULT_FINDINGS_FILE = '.revkit/outputs/new-findings.json';
