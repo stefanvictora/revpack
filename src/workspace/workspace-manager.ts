@@ -440,6 +440,14 @@ export class WorkspaceManager {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
     const generalComments = threads.filter((t) => !t.resolvable && !t.comments.every((c) => c.system));
 
+    // Strip the bot-published marker and find the first meaningful line of a comment body.
+    const cleanSnippet = (body: string, maxLen: number): string =>
+      body
+        .replace(/^<!-- revkit -->\n?/, '')
+        .split('\n')
+        .find((l) => l.trim()) // first non-empty line after stripping the marker
+        ?.slice(0, maxLen) ?? '';
+
     // Derive SELF/REPLIED from comment origins (marker-based)
     const selfThreadIds = new Set<string>();
     const repliedThreadIds = new Set<string>();
@@ -603,7 +611,7 @@ export class WorkspaceManager {
             ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
             : 'general';
           const firstComment = t.comments.find((c) => !c.system);
-          const snippet = firstComment?.body.split('\n')[0].slice(0, 80) ?? '';
+          const snippet = cleanSnippet(firstComment?.body ?? '', 80);
           lines.push(`| ${prefix} | ${status} | ${file} | ${snippet} |`);
         }
         lines.push('');
@@ -630,7 +638,7 @@ export class WorkspaceManager {
         const file = t.position?.filePath
           ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
           : 'general';
-        const snippet = firstComment?.body.split('\n')[0].slice(0, 80) ?? '';
+        const snippet = cleanSnippet(firstComment?.body ?? '', 80);
         lines.push(`| ${prefix} | ${flagStr} | @${author} | ${file} | ${snippet} |`);
       }
       lines.push('');
@@ -643,8 +651,8 @@ export class WorkspaceManager {
       for (const t of generalComments) {
         const prefix = threadIndex.get(t.threadId) ?? '?';
         const firstComment = t.comments.find((c) => !c.system);
-        const snippet = firstComment?.body.split('\n')[0].slice(0, 120) ?? '';
-        lines.push(`- **${prefix}** (@${firstComment?.author ?? '?'}): ${snippet}`);
+        const snippet = cleanSnippet(firstComment?.body ?? '', 120);
+        lines.push(`- **${prefix}** (@${firstComment?.author ?? '?'}): ${snippet}`);;
       }
       lines.push('');
     }

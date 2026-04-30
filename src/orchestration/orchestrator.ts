@@ -20,6 +20,7 @@ import {
   buildReviewNoteBody,
   updateReviewNoteBody,
   REVIEW_NOTE_MARKER,
+  stripReviewNoteFooter,
 } from '../workspace/checkpoint.js';
 
 export interface OrchestratorOptions {
@@ -350,7 +351,7 @@ export class ReviewOrchestrator {
       await this.workspace.prefillOutputIfEmpty('summary.md', publishedSummary);
     }
     if (reviewNoteVisibleContent && remoteCheckpoint) {
-      await this.workspace.prefillOutputIfEmpty('review.md', reviewNoteVisibleContent);
+      await this.workspace.prefillOutputIfEmpty('review.md', stripReviewNoteFooter(reviewNoteVisibleContent));
     }
 
     return {

@@ -18,10 +18,12 @@ Use `[]` for empty JSON outputs.
 
 Required files:
 
-- `.revkit/outputs/replies.json`
-- `.revkit/outputs/new-findings.json`
-- `.revkit/outputs/summary.md`
-- `.revkit/outputs/review.md`
+| File | Purpose |
+|---|---|
+| `.revkit/outputs/replies.json` | Replies to existing MR/PR threads |
+| `.revkit/outputs/new-findings.json` | New positional review findings to post as threads |
+| `.revkit/outputs/summary.md` | **Changelog-style description of what the MR/PR changes** — not what you found |
+| `.revkit/outputs/review.md` | Public review note with broad observations, risks, or follow-up questions |
 
 If there are no review notes worth publishing, write an empty file or a short neutral note, depending on the existing tool convention.
 
@@ -497,7 +499,11 @@ The note should remain concise and useful as a single updatable MR/PR comment.
 
 ## `outputs/summary.md`
 
-`.revkit/outputs/summary.md` describes what the MR/PR changes, not what the reviewer found.
+**This file describes what the MR/PR changes — not what the reviewer found.**
+
+Do not write a summary of your review activities, findings, or review status here. That belongs in `review.md`.
+
+`.revkit/outputs/summary.md` is a human-readable changelog entry for the MR/PR. It will be published to the MR/PR description so other developers can understand what changed without reading the diff.
 
 Write a concise, changelog-style summary for humans. The summary should be curated, not a file list, commit list, or code walkthrough.
 
