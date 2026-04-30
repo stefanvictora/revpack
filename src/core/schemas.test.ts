@@ -7,24 +7,11 @@ describe('configSchema', () => {
       provider: 'gitlab',
       gitlabUrl: 'https://gitlab.example.com',
       gitlabToken: 'glpat-abc123',
-      bundleDir: '.revkit',
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.provider).toBe('gitlab');
       expect(result.data.gitlabUrl).toBe('https://gitlab.example.com');
-    }
-  });
-
-  it('applies default bundleDir', () => {
-    const result = configSchema.safeParse({
-      provider: 'gitlab',
-      gitlabUrl: 'https://gitlab.example.com',
-      gitlabToken: 'token',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.bundleDir).toBe('.revkit');
     }
   });
 

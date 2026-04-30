@@ -57,6 +57,22 @@ const makeDiff = (): ReviewDiff => ({
   deletedFile: false,
 });
 
+const makeStructuredDiff = (): ReviewDiff => ({
+  oldPath: 'src/service.ts',
+  newPath: 'src/service.ts',
+  diff: [
+    '@@ -10,4 +10,5 @@ function run()',
+    ' const value = read();',
+    '-oldCall(value);',
+    '+newCall(value);',
+    ' return value;',
+    '+audit(value);',
+  ].join('\n'),
+  newFile: false,
+  renamedFile: false,
+  deletedFile: false,
+});
+
 describe('WorkspaceManager', () => {
   let tmpDir: string;
   let manager: WorkspaceManager;
@@ -134,6 +150,126 @@ describe('WorkspaceManager', () => {
 
     expect(patch).toContain('diff --git');
     expect(patch).toContain('src/app.ts');
+  });
+
+  it('writes structured diff artifacts and annotated views', async () => {
+    await createBundle(manager, makeTarget(), [], [makeStructuredDiff()]);
+
+    const diffDir = path.join(tmpDir, '.revkit', 'diffs');
+    const filesJson = JSON.parse(await fs.readFile(path.join(diffDir, 'files.json'), 'utf-8'));
+    expect(filesJson.files).toHaveLength(1);
+    expect(filesJson.files[0]).toMatchObject({
+      fileId: 'F001',
+      status: 'modified',
+      oldPath: 'src/service.ts',
+      newPath: 'src/service.ts',
+      added: 2,
+      removed: 1,
+      viewFile: 'views/by-file/F001-service.diff.md',
+    });
+    expect(filesJson.files[0].hunks[0]).toMatchObject({
+      hunkId: 'F001-H001',
+      oldStart: 10,
+      oldEnd: 12,
+      newStart: 10,
+      newEnd: 13,
+    });
+
+    const lineMapLines = (await fs.readFile(path.join(diffDir, 'line-map.ndjson'), 'utf-8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(lineMapLines).toEqual([
+      {
+        fileId: 'F001',
+        hunkId: 'F001-H001',
+        kind: 'context',
+        oldLine: 10,
+        newLine: 10,
+        oldPath: 'src/service.ts',
+        newPath: 'src/service.ts',
+        text: 'const value = read();',
+      },
+      {
+        fileId: 'F001',
+        hunkId: 'F001-H001',
+        kind: 'removed',
+        oldLine: 11,
+        newLine: null,
+        oldPath: 'src/service.ts',
+        newPath: 'src/service.ts',
+        text: 'oldCall(value);',
+      },
+      {
+        fileId: 'F001',
+        hunkId: 'F001-H001',
+        kind: 'added',
+        oldLine: null,
+        newLine: 11,
+        oldPath: 'src/service.ts',
+        newPath: 'src/service.ts',
+        text: 'newCall(value);',
+      },
+      {
+        fileId: 'F001',
+        hunkId: 'F001-H001',
+        kind: 'context',
+        oldLine: 12,
+        newLine: 12,
+        oldPath: 'src/service.ts',
+        newPath: 'src/service.ts',
+        text: 'return value;',
+      },
+      {
+        fileId: 'F001',
+        hunkId: 'F001-H001',
+        kind: 'added',
+        oldLine: null,
+        newLine: 13,
+        oldPath: 'src/service.ts',
+        newPath: 'src/service.ts',
+        text: 'audit(value);',
+      },
+    ]);
+
+    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
+    expect(changeBlocks.blocks).toEqual([
+      {
+        blockId: 'B001',
+        fileId: 'F001',
+        hunkId: 'F001-H001',
+        kind: 'replace',
+        oldStart: 11,
+        oldEnd: 11,
+        newStart: 11,
+        newEnd: 11,
+        preferredCommentTarget: { side: 'new', path: 'src/service.ts', line: 11 },
+      },
+      {
+        blockId: 'B002',
+        fileId: 'F001',
+        hunkId: 'F001-H001',
+        kind: 'insert',
+        oldStart: 12,
+        oldEnd: 12,
+        newStart: 13,
+        newEnd: 13,
+        preferredCommentTarget: { side: 'new', path: 'src/service.ts', line: 13 },
+      },
+    ]);
+
+    const annotated = await fs.readFile(path.join(diffDir, 'views', 'all.annotated.diff.md'), 'utf-8');
+    expect(annotated).toContain('FILE F001');
+    expect(annotated).toContain('@@ F001-H001 old:10-12 new:10-13 @@ function run()');
+    expect(annotated).toContain('- old:    11            | oldCall(value);');
+    expect(annotated).toContain('+            new:    11 | newCall(value);');
+    expect(annotated).toContain('+            new:    13 | audit(value);');
+
+    const perFile = await fs.readFile(
+      path.join(diffDir, 'views', 'by-file', 'F001-service.diff.md'),
+      'utf-8',
+    );
+    expect(annotated).toContain(perFile.trimEnd());
   });
 
   it('writes output files', async () => {
@@ -243,6 +379,41 @@ describe('WorkspaceManager', () => {
 
   it('removeBundle is safe when nothing exists', async () => {
     await expect(manager.removeBundle()).resolves.not.toThrow();
+  });
+
+  it('only emits thread items for threads written to the bundle', async () => {
+    const activeThread = makeThread();
+    const resolvedThread = { ...makeThread(), threadId: 'thread-resolved', resolved: true };
+    const allThreads = [activeThread, resolvedThread];
+    const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
+
+    const bundleState = manager.buildBundleState(
+      makeTarget(),
+      allThreads,
+      [],
+      threadIndex,
+      {
+        mode: 'fresh',
+        checkpoint: null,
+        current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+        comparison: { targetCodeChangedSinceCheckpoint: null, threadsChangedSinceCheckpoint: null, descriptionChangedSinceCheckpoint: null },
+      },
+      {
+        repositoryRoot: tmpDir,
+        branch: 'feature/test',
+        headSha: 'bbb',
+        matchesTargetSourceBranch: true,
+        matchesTargetHead: true,
+        workingTreeClean: true,
+        checkedAt: '2026-01-01T00:00:00Z',
+      },
+      undefined,
+      undefined,
+      [activeThread],
+    );
+
+    expect(bundleState.threads.knownProviderThreadIds).toEqual(['thread-abc', 'thread-resolved']);
+    expect(bundleState.threads.items.map((item) => item.providerThreadId)).toEqual(['thread-abc']);
   });
 
   it('writes incremental diff patch', async () => {

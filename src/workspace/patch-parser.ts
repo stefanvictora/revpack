@@ -251,13 +251,15 @@ function parseHunk(lines: string[], startIndex: number, hunkId: string): { entri
       continue;
     }
 
-    // Context line (starts with space) or empty context line
-    if (line.startsWith(' ') || line === '') {
+    // Context lines in unified diffs always start with a space. A bare empty
+    // string is usually the split artifact from a trailing newline or a
+    // separator between file patches, not an actual hunk line.
+    if (line.startsWith(' ')) {
       entries.push({
         type: 'context',
         oldLine,
         newLine,
-        text: line.startsWith(' ') ? line.slice(1) : line,
+        text: line.slice(1),
       });
       oldLine++;
       newLine++;

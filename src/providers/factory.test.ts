@@ -9,7 +9,6 @@ describe('createProvider', () => {
       provider: 'gitlab',
       gitlabUrl: 'https://gitlab.example.com',
       gitlabToken: 'glpat-xxx',
-      bundleDir: '.revkit',
     };
     const provider = createProvider(config);
     expect(provider.providerType).toBe('gitlab');
@@ -19,7 +18,6 @@ describe('createProvider', () => {
     const config: AppConfig = {
       provider: 'gitlab',
       gitlabToken: 'glpat-xxx',
-      bundleDir: '.revkit',
     };
     expect(() => createProvider(config)).toThrow(ConfigError);
   });
@@ -28,7 +26,6 @@ describe('createProvider', () => {
     const config: AppConfig = {
       provider: 'gitlab',
       gitlabUrl: 'https://gitlab.example.com',
-      bundleDir: '.revkit',
     };
     expect(() => createProvider(config)).toThrow(ConfigError);
   });
@@ -36,7 +33,6 @@ describe('createProvider', () => {
   it('throws on github (not implemented)', () => {
     const config: AppConfig = {
       provider: 'github',
-      bundleDir: '.revkit',
     };
     expect(() => createProvider(config)).toThrow('not yet implemented');
   });

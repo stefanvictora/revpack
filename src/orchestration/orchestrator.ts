@@ -24,7 +24,6 @@ import {
 export interface OrchestratorOptions {
   provider: ReviewProvider;
   workingDir: string;
-  bundleDirName?: string;
 }
 
 export interface PrepareResult {
@@ -59,7 +58,7 @@ export class ReviewOrchestrator {
 
   constructor(options: OrchestratorOptions) {
     this.provider = options.provider;
-    this.workspace = new WorkspaceManager(options.workingDir, options.bundleDirName);
+    this.workspace = new WorkspaceManager(options.workingDir);
     this.git = new GitHelper(options.workingDir);
   }
 
@@ -347,6 +346,7 @@ export class ReviewOrchestrator {
       localMetadata,
       previousActions,
       previousOutputs,
+      activeThreads,
     );
     await this.workspace.saveBundleState(bundleState);
 

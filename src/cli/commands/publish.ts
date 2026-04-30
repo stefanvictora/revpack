@@ -35,6 +35,8 @@ export function mergeWithMarkers(existing: string, newContent: string): string {
 const DEFAULT_REPLIES_FILE = '.revkit/outputs/replies.json';
 const DEFAULT_FINDINGS_FILE = '.revkit/outputs/new-findings.json';
 const DEFAULT_REVIEW_FILE = '.revkit/outputs/review.md';
+const DEFAULT_SUMMARY_FILE = '.revkit/outputs/summary.md';
+const DEFAULT_LATEST_PATCH_FILE = '.revkit/diffs/latest.patch';
 
 // ─── JSON helpers ────────────────────────────────────────
 
@@ -215,7 +217,7 @@ async function publishFindings(opts: {
   if (rawFindings.length === 0) return 0;
 
   // Load line map for validation
-  const patchPath = '.revkit/diffs/latest.patch';
+  const patchPath = DEFAULT_LATEST_PATCH_FILE;
   let patchContent: string;
   try {
     patchContent = await fs.readFile(patchPath, 'utf-8');
@@ -302,7 +304,7 @@ async function publishDescription(opts: {
     content = await fs.readFile(opts.from, 'utf-8');
   } else if (opts.fromSummary) {
     try {
-      content = await fs.readFile('.revkit/outputs/summary.md', 'utf-8');
+      content = await fs.readFile(DEFAULT_SUMMARY_FILE, 'utf-8');
     } catch {
       console.error(chalk.red('No summary found. Run `revkit prepare` first.'));
       process.exit(1);
@@ -331,7 +333,7 @@ async function publishDescription(opts: {
     const ws = new WorkspaceManager(process.cwd());
     const bundleState = await ws.loadBundleState();
     if (bundleState) {
-      const summaryContent = await fs.readFile('.revkit/outputs/summary.md', 'utf-8');
+      const summaryContent = await fs.readFile(DEFAULT_SUMMARY_FILE, 'utf-8');
       const hash = computeContentHash(summaryContent);
       await ws.updateOutputPublishState('summary', hash, bundleState.target.diffRefs.headSha);
     }

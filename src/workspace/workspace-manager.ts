@@ -2,23 +2,23 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
-  ReviewTarget,
-  ReviewThread,
-  ReviewDiff,
-  ReviewVersion,
-  WorkspaceBundle,
-  BundleState,
   BundleLocal,
-  BundlePublishedAction,
   BundleOutputs,
+  BundlePublishedAction,
+  BundleState,
   BundleThreadItem,
   OutputState,
   PrepareSummary,
+  ReviewDiff,
+  ReviewTarget,
+  ReviewThread,
+  ReviewVersion,
+  WorkspaceBundle,
 } from '../core/types.js';
 import { WorkspaceError } from '../core/errors.js';
-import { parsePatch, type LineMap, type FileEntry as PatchFileEntry } from './patch-parser.js';
+import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
 import type { GitHelper } from './git-helper.js';
-import { computeThreadDigest, computeContentHash, DIGEST_VERSION } from './thread-digest.js';
+import { computeContentHash, computeThreadDigest, DIGEST_VERSION } from './thread-digest.js';
 
 /**
  * Map from thread SHA → stable T-NNN short ID.
@@ -27,11 +27,25 @@ import { computeThreadDigest, computeContentHash, DIGEST_VERSION } from './threa
  */
 export type ThreadIndex = Map<string, string>;
 
+const OUTPUT_DEFAULTS: readonly [filename: string, content: string][] = [
+  ['replies.json', '[]'],
+  ['new-findings.json', '[]'],
+  ['summary.md', ''],
+  ['review.md', ''],
+];
+
+const OUTPUT_STATE_KEYS = {
+  'summary.md': 'summary',
+  'review.md': 'review',
+} as const;
+
 export class WorkspaceManager {
+  private readonly workingDir: string;
   private readonly baseDir: string;
 
-  constructor(workingDir: string, bundleDirName = '.revkit') {
-    this.baseDir = path.join(workingDir, bundleDirName);
+  constructor(workingDir: string) {
+    this.workingDir = workingDir;
+    this.baseDir = path.join(workingDir, '.revkit');
   }
 
   get bundlePath(): string {
@@ -127,11 +141,12 @@ export class WorkspaceManager {
     localMetadata: BundleLocal,
     previousActions?: BundlePublishedAction[],
     previousOutputs?: BundleOutputs,
+    bundledThreads: ReviewThread[] = threads,
   ): BundleState {
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
 
     // Build thread items with digests
-    const threadItems: BundleThreadItem[] = threads
+    const threadItems: BundleThreadItem[] = bundledThreads
       .filter((t) => !t.comments.every((c) => c.system))
       .map((t) => {
         const shortId = threadIndex.get(t.threadId) ?? '?';
@@ -247,7 +262,7 @@ export class WorkspaceManager {
     const state = await this.loadBundleState();
     if (!state) return 'empty';
     const entry = state.outputs[outputKey];
-    const filePath = path.join(this.baseDir, '..', entry.path);
+    const filePath = path.resolve(this.workingDir, entry.path);
     let content: string;
     try {
       content = await fs.readFile(filePath, 'utf-8');
@@ -276,13 +291,7 @@ export class WorkspaceManager {
    */
   async discardOutputs(): Promise<void> {
     const outputDir = path.join(this.baseDir, 'outputs');
-    const defaults: [string, string][] = [
-      ['replies.json', '[]'],
-      ['new-findings.json', '[]'],
-      ['summary.md', ''],
-      ['review.md', ''],
-    ];
-    for (const [name, content] of defaults) {
+    for (const [name, content] of OUTPUT_DEFAULTS) {
       const filePath = path.join(outputDir, name);
       try {
         await fs.writeFile(filePath, content, 'utf-8');
@@ -309,7 +318,7 @@ export class WorkspaceManager {
     // Update the publish hash so status doesn't detect this as "pending"
     const state = await this.loadBundleState();
     if (state) {
-      const outputKey = filename === 'review.md' ? 'review' : filename === 'summary.md' ? 'summary' : null;
+      const outputKey = OUTPUT_STATE_KEYS[filename as keyof typeof OUTPUT_STATE_KEYS] ?? null;
       if (outputKey) {
         const entry = state.outputs[outputKey];
         entry.lastPublishedHash = computeContentHash(content);
@@ -866,13 +875,7 @@ export class WorkspaceManager {
    */
   private async ensureDefaultOutputFiles(): Promise<void> {
     const outputDir = path.join(this.baseDir, 'outputs');
-    const defaults: [string, string][] = [
-      ['replies.json', '[]'],
-      ['new-findings.json', '[]'],
-      ['summary.md', ''],
-      ['review.md', ''],
-    ];
-    for (const [name, content] of defaults) {
+    for (const [name, content] of OUTPUT_DEFAULTS) {
       const filePath = path.join(outputDir, name);
       try {
         await fs.access(filePath);

@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import chalk from 'chalk';
 import { loadConfig, saveConfig, CONFIG_FILE } from '../../config/index.js';
 import { handleError, outputJson } from '../helpers.js';
+import type { AppConfig } from '../../core/schemas.js';
 
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
@@ -27,7 +28,6 @@ export function registerConfigCommand(program: Command): void {
         console.log(`  ${chalk.dim('GitLab token:')} ${config.gitlabToken ? chalk.green('set') : chalk.dim('(not set)')}`);
         console.log(`  ${chalk.dim('GitHub token:')} ${config.githubToken ? chalk.green('set') : chalk.dim('(not set)')}`);
         console.log(`  ${chalk.dim('Default repo:')} ${config.defaultRepository ?? chalk.dim('(not set)')}`);
-        console.log(`  ${chalk.dim('Bundle dir:')} ${config.bundleDir}`);
         console.log(`  ${chalk.dim('CA file:')}    ${config.caFile ?? chalk.dim('(not set)')}`);
         console.log(`  ${chalk.dim('TLS verify:')} ${config.tlsVerify ? chalk.green('true') : chalk.yellow('false')}`);
         console.log('');
@@ -42,12 +42,12 @@ export function registerConfigCommand(program: Command): void {
     .description('Set a configuration value')
     .action(async (key: string, value: string) => {
       try {
-        const allowedKeys = ['provider', 'gitlabUrl', 'gitlabToken', 'githubToken', 'defaultRepository', 'bundleDir', 'caFile', 'tlsVerify'];
+        const allowedKeys = ['provider', 'gitlabUrl', 'gitlabToken', 'githubToken', 'defaultRepository', 'caFile', 'tlsVerify'];
         if (!allowedKeys.includes(key)) {
           console.error(chalk.red(`Unknown config key: ${key}. Allowed: ${allowedKeys.join(', ')}`));
           process.exit(1);
         }
-        await saveConfig({ [key]: value });
+        await saveConfig({ [key]: parseConfigValue(key, value) } as Partial<AppConfig>);
         console.log(chalk.green(`✓ ${key} updated`));
       } catch (err) {
         handleError(err);
@@ -79,4 +79,13 @@ export function registerConfigCommand(program: Command): void {
         handleError(err);
       }
     });
+}
+
+function parseConfigValue(key: string, value: string): string | boolean {
+  if (key !== 'tlsVerify') return value;
+
+  const normalized = value.trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  throw new Error('tlsVerify must be one of: true, false, 1, 0, yes, no, on, off');
 }

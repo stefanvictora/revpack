@@ -13,7 +13,6 @@ export async function createOrchestrator(): Promise<ReviewOrchestrator> {
   return new ReviewOrchestrator({
     provider,
     workingDir: process.cwd(),
-    bundleDirName: config.bundleDir,
   });
 }
 
@@ -26,7 +25,6 @@ export async function createOrchestratorAt(workingDir: string): Promise<ReviewOr
   return new ReviewOrchestrator({
     provider,
     workingDir,
-    bundleDirName: config.bundleDir,
   });
 }
 

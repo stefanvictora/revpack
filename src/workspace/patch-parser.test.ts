@@ -240,4 +240,24 @@ diff --git a/src/B.ts b/src/B.ts
       expect(result.files).toHaveLength(0);
     });
   });
+
+  describe('blank separators', () => {
+    it('does not treat trailing blank lines as context lines', () => {
+      const patch = `diff --git a/src/App.ts b/src/App.ts
+--- a/src/App.ts
++++ b/src/App.ts
+@@ -1,2 +1,3 @@
+ line1
++added
+ line2
+`;
+
+      const result = parsePatch(patch);
+      expect(result.files[0].lines).toEqual([
+        { type: 'context', oldLine: 1, newLine: 1, text: 'line1' },
+        { type: 'added', newLine: 2, text: 'added' },
+        { type: 'context', oldLine: 2, newLine: 3, text: 'line2' },
+      ]);
+    });
+  });
 });
