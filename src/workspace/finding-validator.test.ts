@@ -8,6 +8,7 @@ const makeLineMap = (): LineMap => ({
       oldPath: 'src/App.java',
       newPath: 'src/App.java',
       status: 'modified',
+      hunks: [],
       lines: [
         { type: 'context', oldLine: 1, newLine: 1, text: 'class App {' },
         { type: 'added', newLine: 2, text: '    private String name;' },

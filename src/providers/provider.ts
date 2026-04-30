@@ -68,9 +68,9 @@ export interface ReviewProvider {
 
   /**
    * Find an existing MR/PR note whose body starts with the given marker.
-   * Returns the note ID if found, null otherwise.
+   * Returns the note ID and body if found, null otherwise.
    */
-  findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<string | null>;
+  findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<{ id: string; body: string } | null>;
 
   /** Create a standalone note (not a discussion thread) on the MR/PR. */
   createNote(ref: ReviewTargetRef, body: string, options?: { internal?: boolean }): Promise<string>;

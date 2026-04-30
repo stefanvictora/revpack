@@ -318,7 +318,10 @@ export interface BundlePaths {
   description: string;
   latestPatch: string;
   incrementalPatch: string | null;
-  lineMap: string;
+  filesJson: string;
+  lineMapNdjson: string;
+  changeBlocks: string;
+  annotatedDiff: string;
   outputs: string;
 }
 

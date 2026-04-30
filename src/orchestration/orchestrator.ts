@@ -2,7 +2,6 @@ import type { ReviewProvider } from '../providers/provider.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
-  ReviewThread,
   WorkspaceBundle,
   BundleState,
   BundleLocal,
@@ -114,31 +113,30 @@ export class ReviewOrchestrator {
     let checkpointNoteId: string | null = null;
     let reviewNoteVisibleContent: string | null = null;
 
+    let reviewNote: { id: string; body: string } | null = null;
     try {
-      checkpointNoteId = await this.provider.findNoteByMarker(targetRef, REVIEW_NOTE_MARKER);
+      reviewNote = await this.provider.findNoteByMarker(targetRef, REVIEW_NOTE_MARKER);
     } catch {
       // Provider lookup failed — treat as no checkpoint
     }
 
-    if (checkpointNoteId) {
+    if (reviewNote) {
+      checkpointNoteId = reviewNote.id;
       try {
-        const noteBody = this.findReviewNoteBody(checkpointNoteId, rawThreads);
-        if (noteBody) {
-          const parsed = parseCheckpointMarker(noteBody);
-          if (parsed) {
-            reviewNoteVisibleContent = parsed.visibleContent || null;
-            remoteCheckpoint = {
-              source: 'managed_review_note',
-              providerNoteId: checkpointNoteId,
-              headSha: parsed.state.checkpoint.headSha,
-              baseSha: parsed.state.checkpoint.baseSha,
-              startSha: parsed.state.checkpoint.startSha,
-              providerVersionId: parsed.state.checkpoint.providerVersionId,
-              threadsDigest: parsed.state.checkpoint.threadsDigest,
-              descriptionDigest: parsed.state.checkpoint.descriptionDigest ?? null,
-              createdAt: parsed.state.checkpoint.createdAt,
-            };
-          }
+        const parsed = parseCheckpointMarker(reviewNote.body);
+        if (parsed) {
+          reviewNoteVisibleContent = parsed.visibleContent || null;
+          remoteCheckpoint = {
+            source: 'managed_review_note',
+            providerNoteId: checkpointNoteId,
+            headSha: parsed.state.checkpoint.headSha,
+            baseSha: parsed.state.checkpoint.baseSha,
+            startSha: parsed.state.checkpoint.startSha,
+            providerVersionId: parsed.state.checkpoint.providerVersionId,
+            threadsDigest: parsed.state.checkpoint.threadsDigest,
+            descriptionDigest: parsed.state.checkpoint.descriptionDigest ?? null,
+            createdAt: parsed.state.checkpoint.createdAt,
+          };
         }
       } catch {
         // Malformed checkpoint — treat as no checkpoint
@@ -227,13 +225,6 @@ export class ReviewOrchestrator {
       versions,
       threadIndex,
     );
-
-    // Prefill review.md / summary.md from the last published review note
-    // so agents can see and update existing content in incremental mode.
-    if (reviewNoteVisibleContent && remoteCheckpoint) {
-      await this.workspace.prefillOutputIfEmpty('review.md', reviewNoteVisibleContent);
-      await this.workspace.prefillOutputIfEmpty('summary.md', reviewNoteVisibleContent);
-    }
 
     // Compute prepare summary — compare against remote checkpoint
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
@@ -358,6 +349,14 @@ export class ReviewOrchestrator {
       previousOutputs,
     );
     await this.workspace.saveBundleState(bundleState);
+
+    // Prefill review.md from the last published review note
+    // so agents can see and update existing content in incremental mode.
+    // Must happen AFTER saveBundleState so the hash update persists.
+    if (reviewNoteVisibleContent && remoteCheckpoint) {
+      await this.workspace.prefillOutputIfEmpty('review.md', reviewNoteVisibleContent);
+      // todo: also prefill summary.md
+    }
 
     return {
       bundle,
@@ -533,24 +532,20 @@ export class ReviewOrchestrator {
       currentDescriptionDigest,
     );
 
-    const existingNoteId = await this.provider.findNoteByMarker(targetRef, marker);
+    const existingNote = await this.provider.findNoteByMarker(targetRef, marker);
 
-    if (existingNoteId) {
+    if (existingNote) {
       // Update existing managed note
-      // Read the existing body to preserve visible content if needed
-      const existingBody = this.findReviewNoteBody(existingNoteId, rawThreads);
       let fullBody: string;
 
       if (visibleContent.trim()) {
         fullBody = buildReviewNoteBody(visibleContent, checkpointState);
-      } else if (existingBody) {
-        fullBody = updateReviewNoteBody(existingBody, checkpointState);
       } else {
-        fullBody = buildReviewNoteBody('Reviewed current changes. No additional review notes.', checkpointState);
+        fullBody = updateReviewNoteBody(existingNote.body, checkpointState);
       }
 
-      await this.provider.updateNote(targetRef, existingNoteId, fullBody);
-      return { created: false, noteId: existingNoteId };
+      await this.provider.updateNote(targetRef, existingNote.id, fullBody);
+      return { created: false, noteId: existingNote.id };
     } else {
       // Create new managed note
       const content = visibleContent.trim()
@@ -560,24 +555,6 @@ export class ReviewOrchestrator {
       const noteId = await this.provider.createNote(targetRef, fullBody, { internal: true });
       return { created: true, noteId };
     }
-  }
-
-  /**
-   * Find the body of a review note by its provider note ID.
-   * Searches raw threads/comments for the note.
-   */
-  private findReviewNoteBody(
-    noteId: string,
-    rawThreads: ReviewThread[],
-  ): string | null {
-    for (const thread of rawThreads) {
-      for (const comment of thread.comments) {
-        if (comment.id === noteId) {
-          return comment.body;
-        }
-      }
-    }
-    return null;
   }
 
   // ─── Helpers ────────────────────────────────────────────

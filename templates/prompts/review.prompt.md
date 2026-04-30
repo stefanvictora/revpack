@@ -25,7 +25,7 @@ Your role is to review and provide feedback. Do **not** modify source files dire
 ## Non-negotiables
 
 - Do **not** modify source files.
-- Use `.revkit/diffs/line-map.json` as the source of truth for positional finding anchors.
+- Use `.revkit/diffs/line-map.ndjson` as the source of truth for positional finding anchors.
 - Prefer fewer, high-confidence findings over many speculative findings.
 - Do not duplicate existing unresolved threads or previous actions.
 - Always write:

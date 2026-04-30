@@ -34,8 +34,8 @@ Start with:
 1. `.revkit/CONTEXT.md`
 2. `.revkit/INSTRUCTIONS.md`
 3. `REVIEW.md`, if present
-4. `.revkit/diffs/latest.patch`
-5. `.revkit/diffs/line-map.json`
+4. `.revkit/diffs/views/all.annotated.diff.md`
+5. `.revkit/diffs/files.json`
 
 Use checked-out source files to understand the current MR/PR state when the diff alone is not enough.
 
@@ -163,7 +163,7 @@ Ask:
 - Does this change preserve existing API, database, security, audit, or compatibility behavior?
 - Are existing tests still meaningful, or did the change bypass them?
 
-Do not limit your reasoning to the added lines, but only create positional findings on lines listed in `.revkit/diffs/line-map.json`.
+Do not limit your reasoning to the added lines, but only create positional findings on lines listed in `.revkit/diffs/line-map.ndjson`.
 
 ## `outputs/new-findings.json`
 
@@ -193,19 +193,44 @@ Required fields:
 
 For non-renamed files, `oldPath` and `newPath` are usually identical.
 
+## Diff navigation
+
+The workspace contains only the new branch state. Deleted lines do not exist in the workspace.
+
+Use these files when reviewing changes:
+
+1. `diffs/views/all.annotated.diff.md`
+   - Preferred view for understanding changed lines.
+   - Removed lines are shown with `- old:<line>`.
+   - Added lines are shown with `+ new:<line>`.
+   - Context lines show both `old:<line>` and `new:<line>`.
+
+2. `diffs/latest.patch`
+   - Canonical raw patch fallback.
+
+3. `diffs/line-map.ndjson`
+   - Exact machine-readable per-line map.
+   - `oldLine: null` means the line does not exist in the old version.
+   - `newLine: null` means the line does not exist in the new workspace.
+
+4. `diffs/change-blocks.json`
+   - Grouped insert/delete/replace blocks with preferred comment targets.
+
+Do not infer deleted line numbers from the current workspace file. Use the annotated diff or line map.
+
 ## Positional anchors
 
-Use `.revkit/diffs/line-map.json` as the source of truth for valid positional anchors.
+Use `.revkit/diffs/line-map.ndjson` as the source of truth for valid positional anchors.
 
-Do not calculate `oldLine` or `newLine` manually from the patch. Use `diffs/latest.patch` to understand the diff, not to derive line numbers.
+Do not calculate `oldLine` or `newLine` manually from the patch. Use the annotated diff to understand changes, not to derive line numbers.
 
 Each finding location must exactly match one line-map entry:
 
-- `type: "added"` → use `newLine` only
-- `type: "removed"` → use `oldLine` only
-- `type: "context"` → use both `oldLine` and `newLine`
+- `kind: "added"` → use `newLine` only
+- `kind: "removed"` → use `oldLine` only
+- `kind: "context"` → use both `oldLine` and `newLine`
 
-Do not anchor a finding to a line that is not present in `.revkit/diffs/line-map.json`.
+Do not anchor a finding to a line that is not present in `.revkit/diffs/line-map.ndjson`.
 
 Prefer findings on added lines. They are usually the clearest anchors for issues introduced by the MR/PR.
 
@@ -213,7 +238,7 @@ Use removed-line findings only for harmful deletions.
 
 Use context-line findings only when the context line is visible in the line map and is the clearest stable anchor.
 
-A line that exists only in the checked-out source file but is not listed in `line-map.json` is not valid for a positional finding.
+A line that exists only in the checked-out source file but is not listed in the line map is not valid for a positional finding.
 
 ## Duplicate finding avoidance
 
@@ -301,7 +326,7 @@ Prefer including a GitLab suggestion block when the core fix is a small, directl
 Use a suggestion block when all of these are true:
 
 - the replacement is complete for the local changed lines
-- the changed lines are visible in `.revkit/diffs/line-map.json`
+- the changed lines are visible in `.revkit/diffs/line-map.ndjson`
 - the suggestion is likely to compile
 - the suggestion does not require unrelated edits in the same block
 - the suggestion is easier for the developer to apply than rewriting the code manually
@@ -443,7 +468,7 @@ Use `new-findings.json` only for concrete, actionable issues tied to a visible d
 
 This is a public note visible to other MR/PR participants.
 
-Do not reference internal bundle files such as `.revkit/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `line-map.json`.
+Do not reference internal bundle files such as `.revkit/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `line-map.ndjson`.
 
 Write as if addressing other developers looking at the MR/PR.
 
@@ -582,7 +607,7 @@ Rules:
 * Describe what the developer changed, not what the reviewer found.
 * Do not include review findings, suspected bugs, risks, approval status, or quality judgments.
 * Do not include unresolved thread information.
-* Do not mention internal bundle files such as `.revkit/`, `CONTEXT.md`, `outputs/`, `latest.patch`, or `line-map.json`.
+* Do not mention internal bundle files such as `.revkit/`, `CONTEXT.md`, `outputs/`, `latest.patch`, or `line-map.ndjson`.
 * Do not include a file list.
 * Do not write a code walkthrough.
 * Do not include empty categories.
@@ -613,7 +638,7 @@ Before finishing, check that:
 - all required output files were written
 - JSON output files are syntactically valid JSON arrays
 - every finding has `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one line field
-- every finding is anchored to a line in `.revkit/diffs/line-map.json`
+- every finding is anchored to a line in `.revkit/diffs/line-map.ndjson`
 - there are no duplicate findings from existing threads or Previous Actions
 - source files were not modified
 - findings are concise, concrete, and actionable

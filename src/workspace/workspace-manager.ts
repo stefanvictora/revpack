@@ -16,7 +16,8 @@ import type {
   PrepareSummary,
 } from '../core/types.js';
 import { WorkspaceError } from '../core/errors.js';
-import { parsePatch } from './patch-parser.js';
+import { parsePatch, type LineMap, type FileEntry as PatchFileEntry } from './patch-parser.js';
+import type { GitHelper } from './git-helper.js';
 import { computeThreadDigest, computeContentHash, DIGEST_VERSION } from './thread-digest.js';
 
 /**
@@ -81,11 +82,11 @@ export class WorkspaceManager {
 
     // Write thread files
     await this.clearThreadFiles();
-    await this.writeThreads(threads, threadIndex, diffs);
+    await this.writeThreads(threads, threadIndex, diffs, target.diffRefs.headSha);
 
-    // Write diffs and line map
+    // Write diffs and diff bundle artifacts
     await this.writeDiffs(diffs);
-    await this.writeLineMap();
+    await this.writeDiffBundle();
 
     // Ensure output placeholders exist (preserve existing outputs)
     await this.ensureDefaultOutputFiles();
@@ -197,7 +198,10 @@ export class WorkspaceManager {
         incrementalPatch: prepareSummary.comparison.targetCodeChangedSinceCheckpoint
           ? '.revkit/diffs/incremental.patch'
           : null,
-        lineMap: '.revkit/diffs/line-map.json',
+        filesJson: '.revkit/diffs/files.json',
+        lineMapNdjson: '.revkit/diffs/line-map.ndjson',
+        changeBlocks: '.revkit/diffs/change-blocks.json',
+        annotatedDiff: '.revkit/diffs/views/all.annotated.diff.md',
         outputs: '.revkit/outputs',
       },
     };
@@ -509,8 +513,9 @@ export class WorkspaceManager {
     lines.push('2. Read `REVIEW.md` in the repository root if present.');
     lines.push('3. Read `.revkit/INSTRUCTIONS.md`.');
     lines.push('4. Read relevant thread files in `.revkit/threads/`.');
-    lines.push('5. Review `.revkit/diffs/latest.patch` and `.revkit/diffs/line-map.json`.');
-    lines.push('6. Inspect checked-out source files when needed.');
+    lines.push('5. Review `.revkit/diffs/views/all.annotated.diff.md` for the annotated diff.');
+    lines.push('6. Use `.revkit/diffs/files.json` to locate specific file changes.');
+    lines.push('7. Inspect checked-out source files when needed.');
     lines.push('');
 
     // ─── MR/PR Description ────────────────────────────────
@@ -534,8 +539,11 @@ export class WorkspaceManager {
       lines.push(`| \`.revkit/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
     }
     lines.push(`| \`.revkit/diffs/latest.patch\` | Full target diff (${diffs.length} file(s)) |`);
-    lines.push('| `.revkit/diffs/line-map.json` | Valid positional anchors (JSON) |');
-    lines.push('| `.revkit/diffs/anchors.tsv` | Compact positional anchors index (TSV) |');
+    lines.push('| `.revkit/diffs/files.json` | File index with hunk boundaries and view paths |');
+    lines.push('| `.revkit/diffs/line-map.ndjson` | Per-line machine-readable map (NDJSON) |');
+    lines.push('| `.revkit/diffs/change-blocks.json` | Grouped insert/delete/replace blocks |');
+    lines.push('| `.revkit/diffs/views/all.annotated.diff.md` | Annotated diff with old/new line coords |');
+    lines.push('| `.revkit/diffs/views/by-file/` | Per-file annotated diff views |');
     if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
       lines.push('| `.revkit/diffs/incremental.patch` | Code changes since last review checkpoint |');
     }
@@ -620,12 +628,17 @@ export class WorkspaceManager {
     return contextPath;
   }
 
-  // ─── Line map & output scaffolding ──────────────────────
+  // ─── Diff bundle artifacts ──────────────────────────────
 
   /**
-   * Parse diffs/latest.patch and write diffs/line-map.json + diffs/anchors.tsv.
+   * Parse diffs/latest.patch and write:
+   * - diffs/files.json (file index)
+   * - diffs/line-map.ndjson (per-line map with explicit nulls)
+   * - diffs/change-blocks.json (grouped change blocks)
+   * - diffs/views/all.annotated.diff.md (combined annotated diff)
+   * - diffs/views/by-file/FXXX-Name.diff.md (per-file annotated diffs)
    */
-  private async writeLineMap(): Promise<void> {
+  private async writeDiffBundle(): Promise<void> {
     const patchPath = path.join(this.baseDir, 'diffs', 'latest.patch');
     let patchContent: string;
     try {
@@ -634,21 +647,217 @@ export class WorkspaceManager {
       return; // No patch file yet
     }
     const lineMap = parsePatch(patchContent);
-    await this.writeJson(path.join(this.baseDir, 'diffs', 'line-map.json'), lineMap);
+    if (lineMap.files.length === 0) return;
 
-    // Write a compact TSV index of valid positional anchors for quick lookup.
-    // Format: type\toldLine\tnewLine\toldPath\tnewPath
-    const tsvLines: string[] = ['type\toldLine\tnewLine\toldPath\tnewPath'];
-    for (const file of lineMap.files) {
-      for (const line of file.lines) {
-        tsvLines.push(`${line.type}\t${line.oldLine ?? ''}\t${line.newLine ?? ''}\t${file.oldPath}\t${file.newPath}`);
+    // Assign file IDs
+    const filesWithIds = lineMap.files.map((f, idx) => ({
+      ...f,
+      fileId: `F${String(idx + 1).padStart(3, '0')}`,
+    }));
+
+    // Create views directories
+    const viewsDir = path.join(this.baseDir, 'diffs', 'views');
+    const byFileDir = path.join(viewsDir, 'by-file');
+    await this.ensureDir(viewsDir);
+    await this.ensureDir(byFileDir);
+
+    // 1. Write files.json
+    await this.writeFilesJson(filesWithIds);
+
+    // 2. Write line-map.ndjson
+    await this.writeLineMapNdjson(filesWithIds);
+
+    // 3. Write change-blocks.json
+    await this.writeChangeBlocks(filesWithIds);
+
+    // 4. Write annotated diff views
+    await this.writeAnnotatedDiffViews(filesWithIds, byFileDir, viewsDir);
+  }
+
+  private async writeFilesJson(files: (PatchFileEntry & { fileId: string })[]): Promise<void> {
+    const fileIndex = {
+      schemaVersion: 1,
+      files: files.map((f) => {
+        const added = f.lines.filter((l) => l.type === 'added').length;
+        const removed = f.lines.filter((l) => l.type === 'removed').length;
+        const shortName = f.newPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? f.fileId;
+        const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+        return {
+          fileId: f.fileId,
+          status: f.status,
+          oldPath: f.oldPath,
+          newPath: f.newPath,
+          added,
+          removed,
+          hunks: f.hunks.map((h) => ({
+            hunkId: h.hunkId,
+            oldStart: h.oldStart,
+            oldEnd: h.oldEnd,
+            newStart: h.newStart,
+            newEnd: h.newEnd,
+          })),
+          viewFile: `views/by-file/${f.fileId}-${safeName}.diff.md`,
+        };
+      }),
+    };
+    await this.writeJson(path.join(this.baseDir, 'diffs', 'files.json'), fileIndex);
+  }
+
+  private async writeLineMapNdjson(files: (PatchFileEntry & { fileId: string })[]): Promise<void> {
+    const lines: string[] = [];
+    for (const file of files) {
+      for (const hunk of file.hunks) {
+        for (const entry of hunk.lines) {
+          lines.push(JSON.stringify({
+            fileId: file.fileId,
+            hunkId: hunk.hunkId,
+            kind: entry.type,
+            oldLine: entry.oldLine ?? null,
+            newLine: entry.newLine ?? null,
+            oldPath: file.oldPath,
+            newPath: file.newPath,
+            text: entry.text,
+          }));
+        }
       }
     }
     await fs.writeFile(
-      path.join(this.baseDir, 'diffs', 'anchors.tsv'),
-      tsvLines.join('\n'),
+      path.join(this.baseDir, 'diffs', 'line-map.ndjson'),
+      lines.join('\n') + '\n',
       'utf-8',
     );
+  }
+
+  private async writeChangeBlocks(files: (PatchFileEntry & { fileId: string })[]): Promise<void> {
+    const blocks: unknown[] = [];
+    let blockIndex = 0;
+
+    for (const file of files) {
+      for (const hunk of file.hunks) {
+        // Group consecutive added/removed lines into blocks
+        let i = 0;
+        while (i < hunk.lines.length) {
+          const entry = hunk.lines[i];
+          if (entry.type === 'context') {
+            i++;
+            continue;
+          }
+
+          // Collect contiguous removed + added lines as a potential replace block
+          const removedLines: typeof hunk.lines = [];
+          const addedLines: typeof hunk.lines = [];
+
+          while (i < hunk.lines.length && hunk.lines[i].type === 'removed') {
+            removedLines.push(hunk.lines[i]);
+            i++;
+          }
+          while (i < hunk.lines.length && hunk.lines[i].type === 'added') {
+            addedLines.push(hunk.lines[i]);
+            i++;
+          }
+
+          if (removedLines.length === 0 && addedLines.length === 0) {
+            i++;
+            continue;
+          }
+
+          blockIndex++;
+          const blockId = `B${String(blockIndex).padStart(3, '0')}`;
+          let kind: 'insert' | 'delete' | 'replace';
+          if (removedLines.length > 0 && addedLines.length > 0) {
+            kind = 'replace';
+          } else if (removedLines.length > 0) {
+            kind = 'delete';
+          } else {
+            kind = 'insert';
+          }
+
+          const oldStart = removedLines.length > 0 ? removedLines[0].oldLine! : (addedLines[0].newLine! - 1);
+          const oldEnd = removedLines.length > 0 ? removedLines[removedLines.length - 1].oldLine! : oldStart;
+          const newStart = addedLines.length > 0 ? addedLines[0].newLine! : (removedLines[0].oldLine!);
+          const newEnd = addedLines.length > 0 ? addedLines[addedLines.length - 1].newLine! : newStart;
+
+          // Determine preferred comment target
+          const preferredSide = addedLines.length > 0 ? 'new' : 'old';
+          const preferredLine = preferredSide === 'new' ? addedLines[0].newLine! : removedLines[0].oldLine!;
+          const preferredPath = preferredSide === 'new' ? file.newPath : file.oldPath;
+
+          blocks.push({
+            blockId,
+            fileId: file.fileId,
+            hunkId: hunk.hunkId,
+            kind,
+            oldStart,
+            oldEnd,
+            newStart,
+            newEnd,
+            preferredCommentTarget: {
+              side: preferredSide,
+              path: preferredPath,
+              line: preferredLine,
+            },
+          });
+        }
+      }
+    }
+
+    await this.writeJson(path.join(this.baseDir, 'diffs', 'change-blocks.json'), {
+      schemaVersion: 1,
+      blocks,
+    });
+  }
+
+  private async writeAnnotatedDiffViews(
+    files: (PatchFileEntry & { fileId: string })[],
+    byFileDir: string,
+    viewsDir: string,
+  ): Promise<void> {
+    const allLines: string[] = [];
+
+    for (const file of files) {
+      const fileLines = this.buildAnnotatedFileView(file);
+      allLines.push(...fileLines);
+      allLines.push('');
+
+      // Write per-file view
+      const shortName = file.newPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? file.fileId;
+      const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+      const fileName = `${file.fileId}-${safeName}.diff.md`;
+      await fs.writeFile(path.join(byFileDir, fileName), fileLines.join('\n') + '\n', 'utf-8');
+    }
+
+    // Write combined view
+    await fs.writeFile(path.join(viewsDir, 'all.annotated.diff.md'), allLines.join('\n') + '\n', 'utf-8');
+  }
+
+  private buildAnnotatedFileView(file: PatchFileEntry & { fileId: string }): string[] {
+    const lines: string[] = [];
+    lines.push(`FILE ${file.fileId}`);
+    lines.push(`oldPath: ${file.oldPath}`);
+    lines.push(`newPath: ${file.newPath}`);
+    lines.push(`status: ${file.status}`);
+    lines.push('');
+
+    for (const hunk of file.hunks) {
+      lines.push(`@@ ${hunk.hunkId} old:${hunk.oldStart}-${hunk.oldEnd} new:${hunk.newStart}-${hunk.newEnd} @@ ${hunk.header}`);
+      lines.push('');
+      for (const entry of hunk.lines) {
+        if (entry.type === 'context') {
+          const old = String(entry.oldLine).padStart(6);
+          const nw = String(entry.newLine).padStart(6);
+          lines.push(`  old:${old} new:${nw} | ${entry.text}`);
+        } else if (entry.type === 'added') {
+          const nw = String(entry.newLine).padStart(6);
+          lines.push(`+            new:${nw} | ${entry.text}`);
+        } else {
+          const old = String(entry.oldLine).padStart(6);
+          lines.push(`- old:${old}            | ${entry.text}`);
+        }
+      }
+      lines.push('');
+    }
+
+    return lines;
   }
 
   /**
@@ -741,7 +950,7 @@ export class WorkspaceManager {
     );
   }
 
-  private async writeThreads(threads: ReviewThread[], threadIndex: ThreadIndex, diffs: ReviewDiff[]): Promise<void> {
+  private async writeThreads(threads: ReviewThread[], threadIndex: ThreadIndex, diffs: ReviewDiff[], currentHeadSha: string): Promise<void> {
     // Build line map from diffs for embedding diff context in thread files
     const patchContent = diffs.map((d) => `diff --git a/${d.oldPath} b/${d.newPath}\n${d.diff}`).join('\n');
     const lineMap = parsePatch(patchContent);
@@ -753,7 +962,7 @@ export class WorkspaceManager {
       await this.writeJson(path.join(this.baseDir, 'threads', `${prefix}.json`), thread);
 
       // Markdown version for human/agent reading
-      const md = this.threadToMarkdown(thread, prefix, lineMap);
+      const md = this.threadToMarkdown(thread, prefix, lineMap, currentHeadSha);
       await fs.writeFile(path.join(this.baseDir, 'threads', `${prefix}.md`), md, 'utf-8');
     }
   }
@@ -780,13 +989,13 @@ export class WorkspaceManager {
   /**
    * Write an incremental diff using git diff between two commit SHAs.
    */
-  async writeIncrementalDiffFromGit(git: import('./git-helper.js').GitHelper, fromSha: string, toSha: string): Promise<void> {
+  async writeIncrementalDiffFromGit(git: GitHelper, fromSha: string, toSha: string): Promise<void> {
     await this.ensureDir(path.join(this.baseDir, 'diffs'));
     const diffOutput = await git.diff(fromSha, toSha);
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), diffOutput, 'utf-8');
   }
 
-  private threadToMarkdown(thread: ReviewThread, prefix: string, lineMap?: import('./patch-parser.js').LineMap): string {
+  private threadToMarkdown(thread: ReviewThread, prefix: string, lineMap: LineMap | undefined, currentHeadSha: string): string {
     const lines: string[] = [];
     lines.push(`# ${prefix}: Thread ${thread.threadId}`);
     lines.push('');
@@ -798,15 +1007,26 @@ export class WorkspaceManager {
     }
     lines.push('');
 
-    // Embed diff context around the thread's position
+    // Embed diff context around the thread's position.
+    // Only show context if the thread's headSha matches the current MR head,
+    // otherwise the position may refer to code that no longer exists at those lines.
     if (thread.position && lineMap) {
-      const diffSnippet = this.extractDiffContext(thread.position, lineMap);
-      if (diffSnippet) {
+      const positionMatchesCurrent = !thread.position.headSha || thread.position.headSha === currentHeadSha;
+      if (positionMatchesCurrent) {
+        const diffSnippet = this.extractDiffContext(thread.position, lineMap);
+        if (diffSnippet) {
+          lines.push('## Diff Context');
+          lines.push('');
+          lines.push('```diff');
+          lines.push(diffSnippet);
+          lines.push('```');
+          lines.push('');
+        }
+      } else {
         lines.push('## Diff Context');
         lines.push('');
-        lines.push('```diff');
-        lines.push(diffSnippet);
-        lines.push('```');
+        lines.push('> ⚠️ This thread was created on an older revision. The diff context may no longer match the current code.');
+        lines.push(`> Thread revision: \`${thread.position.headSha}\` | Current: \`${currentHeadSha}\``);
         lines.push('');
       }
     }
@@ -844,7 +1064,7 @@ export class WorkspaceManager {
    */
   private extractDiffContext(
     position: { filePath: string; newLine?: number; oldLine?: number; newPath?: string; oldPath?: string },
-    lineMap: import('./patch-parser.js').LineMap,
+    lineMap: LineMap,
   ): string | null {
     const targetPath = position.newPath || position.filePath;
     const file = lineMap.files.find((f) => f.newPath === targetPath || f.oldPath === targetPath);

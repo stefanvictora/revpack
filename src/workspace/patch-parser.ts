@@ -10,11 +10,22 @@ export interface LineEntry {
   text: string;
 }
 
+export interface HunkInfo {
+  hunkId: string;
+  oldStart: number;
+  oldEnd: number;
+  newStart: number;
+  newEnd: number;
+  header: string;
+  lines: LineEntry[];
+}
+
 export interface FileEntry {
   oldPath: string;
   newPath: string;
   status: FileStatus;
   lines: LineEntry[];
+  hunks: HunkInfo[];
 }
 
 export interface LineMap {
@@ -40,6 +51,7 @@ export function parsePatch(patch: string): LineMap {
   const files: FileEntry[] = [];
 
   let i = 0;
+  let fileIndex = 0;
   while (i < lines.length) {
     // Look for "diff --git" header
     if (!lines[i].startsWith('diff --git ')) {
@@ -49,19 +61,26 @@ export function parsePatch(patch: string): LineMap {
 
     const header = parseDiffHeader(lines, i);
     i = header.nextIndex;
+    fileIndex++;
 
+    const fileId = `F${String(fileIndex).padStart(3, '0')}`;
     const fileEntry: FileEntry = {
       oldPath: header.parsed.oldPath,
       newPath: header.parsed.newPath,
       status: inferStatus(header.parsed),
       lines: [],
+      hunks: [],
     };
 
     // Parse hunks
+    let hunkIndex = 0;
     while (i < lines.length && !lines[i].startsWith('diff --git ')) {
       if (lines[i].startsWith('@@ ')) {
-        const hunkResult = parseHunk(lines, i);
+        hunkIndex++;
+        const hunkId = `${fileId}-H${String(hunkIndex).padStart(3, '0')}`;
+        const hunkResult = parseHunk(lines, i, hunkId);
         fileEntry.lines.push(...hunkResult.entries);
+        fileEntry.hunks.push(hunkResult.hunkInfo);
         i = hunkResult.nextIndex;
       } else {
         i++;
@@ -178,18 +197,21 @@ function inferStatus(header: PatchFileHeader): FileStatus {
   return 'unknown';
 }
 
-function parseHunk(lines: string[], startIndex: number): { entries: LineEntry[]; nextIndex: number } {
+function parseHunk(lines: string[], startIndex: number, hunkId: string): { entries: LineEntry[]; hunkInfo: HunkInfo; nextIndex: number } {
   const entries: LineEntry[] = [];
   const hunkHeader = lines[startIndex];
 
   // Parse @@ -oldStart,oldCount +newStart,newCount @@
-  const hunkMatch = hunkHeader.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  const hunkMatch = hunkHeader.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/);
   if (!hunkMatch) {
-    return { entries, nextIndex: startIndex + 1 };
+    return { entries, hunkInfo: { hunkId, oldStart: 0, oldEnd: 0, newStart: 0, newEnd: 0, header: '', lines: [] }, nextIndex: startIndex + 1 };
   }
 
+  const hunkContext = hunkMatch[3]?.trim() ?? '';
   let oldLine = parseInt(hunkMatch[1], 10);
   let newLine = parseInt(hunkMatch[2], 10);
+  const oldStart = oldLine;
+  const newStart = newLine;
 
   let i = startIndex + 1;
 
@@ -247,5 +269,15 @@ function parseHunk(lines: string[], startIndex: number): { entries: LineEntry[];
     i++;
   }
 
-  return { entries, nextIndex: i };
+  const hunkInfo: HunkInfo = {
+    hunkId,
+    oldStart,
+    oldEnd: oldLine - 1,
+    newStart,
+    newEnd: newLine - 1,
+    header: hunkContext,
+    lines: entries,
+  };
+
+  return { entries, hunkInfo, nextIndex: i };
 }

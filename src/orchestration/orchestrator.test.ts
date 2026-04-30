@@ -882,7 +882,7 @@ describe('ReviewOrchestrator', () => {
       );
       const noteBody = buildReviewNoteBody('Previous review notes.', checkpointState);
 
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
         .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
 
@@ -907,7 +907,7 @@ describe('ReviewOrchestrator', () => {
       );
       const noteBody = buildReviewNoteBody('Review notes.', checkpointState);
 
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
         .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
 
@@ -935,7 +935,7 @@ describe('ReviewOrchestrator', () => {
       );
       const noteBody = buildReviewNoteBody('Review notes.', checkpointState);
 
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
         .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
 
@@ -957,7 +957,7 @@ describe('ReviewOrchestrator', () => {
       );
       const noteBody = buildReviewNoteBody('Review notes.', checkpointState);
 
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
         .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
 
@@ -1005,7 +1005,7 @@ describe('ReviewOrchestrator', () => {
       const oldState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null);
       const existingBody = buildReviewNoteBody('Old review notes.', oldState);
 
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('existing-note-id');
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'existing-note-id', body: existingBody });
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         mockThread,
         createReviewNoteThread('existing-note-id', existingBody),
@@ -1048,7 +1048,7 @@ describe('ReviewOrchestrator', () => {
       const oldState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null);
       const existingBody = buildReviewNoteBody('Important review notes to keep.', oldState);
 
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('existing-note-id');
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'existing-note-id', body: existingBody });
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         mockThread,
         createReviewNoteThread('existing-note-id', existingBody),
@@ -1095,7 +1095,7 @@ describe('ReviewOrchestrator', () => {
       );
       const noteBody = buildReviewNoteBody('Review from earlier.', checkpointState);
 
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue('note-42');
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         mockThread,
         createReviewNoteThread('note-42', noteBody),

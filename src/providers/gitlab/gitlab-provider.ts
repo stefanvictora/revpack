@@ -262,13 +262,13 @@ export class GitLabProvider implements ReviewProvider {
     return result.id;
   }
 
-  async findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<string | null> {
+  async findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<{ id: string; body: string } | null> {
     const projectId = encodeURIComponent(ref.repository);
     const notes = await this.requestPaginated<GitLabNote>(
       `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/notes`,
     );
     const match = notes.find((n) => n.body.startsWith(marker));
-    return match ? String(match.id) : null;
+    return match ? { id: String(match.id), body: match.body } : null;
   }
 
   async createNote(ref: ReviewTargetRef, body: string, options?: { internal?: boolean }): Promise<string> {
