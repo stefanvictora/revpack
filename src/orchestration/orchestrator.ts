@@ -12,7 +12,7 @@ import type {
 } from '../core/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
-import { computeAggregateThreadsDigest, computeContentHash } from '../workspace/thread-digest.js';
+import { computeAggregateThreadsDigest, computeContentHash, computeThreadDigest } from '../workspace/thread-digest.js';
 import { extractMarkedSummary } from '../workspace/description-summary.js';
 import {
   parseCheckpointMarker,
@@ -269,29 +269,24 @@ export class ReviewOrchestrator {
 
     // Incremental diff relative to checkpoint head (not previous prepare)
     if (targetCodeChanged && remoteCheckpoint) {
-      // Try provider-based incremental diff if we have version IDs
-      if (remoteCheckpoint.providerVersionId && latestVersionId) {
-        try {
-          const incrementalDiffs = await this.provider.getIncrementalDiff(
-            targetRef,
-            remoteCheckpoint.providerVersionId,
-            latestVersionId,
-          );
-          await this.workspace.writeIncrementalDiff(incrementalDiffs);
-        } catch {
-          // Fall back: try git-based diff from checkpoint head
+      // Prefer git-based diff: `git diff fromSha toSha` gives the true incremental
+      // changes between two commits, unlike the provider API which returns full
+      // file diffs against the target branch for files that changed between versions.
+      try {
+        await this.workspace.writeIncrementalDiffFromGit(this.git, remoteCheckpoint.headSha, mrHeadSha);
+      } catch {
+        // Fall back to provider-based incremental diff if git is unavailable
+        if (remoteCheckpoint.providerVersionId && latestVersionId) {
           try {
-            await this.workspace.writeIncrementalDiffFromGit(this.git, remoteCheckpoint.headSha, mrHeadSha);
+            const incrementalDiffs = await this.provider.getIncrementalDiff(
+              targetRef,
+              remoteCheckpoint.providerVersionId,
+              latestVersionId,
+            );
+            await this.workspace.writeIncrementalDiff(incrementalDiffs);
           } catch {
-            // Fall back gracefully — no incremental patch
+            // No incremental patch available
           }
-        }
-      } else {
-        // No version IDs — try git-based diff
-        try {
-          await this.workspace.writeIncrementalDiffFromGit(this.git, remoteCheckpoint.headSha, mrHeadSha);
-        } catch {
-          // Fall back gracefully
         }
       }
     } else if (remoteCheckpoint && !targetCodeChanged) {
