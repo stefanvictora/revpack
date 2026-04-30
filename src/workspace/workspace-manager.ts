@@ -434,6 +434,7 @@ export class WorkspaceManager {
     options?: {
       prepareSummary?: PrepareSummary;
       publishedActions?: BundlePublishedAction[];
+      changedThreadIds?: Set<string>;
     },
   ): Promise<string> {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
@@ -581,6 +582,33 @@ export class WorkspaceManager {
       lines.push(`| \`${d.newPath || d.oldPath}\` | ${tag} |`);
     }
     lines.push('');
+
+    // ─── Changed Threads Since Checkpoint ────────────────
+    const changedThreadIds = options?.changedThreadIds;
+    if (changedThreadIds && changedThreadIds.size > 0) {
+      const changedUnresolved = unresolvedThreads.filter((t) => changedThreadIds.has(t.threadId));
+      const changedResolved = threads.filter((t) => changedThreadIds.has(t.threadId) && t.resolved);
+
+      if (changedUnresolved.length > 0 || changedResolved.length > 0) {
+        lines.push('## Changed Threads Since Last Checkpoint');
+        lines.push('');
+        lines.push('These threads have been updated since the last review checkpoint. Prioritize reviewing them.');
+        lines.push('');
+        lines.push('| Thread | Status | Location | Summary |');
+        lines.push('|---|---|---|---|');
+        for (const t of [...changedUnresolved, ...changedResolved]) {
+          const prefix = threadIndex.get(t.threadId) ?? '?';
+          const status = t.resolved ? 'resolved' : 'unresolved';
+          const file = t.position?.filePath
+            ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
+            : 'general';
+          const firstComment = t.comments.find((c) => !c.system);
+          const snippet = firstComment?.body.split('\n')[0].slice(0, 80) ?? '';
+          lines.push(`| ${prefix} | ${status} | ${file} | ${snippet} |`);
+        }
+        lines.push('');
+      }
+    }
 
     // ─── Unresolved Threads ───────────────────────────────
     if (unresolvedThreads.length > 0) {

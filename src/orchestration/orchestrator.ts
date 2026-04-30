@@ -309,10 +309,28 @@ export class ReviewOrchestrator {
     const previousActions = previousBundle && mode !== 'fresh' ? previousBundle.publishedActions : [];
     const previousOutputs = previousBundle && mode !== 'fresh' ? previousBundle.outputs : undefined;
 
+    // Compute per-thread changes since the last checkpoint/prepare
+    let changedThreadIds: Set<string> | undefined;
+    if (previousBundle && threadsChanged) {
+      changedThreadIds = new Set<string>();
+      const prevDigestMap = new Map<string, string>();
+      for (const item of previousBundle.threads.items) {
+        prevDigestMap.set(item.providerThreadId, item.digest);
+      }
+      for (const t of allThreads) {
+        const currentDigest = computeThreadDigest(t);
+        const prevDigest = prevDigestMap.get(t.threadId);
+        if (!prevDigest || prevDigest !== currentDigest) {
+          changedThreadIds.add(t.threadId);
+        }
+      }
+    }
+
     // Write CONTEXT.md
     const contextPath = await this.workspace.writeContext(target, activeThreads, diffs, threadIndex, {
       prepareSummary,
       publishedActions: previousActions,
+      changedThreadIds,
     });
 
     // Build and save bundle.json
