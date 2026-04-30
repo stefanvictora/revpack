@@ -385,28 +385,43 @@ export function registerPublishCommand(program: Command): void {
       try {
         const parentOpts = cmd.parent?.opts();
         let total = 0;
+
+        // ── Replies ──────────────────────────────────────
+        console.log(chalk.bold('─── Replies ───'));
         const replyCount = await publishReplies({ noRefresh: true });
+        if (replyCount === 0) console.log(chalk.dim('  (none pending)'));
         total += replyCount;
+
+        // ── Findings ─────────────────────────────────────
+        console.log('');
+        console.log(chalk.bold('─── Findings ───'));
         const findingCount = await publishFindings({ noRefresh: true });
+        if (findingCount === 0) console.log(chalk.dim('  (none pending)'));
         total += findingCount;
 
+        // ── Description ──────────────────────────────────
+        console.log('');
+        console.log(chalk.bold('─── Description ───'));
         try {
           total += await publishDescription({ fromSummary: true });
         } catch {
-          /* no description */
+          console.log(chalk.dim('  (no summary to publish)'));
         }
 
-        /* Publish review and advance checkpoint */
+        // ── Review note & checkpoint ─────────────────────
+        console.log('');
+        console.log(chalk.bold('─── Review Note ───'));
         try {
           total += await publishReviewCmd({});
         } catch {
-          /* no review */
+          console.log(chalk.dim('  (no review to publish)'));
         }
 
+        // ── Summary ──────────────────────────────────────
+        console.log('');
         if (total === 0) {
           console.log(chalk.dim('Nothing to publish.'));
         } else {
-          console.log('');
           console.log(chalk.green(`✓ ${total} item(s) published`));
         }
 
