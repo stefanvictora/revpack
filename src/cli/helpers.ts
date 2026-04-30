@@ -47,7 +47,7 @@ export function handleError(err: unknown): never {
     // Walk the cause chain to surface the root network error
     let cause = (err as NodeJS.ErrnoException).cause;
     while (cause) {
-      console.error(chalk.dim(`  caused by: ${cause}`) );
+      console.error(chalk.dim(`  caused by: ${cause instanceof Error ? cause.message : JSON.stringify(cause)}`));
       cause = (cause as NodeJS.ErrnoException).cause;
     }
   } else {

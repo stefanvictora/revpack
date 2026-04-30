@@ -160,7 +160,7 @@ export class ReviewOrchestrator {
     } catch {
       throw new Error(
         'Cannot prepare: not inside a git repository.\n' +
-        'Run `revkit checkout` first to clone or switch to the MR source branch.',
+          'Run `revkit checkout` first to clone or switch to the MR source branch.',
       );
     }
 
@@ -168,11 +168,11 @@ export class ReviewOrchestrator {
     if (localBranch !== 'HEAD' && localBranch !== target.sourceBranch) {
       throw new Error(
         `Cannot prepare because the current branch does not match the MR source branch.\n\n` +
-        `MR source branch: ${target.sourceBranch}\n` +
-        `Current branch:   ${localBranch}\n\n` +
-        `Run:\n\n` +
-        `  revkit checkout !${target.targetId}\n` +
-        `  revkit prepare`,
+          `MR source branch: ${target.sourceBranch}\n` +
+          `Current branch:   ${localBranch}\n\n` +
+          `Run:\n\n` +
+          `  revkit checkout !${target.targetId}\n` +
+          `  revkit prepare`,
       );
     }
 
@@ -183,20 +183,20 @@ export class ReviewOrchestrator {
         // Local is ahead of MR head
         throw new Error(
           `Cannot prepare an agent-ready bundle because the local checkout is ahead of the MR head.\n\n` +
-          `MR head:     ${mrHeadSha}\n` +
-          `Local HEAD:  ${localHeadSha}\n\n` +
-          `Push your commits or reset/switch to the MR head, then run:\n\n` +
-          `  revkit prepare`,
+            `MR head:     ${mrHeadSha}\n` +
+            `Local HEAD:  ${localHeadSha}\n\n` +
+            `Push your commits or reset/switch to the MR head, then run:\n\n` +
+            `  revkit prepare`,
         );
       } else {
         // Local is behind MR head
         throw new Error(
           `Cannot prepare an agent-ready bundle because the local checkout is behind the MR head.\n\n` +
-          `MR head:     ${mrHeadSha}\n` +
-          `Local HEAD:  ${localHeadSha}\n\n` +
-          `Run:\n\n` +
-          `  git pull\n` +
-          `  revkit prepare`,
+            `MR head:     ${mrHeadSha}\n` +
+            `Local HEAD:  ${localHeadSha}\n\n` +
+            `Run:\n\n` +
+            `  git pull\n` +
+            `  revkit prepare`,
         );
       }
     }
@@ -206,8 +206,9 @@ export class ReviewOrchestrator {
     // Filter out system-only threads and the managed review note thread
     const reviewNoteCommentId = checkpointNoteId;
     const allThreads = rawThreads.filter(
-      (t) => !t.comments.every((c) => c.system)
-        && !(reviewNoteCommentId && t.comments.some((c) => c.id === reviewNoteCommentId)),
+      (t) =>
+        !t.comments.every((c) => c.system) &&
+        !(reviewNoteCommentId && t.comments.some((c) => c.id === reviewNoteCommentId)),
     );
 
     // Build position-based thread index
@@ -217,13 +218,7 @@ export class ReviewOrchestrator {
     const activeThreads = allThreads.filter((t) => !t.resolved);
 
     // Create the bundle
-    const bundle = await this.workspace.createBundle(
-      target,
-      activeThreads,
-      diffs,
-      versions,
-      threadIndex,
-    );
+    const bundle = await this.workspace.createBundle(target, activeThreads, diffs, versions, threadIndex);
 
     // Compute prepare summary — compare against remote checkpoint
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
@@ -231,15 +226,13 @@ export class ReviewOrchestrator {
     const currentDescriptionDigest = computeContentHash(target.description ?? '');
 
     // Compare against checkpoint (not previous local prepare)
-    const targetCodeChanged = remoteCheckpoint
-      ? remoteCheckpoint.headSha !== mrHeadSha
-      : null;
+    const targetCodeChanged = remoteCheckpoint ? remoteCheckpoint.headSha !== mrHeadSha : null;
 
-    const threadsChanged = remoteCheckpoint && remoteCheckpoint.threadsDigest
+    const threadsChanged = remoteCheckpoint?.threadsDigest
       ? remoteCheckpoint.threadsDigest !== currentThreadsDigest
       : null;
 
-    const descriptionChanged = remoteCheckpoint && remoteCheckpoint.descriptionDigest
+    const descriptionChanged = remoteCheckpoint?.descriptionDigest
       ? remoteCheckpoint.descriptionDigest !== currentDescriptionDigest
       : null;
 
@@ -287,11 +280,7 @@ export class ReviewOrchestrator {
         } catch {
           // Fall back: try git-based diff from checkpoint head
           try {
-            await this.workspace.writeIncrementalDiffFromGit(
-              this.git,
-              remoteCheckpoint.headSha,
-              mrHeadSha,
-            );
+            await this.workspace.writeIncrementalDiffFromGit(this.git, remoteCheckpoint.headSha, mrHeadSha);
           } catch {
             // Fall back gracefully — no incremental patch
           }
@@ -299,11 +288,7 @@ export class ReviewOrchestrator {
       } else {
         // No version IDs — try git-based diff
         try {
-          await this.workspace.writeIncrementalDiffFromGit(
-            this.git,
-            remoteCheckpoint.headSha,
-            mrHeadSha,
-          );
+          await this.workspace.writeIncrementalDiffFromGit(this.git, remoteCheckpoint.headSha, mrHeadSha);
         } catch {
           // Fall back gracefully
         }
@@ -320,21 +305,14 @@ export class ReviewOrchestrator {
     }
 
     // Carry over published actions and output state from previous bundle
-    const previousActions = previousBundle && mode !== 'fresh'
-      ? previousBundle.publishedActions
-      : [];
-    const previousOutputs = previousBundle && mode !== 'fresh'
-      ? previousBundle.outputs
-      : undefined;
+    const previousActions = previousBundle && mode !== 'fresh' ? previousBundle.publishedActions : [];
+    const previousOutputs = previousBundle && mode !== 'fresh' ? previousBundle.outputs : undefined;
 
     // Write CONTEXT.md
-    const contextPath = await this.workspace.writeContext(
-      target,
-      activeThreads,
-      diffs,
-      threadIndex,
-      { prepareSummary, publishedActions: previousActions },
-    );
+    const contextPath = await this.workspace.writeContext(target, activeThreads, diffs, threadIndex, {
+      prepareSummary,
+      publishedActions: previousActions,
+    });
 
     // Build and save bundle.json
     const bundleState = this.workspace.buildBundleState(
@@ -416,11 +394,7 @@ export class ReviewOrchestrator {
     if (!inRepo) {
       // No git repo — shallow clone into a sub-directory, similar to `git clone`
       const cloneUrl = this.provider.getCloneUrl(targetRef.repository);
-      const clonedDir = await GitHelper.clone(
-          cloneUrl,
-          target.sourceBranch,
-          this.git.cwd,
-      );
+      const clonedDir = await GitHelper.clone(cloneUrl, target.sourceBranch, this.git.cwd);
       return { branch: target.sourceBranch, target, clonedTo: clonedDir };
     }
 
@@ -435,15 +409,15 @@ export class ReviewOrchestrator {
       await this.git.switchBranch(target.sourceBranch);
     } catch (error) {
       throw new Error(
-          [
-            `Could not switch to branch '${target.sourceBranch}'.`,
-            '',
-            'Git refused the switch because it would overwrite local changes or otherwise could not safely update the working tree.',
-            'Commit, stash, move, or remove the conflicting files, then try again.',
-            '',
-            `Original error: ${error instanceof Error ? error.message : String(error)}`,
-          ].join('\n'),
-          { cause: error },
+        [
+          `Could not switch to branch '${target.sourceBranch}'.`,
+          '',
+          'Git refused the switch because it would overwrite local changes or otherwise could not safely update the working tree.',
+          'Commit, stash, move, or remove the conflicting files, then try again.',
+          '',
+          `Original error: ${error instanceof Error ? error.message : String(error)}`,
+        ].join('\n'),
+        { cause: error },
       );
     }
 
@@ -481,11 +455,12 @@ export class ReviewOrchestrator {
   async publishFinding(finding: NewFinding, defaultRepo?: string): Promise<string> {
     const targetRef = await this.resolveRef(undefined, defaultRepo);
     const markedBody = `${ReviewOrchestrator.COMMENT_MARKER}\n${finding.body}${ReviewOrchestrator.AI_FOOTER}`;
-    return this.provider.createThread(
-      targetRef,
-      markedBody,
-      { oldPath: finding.oldPath, newPath: finding.newPath, newLine: finding.newLine, oldLine: finding.oldLine },
-    );
+    return this.provider.createThread(targetRef, markedBody, {
+      oldPath: finding.oldPath,
+      newPath: finding.newPath,
+      newLine: finding.newLine,
+      oldLine: finding.oldLine,
+    });
   }
 
   /** Resolve a T-NNN shorthand to the full thread SHA. */
@@ -548,9 +523,7 @@ export class ReviewOrchestrator {
       return { created: false, noteId: existingNote.id };
     } else {
       // Create new managed note
-      const content = visibleContent.trim()
-        ? visibleContent
-        : 'Reviewed current changes. No additional review notes.';
+      const content = visibleContent.trim() ? visibleContent : 'Reviewed current changes. No additional review notes.';
       const fullBody = buildReviewNoteBody(content, checkpointState);
       const noteId = await this.provider.createNote(targetRef, fullBody, { internal: true });
       return { created: true, noteId };
@@ -562,7 +535,7 @@ export class ReviewOrchestrator {
   private async resolveRef(ref?: string, defaultRepo?: string): Promise<ReviewTargetRef> {
     // 1. Explicit ref
     if (ref) {
-      const targetRef = await this.provider.resolveTarget(ref);
+      const targetRef = this.provider.resolveTarget(ref);
       if (!targetRef.repository && defaultRepo) {
         targetRef.repository = defaultRepo;
       }
@@ -581,8 +554,8 @@ export class ReviewOrchestrator {
         if (currentBranch && currentBranch !== 'HEAD' && currentBranch !== bundleState.target.sourceBranch) {
           throw new Error(
             `Branch mismatch: current branch "${currentBranch}" does not match ` +
-            `the bundle's MR source branch "${bundleState.target.sourceBranch}" (!${bundleState.target.id}).\n` +
-            `Run \`revkit clean\` to remove the stale bundle, or switch to "${bundleState.target.sourceBranch}".`,
+              `the bundle's MR source branch "${bundleState.target.sourceBranch}" (!${bundleState.target.id}).\n` +
+              `Run \`revkit clean\` to remove the stale bundle, or switch to "${bundleState.target.sourceBranch}".`,
           );
         }
       } catch (err) {
@@ -599,7 +572,11 @@ export class ReviewOrchestrator {
     // 3. Auto-detect MR from current git branch
     let repo = defaultRepo;
     if (!repo) {
-      try { repo = await this.git.deriveRepoSlug(); } catch { /* not a git repo */ }
+      try {
+        repo = await this.git.deriveRepoSlug();
+      } catch {
+        /* not a git repo */
+      }
     }
     if (repo) {
       try {
@@ -613,7 +590,7 @@ export class ReviewOrchestrator {
             const ids = targets.map((t) => `!${t.targetId}`).join(', ');
             throw new Error(
               `Multiple open MRs found for branch "${branch}": ${ids}\n` +
-              'Specify one explicitly: `revkit prepare !<id>`',
+                'Specify one explicitly: `revkit prepare !<id>`',
             );
           }
         }
@@ -624,9 +601,8 @@ export class ReviewOrchestrator {
 
     throw new Error(
       'Could not determine which MR to prepare.\n' +
-      'No ref provided, no existing bundle, and no open MR found for the current branch.\n' +
-      'Run `revkit prepare !<id>` to specify one explicitly.',
+        'No ref provided, no existing bundle, and no open MR found for the current branch.\n' +
+        'Run `revkit prepare !<id>` to specify one explicitly.',
     );
   }
 }
-

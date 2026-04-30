@@ -97,6 +97,7 @@ revkit checkout !42 --repo group/project --prepare
 ```
 
 You can also paste a full GitLab URL instead of `!42`:
+
 ```bash
 revkit prepare https://gitlab.example.com/group/project/-/merge_requests/42
 ```
@@ -124,6 +125,7 @@ revkit prepare !42 --json
 Output shows MR state (opened/merged/closed), prepare mode (fresh/refresh), code/thread change summary, and bundle path.
 
 Creates `.revkit/`:
+
 ```
 .revkit/
   CONTEXT.md              ← agent entry point (start here)

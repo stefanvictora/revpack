@@ -18,7 +18,9 @@ export function registerCleanCommand(program: Command): void {
           console.log(chalk.dim('Nothing to clean — .revkit/ does not exist.'));
         }
         console.log('');
-        console.log(chalk.dim('.revkit/ is disposable local state. This does not affect the MR/PR or published comments.'));
+        console.log(
+          chalk.dim('.revkit/ is disposable local state. This does not affect the MR/PR or published comments.'),
+        );
         console.log(chalk.dim('Run `revkit prepare` to create a fresh bundle.'));
       } catch (err) {
         handleError(err);

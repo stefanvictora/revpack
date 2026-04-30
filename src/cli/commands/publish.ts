@@ -11,7 +11,7 @@ import { computeContentHash } from '../../workspace/thread-digest.js';
 // ─── Marker-based description merge ─────────────────────
 
 export const MARKER_START = '<!-- revkit:start -->';
-export const MARKER_END   = '<!-- revkit:end -->';
+export const MARKER_END = '<!-- revkit:end -->';
 
 /**
  * Merge new content into the description using HTML comment markers.
@@ -22,7 +22,7 @@ export function mergeWithMarkers(existing: string, newContent: string): string {
   const markedSection = `${MARKER_START}\n${newContent.trim()}\n${MARKER_END}`;
 
   const startIdx = existing.indexOf(MARKER_START);
-  const endIdx   = existing.indexOf(MARKER_END);
+  const endIdx = existing.indexOf(MARKER_END);
 
   if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
     return existing.slice(0, startIdx) + markedSection + existing.slice(endIdx + MARKER_END.length);
@@ -54,7 +54,7 @@ async function loadRepliesJson(filePath: string): Promise<ReplyEntry[]> {
     return [];
   }
   try {
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) throw new Error('expected array');
     return parsed as ReplyEntry[];
   } catch {
@@ -74,7 +74,7 @@ async function loadNewFindings(filePath: string): Promise<unknown[]> {
     return [];
   }
   try {
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) throw new Error('expected array');
     return parsed as unknown[];
   } catch {
@@ -128,9 +128,7 @@ async function publishReplies(opts: {
     } else {
       entries = await loadRepliesJson(repliesFile);
       const resolved = await orchestrator.resolveThreadRef(opts.thread);
-      matchedIdx = entries.findIndex(
-        (e) => e.threadId === opts.thread || e.threadId === resolved,
-      );
+      matchedIdx = entries.findIndex((e) => e.threadId === opts.thread || e.threadId === resolved);
       if (matchedIdx === -1) {
         console.error(chalk.red(`No reply found for "${opts.thread}" in ${repliesFile}`));
         console.error(chalk.dim('Available: ' + entries.map((e) => e.threadId).join(', ')));
@@ -207,11 +205,7 @@ async function publishReplies(opts: {
   return posted;
 }
 
-async function publishFindings(opts: {
-  from?: string;
-  dryRun?: boolean;
-  noRefresh?: boolean;
-}): Promise<number> {
+async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
   const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
   const rawFindings = await loadNewFindings(filePath);
   if (rawFindings.length === 0) return 0;
@@ -224,7 +218,7 @@ async function publishFindings(opts: {
   } catch {
     throw new Error(
       `Cannot validate findings: ${patchPath} not found.\n` +
-      `Run \`revkit prepare\` first to generate the diff bundle.`,
+        `Run \`revkit prepare\` first to generate the diff bundle.`,
     );
   }
 
@@ -237,7 +231,7 @@ async function publishFindings(opts: {
     console.error('');
     throw new Error(
       `${errors.length} invalid finding(s) in ${filePath}. Fix the positions and retry.\n` +
-      `The output file has not been modified.`,
+        `The output file has not been modified.`,
     );
   }
 
@@ -260,10 +254,7 @@ async function publishFindings(opts: {
   for (const finding of findings) {
     try {
       const body = buildFindingHeader(finding.severity, finding.category) + finding.body;
-      const createdThreadId = await orchestrator.publishFinding(
-        { ...finding, body },
-        defaultRepo,
-      );
+      const createdThreadId = await orchestrator.publishFinding({ ...finding, body }, defaultRepo);
       const displayPath = finding.newPath || finding.oldPath;
       console.log(chalk.green(`  \u2713 ${displayPath}:${finding.newLine ?? finding.oldLine} (${finding.severity})`));
       published++;
@@ -283,7 +274,11 @@ async function publishFindings(opts: {
       });
     } catch (err) {
       const displayPath = finding.newPath || finding.oldPath;
-      console.error(chalk.red(`  \u2717 ${displayPath}:${finding.newLine ?? finding.oldLine}: ${err instanceof Error ? err.message : String(err)}`));
+      console.error(
+        chalk.red(
+          `  \u2717 ${displayPath}:${finding.newLine ?? finding.oldLine}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
       remaining.push(finding);
     }
   }
@@ -298,7 +293,6 @@ async function publishDescription(opts: {
   replace?: boolean;
   repo?: string;
 }): Promise<number> {
-
   let content: string;
   if (opts.from) {
     content = await fs.readFile(opts.from, 'utf-8');
@@ -315,7 +309,7 @@ async function publishDescription(opts: {
   }
 
   const orchestrator = await createOrchestrator();
-  const defaultRepo = opts.repo ?? await getDefaultRepo();
+  const defaultRepo = opts.repo ?? (await getDefaultRepo());
 
   let body: string;
   if (opts.replace) {
@@ -342,10 +336,7 @@ async function publishDescription(opts: {
   return 1;
 }
 
-async function publishReviewCmd(opts: {
-  from?: string;
-  repo?: string;
-}): Promise<number> {
+async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise<number> {
   const filePath = opts.from ?? DEFAULT_REVIEW_FILE;
   let content: string;
   try {
@@ -355,7 +346,7 @@ async function publishReviewCmd(opts: {
   }
 
   const orchestrator = await createOrchestrator();
-  const defaultRepo = opts.repo ?? await getDefaultRepo();
+  const defaultRepo = opts.repo ?? (await getDefaultRepo());
 
   const result = await orchestrator.publishReview(content, defaultRepo);
   if (result.created) {
@@ -369,12 +360,7 @@ async function publishReviewCmd(opts: {
   const bundleState = await ws.loadBundleState();
   if (bundleState) {
     const hash = computeContentHash(content);
-    await ws.updateOutputPublishState(
-      'review',
-      hash,
-      bundleState.target.diffRefs.headSha,
-      result.noteId,
-    );
+    await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha, result.noteId);
   }
 
   return 1;
@@ -401,7 +387,7 @@ export function registerPublishCommand(program: Command): void {
     .option('--no-refresh', 'Skip auto-refresh after publishing');
 
   // ── publish (no subcommand) → tell user to be explicit ───
-  publish.action(async () => {
+  publish.action(() => {
     console.log(chalk.yellow('Please specify what to publish:'));
     console.log('');
     console.log('  revkit publish all          Publish everything pending');
@@ -413,14 +399,23 @@ export function registerPublishCommand(program: Command): void {
   });
 
   // ── publish all ───────────────────────────────────────────
-  publish.command('all')
+  publish
+    .command('all')
     .description('Publish all pending outputs')
     .action(async (_opts: Record<string, never>, cmd: Command) => {
       try {
-        const parentOpts = cmd.parent?.opts() as { refresh?: boolean } | undefined;
+        const parentOpts = cmd.parent?.opts();
         let total = 0;
-        try { total += await publishReviewCmd({}); } catch { /* no review */ }
-        try { total += await publishDescription({ fromSummary: true }); } catch { /* no description */ }
+        try {
+          total += await publishReviewCmd({});
+        } catch {
+          /* no review */
+        }
+        try {
+          total += await publishDescription({ fromSummary: true });
+        } catch {
+          /* no description */
+        }
 
         const replyCount = await publishReplies({ noRefresh: true });
         total += replyCount;
@@ -443,31 +438,35 @@ export function registerPublishCommand(program: Command): void {
     });
 
   // ── publish replies [thread] ───────────────────────────────
-  publish.command('replies [thread]')
+  publish
+    .command('replies [thread]')
     .description('Publish replies from replies.json')
     .option('--from <file>', `Replies JSON file (default: ${DEFAULT_REPLIES_FILE})`)
     .option('--body <text>', 'Inline reply body (single thread only)')
     .option('--resolve', 'Resolve the thread(s) after replying')
-    .action(async (thread: string | undefined, opts: { from?: string; body?: string; resolve?: boolean }, cmd: Command) => {
-      try {
-        const parentOpts = cmd.parent?.opts() as { refresh?: boolean } | undefined;
-        await publishReplies({ thread, ...opts });
-        if (parentOpts?.refresh !== false) {
-          await autoRefresh();
+    .action(
+      async (thread: string | undefined, opts: { from?: string; body?: string; resolve?: boolean }, cmd: Command) => {
+        try {
+          const parentOpts = cmd.parent?.opts();
+          await publishReplies({ thread, ...opts });
+          if (parentOpts?.refresh !== false) {
+            await autoRefresh();
+          }
+        } catch (err) {
+          handleError(err);
         }
-      } catch (err) {
-        handleError(err);
-      }
-    });
+      },
+    );
 
   // ── publish findings ───────────────────────────────────────
-  publish.command('findings')
+  publish
+    .command('findings')
     .description('Publish agent-generated findings as new threads')
     .option('--from <file>', `Findings JSON file (default: ${DEFAULT_FINDINGS_FILE})`)
     .option('--dry-run', 'Show what would be published without creating threads')
     .action(async (opts: { from?: string; dryRun?: boolean }, cmd: Command) => {
       try {
-        const parentOpts = cmd.parent?.opts() as { refresh?: boolean } | undefined;
+        const parentOpts = cmd.parent?.opts();
         await publishFindings(opts);
         if (!opts.dryRun && parentOpts?.refresh !== false) {
           await autoRefresh();
@@ -478,7 +477,8 @@ export function registerPublishCommand(program: Command): void {
     });
 
   // ── publish description ────────────────────────────────────
-  publish.command('description')
+  publish
+    .command('description')
     .description('Update the MR/PR description with a revkit section')
     .option('--from <file>', 'Read content from a file')
     .option('--from-summary', 'Use the generated summary.md')
@@ -486,7 +486,7 @@ export function registerPublishCommand(program: Command): void {
     .option('--repo <repo>', 'Repository slug')
     .action(async (opts: { from?: string; fromSummary?: boolean; replace?: boolean; repo?: string }, cmd: Command) => {
       try {
-        const parentOpts = cmd.parent?.opts() as { refresh?: boolean } | undefined;
+        const parentOpts = cmd.parent?.opts();
         await publishDescription(opts);
         if (parentOpts?.refresh !== false) {
           await autoRefresh();
@@ -497,13 +497,14 @@ export function registerPublishCommand(program: Command): void {
     });
 
   // ── publish review ──────────────────────────────────────────
-  publish.command('review')
+  publish
+    .command('review')
     .description('Publish/update the managed review note and advance the review checkpoint')
     .option('--from <file>', `Review file (default: ${DEFAULT_REVIEW_FILE})`)
     .option('--repo <repo>', 'Repository slug')
     .action(async (opts: { from?: string; repo?: string }, cmd: Command) => {
       try {
-        const parentOpts = cmd.parent?.opts() as { refresh?: boolean } | undefined;
+        const parentOpts = cmd.parent?.opts();
         await publishReviewCmd(opts);
         if (parentOpts?.refresh !== false) {
           await autoRefresh();

@@ -1,10 +1,4 @@
-import type {
-  ReviewTarget,
-  ReviewTargetRef,
-  ReviewThread,
-  ReviewDiff,
-  ReviewVersion,
-} from '../core/types.js';
+import type { ReviewTarget, ReviewTargetRef, ReviewThread, ReviewDiff, ReviewVersion } from '../core/types.js';
 
 /**
  * Position for creating a new discussion thread on a diff.
@@ -28,7 +22,7 @@ export interface ReviewProvider {
   readonly providerType: 'gitlab' | 'github';
 
   /** Resolve a human-friendly reference (branch name, MR !123, URL) to a ReviewTargetRef. */
-  resolveTarget(ref: string): Promise<ReviewTargetRef>;
+  resolveTarget(ref: string): ReviewTargetRef;
 
   /** List open review targets (MRs/PRs) for the configured repository. */
   listOpenReviewTargets(repo: string): Promise<ReviewTarget[]>;

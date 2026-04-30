@@ -35,10 +35,10 @@
 
 ## Severity definitions
 
-| Severity | Meaning | Blocks merge? |
-|----------|---------|---------------|
-| blocker  | Must fix. Security issue, data loss, crash. | Yes |
-| high     | Should fix. Bug, incorrect behavior. | Usually |
-| medium   | Consider fixing. Potential issue, missing edge case. | No |
-| low      | Minor improvement. | No |
-| nit      | Style/preference. Take it or leave it. | No |
+| Severity | Meaning                                              | Blocks merge? |
+| -------- | ---------------------------------------------------- | ------------- |
+| blocker  | Must fix. Security issue, data loss, crash.          | Yes           |
+| high     | Should fix. Bug, incorrect behavior.                 | Usually       |
+| medium   | Consider fixing. Potential issue, missing edge case. | No            |
+| low      | Minor improvement.                                   | No            |
+| nit      | Style/preference. Take it or leave it.               | No            |

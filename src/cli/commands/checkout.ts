@@ -5,17 +5,19 @@ import { createOrchestrator, createOrchestratorAt, getDefaultRepo, handleError }
 export function registerCheckoutCommand(program: Command): void {
   program
     .command('checkout <ref>')
-    .description([
-      'Fetch and check out the MR/PR source branch locally.',
-      '  In a git repo: fetches the branch and switches to it.',
-      '  Outside a git repo: shallow-clones into a new directory first.',
-    ].join('\n'))
+    .description(
+      [
+        'Fetch and check out the MR/PR source branch locally.',
+        '  In a git repo: fetches the branch and switches to it.',
+        '  Outside a git repo: shallow-clones into a new directory first.',
+      ].join('\n'),
+    )
     .option('--prepare', 'Also run `prepare` after checkout')
     .option('--repo <repo>', 'Repository slug (group/project)')
     .action(async (ref: string, opts: { prepare?: boolean; repo?: string }) => {
       try {
         let orchestrator = await createOrchestrator();
-        const defaultRepo = opts.repo ?? await getDefaultRepo();
+        const defaultRepo = opts.repo ?? (await getDefaultRepo());
 
         // Switch branch (or clone if no git repo)
         const result = await orchestrator.checkout(ref, defaultRepo);

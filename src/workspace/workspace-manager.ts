@@ -295,7 +295,9 @@ export class WorkspaceManager {
       const filePath = path.join(outputDir, name);
       try {
         await fs.writeFile(filePath, content, 'utf-8');
-      } catch { /* outputs dir may not exist yet */ }
+      } catch {
+        /* outputs dir may not exist yet */
+      }
     }
   }
 
@@ -351,7 +353,7 @@ export class WorkspaceManager {
 
     let entries: { threadId: string; body: string; resolve?: boolean }[];
     try {
-      entries = JSON.parse(raw);
+      entries = JSON.parse(raw) as { threadId: string; body: string; resolve?: boolean }[];
       if (!Array.isArray(entries)) return 0;
     } catch {
       return 0;
@@ -483,9 +485,15 @@ export class WorkspaceManager {
         lines.push(`| Last review checkpoint | ${ps.checkpoint.createdAt} |`);
         lines.push(`| Last reviewed head SHA | \`${ps.checkpoint.headSha}\` |`);
         lines.push(`| Current target head SHA | \`${ps.current.targetHeadSha}\` |`);
-        lines.push(`| Target code changed since checkpoint | ${ps.comparison.targetCodeChangedSinceCheckpoint ? 'yes' : 'no'} |`);
-        lines.push(`| Threads/replies changed since checkpoint | ${ps.comparison.threadsChangedSinceCheckpoint != null ? (ps.comparison.threadsChangedSinceCheckpoint ? 'yes' : 'no') : 'unknown'} |`);
-        lines.push(`| Description changed since checkpoint | ${ps.comparison.descriptionChangedSinceCheckpoint != null ? (ps.comparison.descriptionChangedSinceCheckpoint ? 'yes' : 'no') : 'unknown'} |`);
+        lines.push(
+          `| Target code changed since checkpoint | ${ps.comparison.targetCodeChangedSinceCheckpoint ? 'yes' : 'no'} |`,
+        );
+        lines.push(
+          `| Threads/replies changed since checkpoint | ${ps.comparison.threadsChangedSinceCheckpoint != null ? (ps.comparison.threadsChangedSinceCheckpoint ? 'yes' : 'no') : 'unknown'} |`,
+        );
+        lines.push(
+          `| Description changed since checkpoint | ${ps.comparison.descriptionChangedSinceCheckpoint != null ? (ps.comparison.descriptionChangedSinceCheckpoint ? 'yes' : 'no') : 'unknown'} |`,
+        );
         lines.push(`| Local HEAD at prepare | \`${ps.current.localHeadSha}\` |`);
         lines.push('| Local checkout verified | yes |');
         lines.push('');
@@ -497,9 +505,13 @@ export class WorkspaceManager {
           lines.push('Focus proactive review on the updated diff and unresolved thread updates.');
           lines.push('');
         } else if (ps.comparison.threadsChangedSinceCheckpoint) {
-          lines.push('No target code changes since the last review checkpoint, but threads or replies have been updated.');
+          lines.push(
+            'No target code changes since the last review checkpoint, but threads or replies have been updated.',
+          );
           lines.push('');
-          lines.push('Focus on updated unresolved threads, newly added replies, and pending outputs. Do not perform a full proactive code review unless requested.');
+          lines.push(
+            'Focus on updated unresolved threads, newly added replies, and pending outputs. Do not perform a full proactive code review unless requested.',
+          );
           lines.push('');
         } else {
           lines.push('No target code or thread/reply changes since the last review checkpoint.');
@@ -621,7 +633,7 @@ export class WorkspaceManager {
         const actionLabel = a.type === 'reply' ? 'Reply' : a.type === 'finding' ? 'Finding' : 'Resolve';
         const loc = a.location
           ? `\`${a.location.newPath || a.location.oldPath}\`:${a.location.newLine ?? a.location.oldLine ?? '?'}`
-          : a.providerThreadId ?? '';
+          : (a.providerThreadId ?? '');
         lines.push(`| ${actionLabel} | ${loc} | ${a.severity ?? ''} | ${a.category ?? ''} | ${a.title ?? ''} |`);
       }
       lines.push('');
@@ -689,7 +701,11 @@ export class WorkspaceManager {
       files: files.map((f) => {
         const added = f.lines.filter((l) => l.type === 'added').length;
         const removed = f.lines.filter((l) => l.type === 'removed').length;
-        const shortName = f.newPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? f.fileId;
+        const shortName =
+          f.newPath
+            .split('/')
+            .pop()
+            ?.replace(/\.[^.]+$/, '') ?? f.fileId;
         const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
         return {
           fileId: f.fileId,
@@ -717,24 +733,22 @@ export class WorkspaceManager {
     for (const file of files) {
       for (const hunk of file.hunks) {
         for (const entry of hunk.lines) {
-          lines.push(JSON.stringify({
-            fileId: file.fileId,
-            hunkId: hunk.hunkId,
-            kind: entry.type,
-            oldLine: entry.oldLine ?? null,
-            newLine: entry.newLine ?? null,
-            oldPath: file.oldPath,
-            newPath: file.newPath,
-            text: entry.text,
-          }));
+          lines.push(
+            JSON.stringify({
+              fileId: file.fileId,
+              hunkId: hunk.hunkId,
+              kind: entry.type,
+              oldLine: entry.oldLine ?? null,
+              newLine: entry.newLine ?? null,
+              oldPath: file.oldPath,
+              newPath: file.newPath,
+              text: entry.text,
+            }),
+          );
         }
       }
     }
-    await fs.writeFile(
-      path.join(this.baseDir, 'diffs', 'line-map.ndjson'),
-      lines.join('\n') + '\n',
-      'utf-8',
-    );
+    await fs.writeFile(path.join(this.baseDir, 'diffs', 'line-map.ndjson'), lines.join('\n') + '\n', 'utf-8');
   }
 
   private async writeChangeBlocks(files: (PatchFileEntry & { fileId: string })[]): Promise<void> {
@@ -781,9 +795,9 @@ export class WorkspaceManager {
             kind = 'insert';
           }
 
-          const oldStart = removedLines.length > 0 ? removedLines[0].oldLine! : (addedLines[0].newLine! - 1);
+          const oldStart = removedLines.length > 0 ? removedLines[0].oldLine! : addedLines[0].newLine! - 1;
           const oldEnd = removedLines.length > 0 ? removedLines[removedLines.length - 1].oldLine! : oldStart;
-          const newStart = addedLines.length > 0 ? addedLines[0].newLine! : (removedLines[0].oldLine!);
+          const newStart = addedLines.length > 0 ? addedLines[0].newLine! : removedLines[0].oldLine!;
           const newEnd = addedLines.length > 0 ? addedLines[addedLines.length - 1].newLine! : newStart;
 
           // Determine preferred comment target
@@ -829,7 +843,11 @@ export class WorkspaceManager {
       allLines.push('');
 
       // Write per-file view
-      const shortName = file.newPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? file.fileId;
+      const shortName =
+        file.newPath
+          .split('/')
+          .pop()
+          ?.replace(/\.[^.]+$/, '') ?? file.fileId;
       const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
       const fileName = `${file.fileId}-${safeName}.diff.md`;
       await fs.writeFile(path.join(byFileDir, fileName), fileLines.join('\n') + '\n', 'utf-8');
@@ -848,7 +866,9 @@ export class WorkspaceManager {
     lines.push('');
 
     for (const hunk of file.hunks) {
-      lines.push(`@@ ${hunk.hunkId} old:${hunk.oldStart}-${hunk.oldEnd} new:${hunk.newStart}-${hunk.newEnd} @@ ${hunk.header}`);
+      lines.push(
+        `@@ ${hunk.hunkId} old:${hunk.oldStart}-${hunk.oldEnd} new:${hunk.newStart}-${hunk.newEnd} @@ ${hunk.header}`,
+      );
       lines.push('');
       for (const entry of hunk.lines) {
         if (entry.type === 'context') {
@@ -912,9 +932,7 @@ export class WorkspaceManager {
     const threadsDir = path.join(this.baseDir, 'threads');
     try {
       const files = await fs.readdir(threadsDir);
-      await Promise.all(
-        files.map((f) => fs.unlink(path.join(threadsDir, f))),
-      );
+      await Promise.all(files.map((f) => fs.unlink(path.join(threadsDir, f))));
     } catch {
       // Directory may not exist yet
     }
@@ -953,7 +971,12 @@ export class WorkspaceManager {
     );
   }
 
-  private async writeThreads(threads: ReviewThread[], threadIndex: ThreadIndex, diffs: ReviewDiff[], currentHeadSha: string): Promise<void> {
+  private async writeThreads(
+    threads: ReviewThread[],
+    threadIndex: ThreadIndex,
+    diffs: ReviewDiff[],
+    currentHeadSha: string,
+  ): Promise<void> {
     // Build line map from diffs for embedding diff context in thread files
     const patchContent = diffs.map((d) => `diff --git a/${d.oldPath} b/${d.newPath}\n${d.diff}`).join('\n');
     const lineMap = parsePatch(patchContent);
@@ -971,20 +994,24 @@ export class WorkspaceManager {
   }
 
   private async writeDiffs(diffs: ReviewDiff[]): Promise<void> {
-    const patchContent = diffs.map((d) => {
-      const header = `diff --git a/${d.oldPath} b/${d.newPath}`;
-      return `${header}\n${d.diff}`;
-    }).join('\n');
+    const patchContent = diffs
+      .map((d) => {
+        const header = `diff --git a/${d.oldPath} b/${d.newPath}`;
+        return `${header}\n${d.diff}`;
+      })
+      .join('\n');
 
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'latest.patch'), patchContent, 'utf-8');
   }
 
   async writeIncrementalDiff(diffs: ReviewDiff[]): Promise<void> {
     await this.ensureDir(path.join(this.baseDir, 'diffs'));
-    const patchContent = diffs.map((d) => {
-      const header = `diff --git a/${d.oldPath} b/${d.newPath}`;
-      return `${header}\n${d.diff}`;
-    }).join('\n');
+    const patchContent = diffs
+      .map((d) => {
+        const header = `diff --git a/${d.oldPath} b/${d.newPath}`;
+        return `${header}\n${d.diff}`;
+      })
+      .join('\n');
 
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), patchContent, 'utf-8');
   }
@@ -998,7 +1025,12 @@ export class WorkspaceManager {
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), diffOutput, 'utf-8');
   }
 
-  private threadToMarkdown(thread: ReviewThread, prefix: string, lineMap: LineMap | undefined, currentHeadSha: string): string {
+  private threadToMarkdown(
+    thread: ReviewThread,
+    prefix: string,
+    lineMap: LineMap | undefined,
+    currentHeadSha: string,
+  ): string {
     const lines: string[] = [];
     lines.push(`# ${prefix}: Thread ${thread.threadId}`);
     lines.push('');
@@ -1028,7 +1060,9 @@ export class WorkspaceManager {
       } else {
         lines.push('## Diff Context');
         lines.push('');
-        lines.push('> ⚠️ This thread was created on an older revision. The diff context may no longer match the current code.');
+        lines.push(
+          '> ⚠️ This thread was created on an older revision. The diff context may no longer match the current code.',
+        );
         lines.push(`> Thread revision: \`${thread.position.headSha}\` | Current: \`${currentHeadSha}\``);
         lines.push('');
       }
@@ -1046,7 +1080,9 @@ export class WorkspaceManager {
           lines.push(`> ${bodyLine}`);
         }
         lines.push('>');
-        lines.push('> *This system event may indicate that the MR author pushed changes related to this thread. Check the current source code to verify.*');
+        lines.push(
+          '> *This system event may indicate that the MR author pushed changes related to this thread. Check the current source code to verify.*',
+        );
         lines.push('');
       } else {
         lines.push(`### ${comment.author} (${comment.origin}) — ${comment.createdAt}`);
@@ -1103,7 +1139,9 @@ export class WorkspaceManager {
     try {
       await fs.mkdir(dir, { recursive: true });
     } catch (err) {
-      throw new WorkspaceError(`Failed to create directory ${dir}: ${err}`);
+      throw new WorkspaceError(
+        `Failed to create directory ${dir}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -1131,13 +1169,21 @@ const NEW_FINDINGS_JSON_SCHEMA = {
       severity: { type: 'string', enum: ['blocker', 'high', 'medium', 'low', 'nit'] },
       category: {
         type: 'string',
-        enum: ['security', 'correctness', 'performance', 'testing', 'architecture', 'style', 'documentation', 'naming', 'error-handling', 'general'],
+        enum: [
+          'security',
+          'correctness',
+          'performance',
+          'testing',
+          'architecture',
+          'style',
+          'documentation',
+          'naming',
+          'error-handling',
+          'general',
+        ],
       },
     },
-    anyOf: [
-      { required: ['oldLine'] },
-      { required: ['newLine'] },
-    ],
+    anyOf: [{ required: ['oldLine'] }, { required: ['newLine'] }],
     additionalProperties: false,
   },
 };

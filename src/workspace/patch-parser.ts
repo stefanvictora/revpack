@@ -197,14 +197,22 @@ function inferStatus(header: PatchFileHeader): FileStatus {
   return 'unknown';
 }
 
-function parseHunk(lines: string[], startIndex: number, hunkId: string): { entries: LineEntry[]; hunkInfo: HunkInfo; nextIndex: number } {
+function parseHunk(
+  lines: string[],
+  startIndex: number,
+  hunkId: string,
+): { entries: LineEntry[]; hunkInfo: HunkInfo; nextIndex: number } {
   const entries: LineEntry[] = [];
   const hunkHeader = lines[startIndex];
 
   // Parse @@ -oldStart,oldCount +newStart,newCount @@
   const hunkMatch = hunkHeader.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/);
   if (!hunkMatch) {
-    return { entries, hunkInfo: { hunkId, oldStart: 0, oldEnd: 0, newStart: 0, newEnd: 0, header: '', lines: [] }, nextIndex: startIndex + 1 };
+    return {
+      entries,
+      hunkInfo: { hunkId, oldStart: 0, oldEnd: 0, newStart: 0, newEnd: 0, header: '', lines: [] },
+      nextIndex: startIndex + 1,
+    };
   }
 
   const hunkContext = hunkMatch[3]?.trim() ?? '';

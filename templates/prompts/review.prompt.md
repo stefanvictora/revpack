@@ -1,6 +1,6 @@
 ---
 agent: agent
-description: "Full code review: address threads, find issues, suggest fixes"
+description: 'Full code review: address threads, find issues, suggest fixes'
 ---
 
 # Code Review
@@ -29,10 +29,10 @@ Your role is to review and provide feedback. Do **not** modify source files dire
 - Prefer fewer, high-confidence findings over many speculative findings.
 - Do not duplicate existing unresolved threads or previous actions.
 - Always write:
-    - `outputs/replies.json`
-    - `outputs/new-findings.json`
-    - `outputs/summary.md`
-    - `outputs/review.md`
+  - `outputs/replies.json`
+  - `outputs/new-findings.json`
+  - `outputs/summary.md`
+  - `outputs/review.md`
 - Use `[]` for empty JSON outputs.
 - Do not publish anything unless the developer explicitly asks you to publish.
 

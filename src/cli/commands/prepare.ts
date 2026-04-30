@@ -57,8 +57,12 @@ export function registerPrepareCommand(program: Command): void {
         if (result.hasCheckpoint) {
           console.log(`  ${chalk.dim('Changes since last review checkpoint:')}`);
           console.log(`    ${chalk.dim('Target code:')}     ${result.targetCodeChanged ? 'yes' : 'no'}`);
-          console.log(`    ${chalk.dim('Threads/replies:')} ${result.threadsChanged != null ? (result.threadsChanged ? 'yes' : 'no') : 'unknown'}`);
-          console.log(`    ${chalk.dim('Description:')}     ${result.descriptionChanged != null ? (result.descriptionChanged ? 'yes' : 'no') : 'unknown'}`);
+          console.log(
+            `    ${chalk.dim('Threads/replies:')} ${result.threadsChanged != null ? (result.threadsChanged ? 'yes' : 'no') : 'unknown'}`,
+          );
+          console.log(
+            `    ${chalk.dim('Description:')}     ${result.descriptionChanged != null ? (result.descriptionChanged ? 'yes' : 'no') : 'unknown'}`,
+          );
 
           if (result.prunedReplies > 0) {
             console.log(`    ${chalk.dim('Stale replies pruned:')} ${result.prunedReplies}`);
@@ -110,11 +114,16 @@ export function registerPrepareCommand(program: Command): void {
 
 function getStateColor(state: string): (text: string) => string {
   switch (state) {
-    case 'opened': return chalk.green;
-    case 'merged': return chalk.magenta;
-    case 'closed': return chalk.red;
-    case 'locked': return chalk.yellow;
-    default: return chalk.white;
+    case 'opened':
+      return chalk.green;
+    case 'merged':
+      return chalk.magenta;
+    case 'closed':
+      return chalk.red;
+    case 'locked':
+      return chalk.yellow;
+    default:
+      return chalk.white;
   }
 }
 
@@ -126,7 +135,9 @@ function formatDate(iso: string): string {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
     const formatted = d.toLocaleDateString('en-US', {
-      year: 'numeric', month: 'short', day: 'numeric',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
     });
 
     if (diffDays === 0) return `${formatted} (today)`;

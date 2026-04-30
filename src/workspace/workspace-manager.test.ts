@@ -265,10 +265,7 @@ describe('WorkspaceManager', () => {
     expect(annotated).toContain('+            new:    11 | newCall(value);');
     expect(annotated).toContain('+            new:    13 | audit(value);');
 
-    const perFile = await fs.readFile(
-      path.join(diffDir, 'views', 'by-file', 'F001-service.diff.md'),
-      'utf-8',
-    );
+    const perFile = await fs.readFile(path.join(diffDir, 'views', 'by-file', 'F001-service.diff.md'), 'utf-8');
     expect(annotated).toContain(perFile.trimEnd());
   });
 
@@ -318,7 +315,7 @@ describe('WorkspaceManager', () => {
     const thread3 = { ...makeThread(), threadId: 'thread-new', comments: thread1.comments };
     await createBundle(manager, makeTarget(), [thread2, thread3]);
 
-    const files2 = (await fs.readdir(threadDir)).filter(f => f.endsWith('.json')).sort();
+    const files2 = (await fs.readdir(threadDir)).filter((f) => f.endsWith('.json')).sort();
     // thread2 is now at position 0 → T-001, thread3 at position 1 → T-002
     expect(files2).toEqual(['T-001.json', 'T-002.json']);
 
@@ -346,10 +343,14 @@ describe('WorkspaceManager', () => {
 
     // Write a replies.json with two entries
     const repliesPath = path.join(tmpDir, '.revkit', 'outputs', 'replies.json');
-    await fs.writeFile(repliesPath, JSON.stringify([
-      { threadId: 'T-001', body: 'reply1', resolve: true },
-      { threadId: 'T-999', body: 'stale reply', resolve: false },
-    ]), 'utf-8');
+    await fs.writeFile(
+      repliesPath,
+      JSON.stringify([
+        { threadId: 'T-001', body: 'reply1', resolve: true },
+        { threadId: 'T-999', body: 'stale reply', resolve: false },
+      ]),
+      'utf-8',
+    );
 
     // Prune with only thread-abc active
     const activeIds = new Set(['thread-abc']);
@@ -381,7 +382,7 @@ describe('WorkspaceManager', () => {
     await expect(manager.removeBundle()).resolves.not.toThrow();
   });
 
-  it('only emits thread items for threads written to the bundle', async () => {
+  it('only emits thread items for threads written to the bundle', () => {
     const activeThread = makeThread();
     const resolvedThread = { ...makeThread(), threadId: 'thread-resolved', resolved: true };
     const allThreads = [activeThread, resolvedThread];
@@ -396,7 +397,11 @@ describe('WorkspaceManager', () => {
         mode: 'fresh',
         checkpoint: null,
         current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
-        comparison: { targetCodeChangedSinceCheckpoint: null, threadsChangedSinceCheckpoint: null, descriptionChangedSinceCheckpoint: null },
+        comparison: {
+          targetCodeChangedSinceCheckpoint: null,
+          threadsChangedSinceCheckpoint: null,
+          descriptionChangedSinceCheckpoint: null,
+        },
       },
       {
         repositoryRoot: tmpDir,
@@ -440,12 +445,7 @@ describe('WorkspaceManager', () => {
       const threads = [makeThread()];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads, [makeDiff()]);
 
-      const contextPath = await manager.writeContext(
-        makeTarget(),
-        threads,
-        [makeDiff()],
-        threadIndex,
-      );
+      const contextPath = await manager.writeContext(makeTarget(), threads, [makeDiff()], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('# Review Context');
@@ -459,12 +459,7 @@ describe('WorkspaceManager', () => {
       const threads = [makeThread()];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
-      const contextPath = await manager.writeContext(
-        makeTarget(),
-        threads,
-        [],
-        threadIndex,
-      );
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Unresolved Threads');
@@ -482,12 +477,7 @@ describe('WorkspaceManager', () => {
 
       const { threadIndex } = await createBundle(manager, makeTarget(), [], [makeDiff(), newFileDiff]);
 
-      const contextPath = await manager.writeContext(
-        makeTarget(),
-        [],
-        [makeDiff(), newFileDiff],
-        threadIndex,
-      );
+      const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff(), newFileDiff], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Changed Files');
@@ -501,33 +491,27 @@ describe('WorkspaceManager', () => {
       const threads = [makeThread()];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
-      const contextPath = await manager.writeContext(
-        makeTarget(),
-        threads,
-        [],
-        threadIndex,
-        {
-          prepareSummary: {
-            mode: 'refresh',
-            checkpoint: {
-              source: 'managed_review_note',
-              providerNoteId: 'note-1',
-              headSha: 'aaa',
-              baseSha: 'xxx',
-              startSha: 'xxx',
-              threadsDigest: null,
-              descriptionDigest: null,
-              createdAt: '2026-01-01T00:00:00Z',
-            },
-            current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
-            comparison: {
-              targetCodeChangedSinceCheckpoint: true,
-              threadsChangedSinceCheckpoint: null,
-              descriptionChangedSinceCheckpoint: null,
-            },
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'managed_review_note',
+            providerNoteId: 'note-1',
+            headSha: 'aaa',
+            baseSha: 'xxx',
+            startSha: 'xxx',
+            threadsDigest: null,
+            descriptionDigest: null,
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: true,
+            threadsChangedSinceCheckpoint: null,
+            descriptionChangedSinceCheckpoint: null,
           },
         },
-      );
+      });
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Review Checkpoint Summary');
@@ -570,12 +554,7 @@ describe('WorkspaceManager', () => {
       const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
       await manager.createBundle(makeTarget(), allThreads, [], [], threadIndex);
 
-      const contextPath = await manager.writeContext(
-        makeTarget(),
-        allThreads,
-        [],
-        threadIndex,
-      );
+      const contextPath = await manager.writeContext(makeTarget(), allThreads, [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Unresolved Threads');
@@ -589,18 +568,24 @@ describe('WorkspaceManager', () => {
       const threads = [makeThread()];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
-      const contextPath = await manager.writeContext(
-        makeTarget(),
-        threads,
-        [],
-        threadIndex,
-        {
-          publishedActions: [
-            { type: 'reply', providerThreadId: 'thread-abc', title: 'Fixed, good catch!', publishedAt: '2026-01-01T12:00:00Z' },
-            { type: 'finding', location: { oldPath: 'src/auth.ts', newPath: 'src/auth.ts', newLine: 42 }, severity: 'high', category: 'correctness', title: 'Unsafe token', publishedAt: '2026-01-01T12:01:00Z' },
-          ],
-        },
-      );
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        publishedActions: [
+          {
+            type: 'reply',
+            providerThreadId: 'thread-abc',
+            title: 'Fixed, good catch!',
+            publishedAt: '2026-01-01T12:00:00Z',
+          },
+          {
+            type: 'finding',
+            location: { oldPath: 'src/auth.ts', newPath: 'src/auth.ts', newLine: 42 },
+            severity: 'high',
+            category: 'correctness',
+            title: 'Unsafe token',
+            publishedAt: '2026-01-01T12:01:00Z',
+          },
+        ],
+      });
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Previous Actions');
@@ -614,26 +599,23 @@ describe('WorkspaceManager', () => {
         ...makeThread(),
         threadId: 'self-thread-sha',
         position: { filePath: 'src/auth.ts', newLine: 42 },
-        comments: [{
-          id: 'self-note',
-          body: '<!-- revkit -->\nUnsafe token comparison',
-          author: 'bot',
-          createdAt: '2026-01-01T00:00:00Z',
-          updatedAt: '2026-01-01T00:00:00Z',
-          origin: 'bot',
-          system: false,
-        }],
+        comments: [
+          {
+            id: 'self-note',
+            body: '<!-- revkit -->\nUnsafe token comparison',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
       };
       const threads = [makeThread(), selfThread];
       const threadIndex = WorkspaceManager.buildThreadIndex(threads);
       await manager.createBundle(makeTarget(), threads, [], [], threadIndex);
 
-      const contextPath = await manager.writeContext(
-        makeTarget(),
-        threads,
-        [],
-        threadIndex,
-      );
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('SELF');
@@ -670,12 +652,7 @@ describe('WorkspaceManager', () => {
       const threadIndex = WorkspaceManager.buildThreadIndex(threads);
       await manager.createBundle(makeTarget(), threads, [], [], threadIndex);
 
-      const contextPath = await manager.writeContext(
-        makeTarget(),
-        threads,
-        [],
-        threadIndex,
-      );
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('REPLIED');
@@ -707,14 +684,16 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), []);
 
       // First save a bundle state
-      const bundleState = manager.buildBundleState(
-        makeTarget(), [], [], new Map(), {
-          mode: 'fresh',
-          checkpoint: null,
-          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
-          comparison: { targetCodeChangedSinceCheckpoint: null, threadsChangedSinceCheckpoint: null, descriptionChangedSinceCheckpoint: null },
+      const bundleState = manager.buildBundleState(makeTarget(), [], [], new Map(), {
+        mode: 'fresh',
+        checkpoint: null,
+        current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+        comparison: {
+          targetCodeChangedSinceCheckpoint: null,
+          threadsChangedSinceCheckpoint: null,
+          descriptionChangedSinceCheckpoint: null,
         },
-      );
+      });
       await manager.saveBundleState(bundleState);
 
       const appended = await manager.appendPublishedAction({
@@ -733,14 +712,16 @@ describe('WorkspaceManager', () => {
     it('accumulates multiple actions', async () => {
       await createBundle(manager, makeTarget(), []);
 
-      const bundleState = manager.buildBundleState(
-        makeTarget(), [], [], new Map(), {
-          mode: 'fresh',
-          checkpoint: null,
-          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
-          comparison: { targetCodeChangedSinceCheckpoint: null, threadsChangedSinceCheckpoint: null, descriptionChangedSinceCheckpoint: null },
+      const bundleState = manager.buildBundleState(makeTarget(), [], [], new Map(), {
+        mode: 'fresh',
+        checkpoint: null,
+        current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+        comparison: {
+          targetCodeChangedSinceCheckpoint: null,
+          threadsChangedSinceCheckpoint: null,
+          descriptionChangedSinceCheckpoint: null,
         },
-      );
+      });
       await manager.saveBundleState(bundleState);
 
       await manager.appendPublishedAction({

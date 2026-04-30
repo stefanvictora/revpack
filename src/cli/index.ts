@@ -11,10 +11,7 @@ import { registerSetupCommand } from './commands/setup.js';
 
 const program = new Command();
 
-program
-  .name('revkit')
-  .description('CLI assistant for code review workflows')
-  .version('0.1.0');
+program.name('revkit').description('CLI assistant for code review workflows').version('0.1.0');
 
 registerPrepareCommand(program);
 registerStatusCommand(program);

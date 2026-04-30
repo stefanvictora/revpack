@@ -71,10 +71,7 @@ export function parseCheckpointMarker(noteBody: string): { state: CheckpointStat
 
   // Extract visible content (everything outside the marker block)
   const markerBlock = noteBody.slice(startIdx, endIdx + CHECKPOINT_MARKER_END.length);
-  const visibleContent = noteBody
-    .replace(markerBlock, '')
-    .replace(REVIEW_NOTE_MARKER, '')
-    .trim();
+  const visibleContent = noteBody.replace(markerBlock, '').replace(REVIEW_NOTE_MARKER, '').trim();
 
   return { state, visibleContent };
 }
@@ -153,9 +150,7 @@ export function updateReviewNoteBody(
   newVisibleContent?: string,
 ): string {
   const parsed = parseCheckpointMarker(existingBody);
-  const visibleContent = (newVisibleContent?.trim())
-    ? newVisibleContent.trim()
-    : (parsed?.visibleContent ?? '');
+  const visibleContent = newVisibleContent?.trim() ? newVisibleContent.trim() : (parsed?.visibleContent ?? '');
 
   return buildReviewNoteBody(visibleContent, newState);
 }

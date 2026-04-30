@@ -440,13 +440,13 @@ Add or update tests covering [specific scenario].
 
 ### Rules
 
-* Reference file paths with an `@` prefix, for example `@src/path/to/File.java`.
-* Include line numbers, method names, class names, or other stable context so the fixing agent can locate the code.
-* Describe the desired final behavior, not only the suspected cause.
-* Describe what behavior should be preserved when the fix touches validation, authorization, persistence, API responses, logging, or error handling.
-* Mention tests when the fix should include a regression test.
-* Keep the prompt self-contained. The fixing agent may not see the review thread, MR/PR diff, or previous implementation.
-* Keep it concise. A good handover prompt usually has one location sentence, one behavior sentence, one preservation sentence if needed, and one test sentence.
+- Reference file paths with an `@` prefix, for example `@src/path/to/File.java`.
+- Include line numbers, method names, class names, or other stable context so the fixing agent can locate the code.
+- Describe the desired final behavior, not only the suspected cause.
+- Describe what behavior should be preserved when the fix touches validation, authorization, persistence, API responses, logging, or error handling.
+- Mention tests when the fix should include a regression test.
+- Keep the prompt self-contained. The fixing agent may not see the review thread, MR/PR diff, or previous implementation.
+- Keep it concise. A good handover prompt usually has one location sentence, one behavior sentence, one preservation sentence if needed, and one test sentence.
 
 ---
 
@@ -553,23 +553,23 @@ Allowed categories, in preferred order:
 
 Category meanings:
 
-* **Added** — new user-facing, API-visible, or operational capabilities.
-* **Changed** — changes to existing behavior, workflows, APIs, configuration, logging, validation, or internal processing.
-* **Deprecated** — functionality, APIs, options, fields, or behavior that still exists but is now discouraged and planned for removal or replacement.
-* **Removed** — functionality, APIs, options, fields, files, or behavior that was removed.
-* **Fixed** — corrections for incorrect behavior, regressions, broken edge cases, crashes, or production issues.
-* **Security** — security-related fixes or hardening, including authorization, authentication, injection risks, secrets, sensitive data, or audit-relevant behavior.
-* **Performance** — measurable or intentional performance, scalability, memory, query, concurrency, or resource-usage improvements.
-* **Tests** — added or changed automated tests, test fixtures, or test infrastructure.
-* **Documentation** — documentation, comments intended as docs, examples, or user/developer guidance.
-* **Internal** — refactoring, cleanup, dependencies, build, CI, formatting, configuration, or other maintenance changes without direct behavior impact.
+- **Added** — new user-facing, API-visible, or operational capabilities.
+- **Changed** — changes to existing behavior, workflows, APIs, configuration, logging, validation, or internal processing.
+- **Deprecated** — functionality, APIs, options, fields, or behavior that still exists but is now discouraged and planned for removal or replacement.
+- **Removed** — functionality, APIs, options, fields, files, or behavior that was removed.
+- **Fixed** — corrections for incorrect behavior, regressions, broken edge cases, crashes, or production issues.
+- **Security** — security-related fixes or hardening, including authorization, authentication, injection risks, secrets, sensitive data, or audit-relevant behavior.
+- **Performance** — measurable or intentional performance, scalability, memory, query, concurrency, or resource-usage improvements.
+- **Tests** — added or changed automated tests, test fixtures, or test infrastructure.
+- **Documentation** — documentation, comments intended as docs, examples, or user/developer guidance.
+- **Internal** — refactoring, cleanup, dependencies, build, CI, formatting, configuration, or other maintenance changes without direct behavior impact.
 
 If a change could fit multiple categories, choose the category that is most useful to someone reading the MR/PR description.
 
 Prefer user- or domain-facing categories over internal ones:
 
-* Use **Added**, **Changed**, **Fixed**, **Security**, or **Performance** when the change affects behavior.
-* Use **Tests**, **Documentation**, or **Internal** when the change mainly supports development or maintenance.
+- Use **Added**, **Changed**, **Fixed**, **Security**, or **Performance** when the change affects behavior.
+- Use **Tests**, **Documentation**, or **Internal** when the change mainly supports development or maintenance.
 
 Write for someone who has not read the diff.
 
@@ -604,18 +604,18 @@ Avoid weak or implementation-only bullets like:
 
 Rules:
 
-* Describe what the developer changed, not what the reviewer found.
-* Do not include review findings, suspected bugs, risks, approval status, or quality judgments.
-* Do not include unresolved thread information.
-* Do not mention internal bundle files such as `.revkit/`, `CONTEXT.md`, `outputs/`, `latest.patch`, or `line-map.ndjson`.
-* Do not include a file list.
-* Do not write a code walkthrough.
-* Do not include empty categories.
-* Keep it concise: one bullet per meaningful change.
-* Merge tiny related changes into one bullet.
-* Use present tense, for example “Adds”, “Changes”, “Deprecates”, “Removes”, “Fixes”, “Improves”, “Updates”.
-* Use the project’s own terminology when visible in the code, MR/PR description, or `REVIEW.md`.
-* Prefer plain language over implementation jargon unless the implementation detail is the important change.
+- Describe what the developer changed, not what the reviewer found.
+- Do not include review findings, suspected bugs, risks, approval status, or quality judgments.
+- Do not include unresolved thread information.
+- Do not mention internal bundle files such as `.revkit/`, `CONTEXT.md`, `outputs/`, `latest.patch`, or `line-map.ndjson`.
+- Do not include a file list.
+- Do not write a code walkthrough.
+- Do not include empty categories.
+- Keep it concise: one bullet per meaningful change.
+- Merge tiny related changes into one bullet.
+- Use present tense, for example “Adds”, “Changes”, “Deprecates”, “Removes”, “Fixes”, “Improves”, “Updates”.
+- Use the project’s own terminology when visible in the code, MR/PR description, or `REVIEW.md`.
+- Prefer plain language over implementation jargon unless the implementation detail is the important change.
 
 If the diff is too ambiguous to determine user-facing behavior, summarize the safest observable codebase-level change.
 

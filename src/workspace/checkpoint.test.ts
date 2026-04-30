@@ -99,9 +99,7 @@ ${CHECKPOINT_MARKER_END}`;
   });
 
   it('ignores unrelated HTML comments', () => {
-    const state = buildCheckpointState(
-      targetRef, 'abc', 'def', 'def', null,
-    );
+    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
     const noteBody = `<!-- some-other-tool: data -->
 ${REVIEW_NOTE_MARKER}
 Notes
@@ -152,9 +150,7 @@ describe('checkpoint serializer', () => {
   });
 
   it('encodes to base64url and roundtrips', () => {
-    const state = buildCheckpointState(
-      targetRef, 'abc', 'def', 'def', 'sha256:test',
-    );
+    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', 'sha256:test');
 
     const encoded = encodeCheckpointState(state);
     const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf-8'));
@@ -166,9 +162,7 @@ describe('checkpoint serializer', () => {
 
 describe('buildReviewNoteBody', () => {
   it('builds note with visible content and hidden marker', () => {
-    const state = buildCheckpointState(
-      targetRef, 'abc', 'def', 'def', null,
-    );
+    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
     const body = buildReviewNoteBody('## Review Notes\n\nLooks good.', state);
 
     expect(body).toContain(REVIEW_NOTE_MARKER);
@@ -185,9 +179,7 @@ describe('buildReviewNoteBody', () => {
   });
 
   it('handles empty visible content', () => {
-    const state = buildCheckpointState(
-      targetRef, 'abc', 'def', 'def', null,
-    );
+    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
     const body = buildReviewNoteBody('', state);
 
     expect(body).toContain(REVIEW_NOTE_MARKER);
@@ -197,14 +189,10 @@ describe('buildReviewNoteBody', () => {
 
 describe('updateReviewNoteBody', () => {
   it('preserves existing visible content when newVisibleContent is empty', () => {
-    const oldState = buildCheckpointState(
-      targetRef, 'old-head', 'def', 'def', null,
-    );
+    const oldState = buildCheckpointState(targetRef, 'old-head', 'def', 'def', null);
     const existingBody = buildReviewNoteBody('Existing review text.', oldState);
 
-    const newState = buildCheckpointState(
-      targetRef, 'new-head', 'def', 'def', 'sha256:new',
-    );
+    const newState = buildCheckpointState(targetRef, 'new-head', 'def', 'def', 'sha256:new');
     const updatedBody = updateReviewNoteBody(existingBody, newState, '');
 
     const parsed = parseCheckpointMarker(updatedBody);
@@ -214,14 +202,10 @@ describe('updateReviewNoteBody', () => {
   });
 
   it('replaces visible content when newVisibleContent is provided', () => {
-    const oldState = buildCheckpointState(
-      targetRef, 'old-head', 'def', 'def', null,
-    );
+    const oldState = buildCheckpointState(targetRef, 'old-head', 'def', 'def', null);
     const existingBody = buildReviewNoteBody('Old text.', oldState);
 
-    const newState = buildCheckpointState(
-      targetRef, 'new-head', 'def', 'def', null,
-    );
+    const newState = buildCheckpointState(targetRef, 'new-head', 'def', 'def', null);
     const updatedBody = updateReviewNoteBody(existingBody, newState, 'New visible text.');
 
     const parsed = parseCheckpointMarker(updatedBody);

@@ -27,26 +27,19 @@ export const findingCategorySchema = z.enum([
   'general',
 ]);
 
-export const newFindingSchema = z.object({
-  oldPath: z.string().min(1),
-  newPath: z.string().min(1),
-  oldLine: z.number().int().positive().optional(),
-  newLine: z.number().int().positive().optional(),
-  body: z.string().min(1),
-  severity: severitySchema,
-  category: findingCategorySchema,
-}).refine(
-  (f) => f.oldLine != null || f.newLine != null,
-  { message: 'At least one of oldLine or newLine is required' },
-);
+export const newFindingSchema = z
+  .object({
+    oldPath: z.string().min(1),
+    newPath: z.string().min(1),
+    oldLine: z.number().int().positive().optional(),
+    newLine: z.number().int().positive().optional(),
+    body: z.string().min(1),
+    severity: severitySchema,
+    category: findingCategorySchema,
+  })
+  .refine((f) => f.oldLine != null || f.newLine != null, { message: 'At least one of oldLine or newLine is required' });
 
-export const replyDispositionSchema = z.enum([
-  'already_fixed',
-  'explain',
-  'suggest_fix',
-  'disagree',
-  'escalate',
-]);
+export const replyDispositionSchema = z.enum(['already_fixed', 'explain', 'suggest_fix', 'disagree', 'escalate']);
 
 export const replyDraftSchema = z.object({
   threadId: z.string().min(1),

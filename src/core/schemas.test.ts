@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { configSchema, newFindingSchema, newFindingsArraySchema, replyDraftSchema, severitySchema, findingCategorySchema } from '../core/schemas.js';
+import {
+  configSchema,
+  newFindingSchema,
+  newFindingsArraySchema,
+  replyDraftSchema,
+  severitySchema,
+  findingCategorySchema,
+} from '../core/schemas.js';
 
 describe('configSchema', () => {
   it('validates a complete gitlab config', () => {
@@ -9,10 +16,9 @@ describe('configSchema', () => {
       gitlabToken: 'glpat-abc123',
     });
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.provider).toBe('gitlab');
-      expect(result.data.gitlabUrl).toBe('https://gitlab.example.com');
-    }
+    if (!result.success) return;
+    expect(result.data.provider).toBe('gitlab');
+    expect(result.data.gitlabUrl).toBe('https://gitlab.example.com');
   });
 
   it('rejects invalid provider', () => {
@@ -191,7 +197,18 @@ describe('severitySchema', () => {
 
 describe('findingCategorySchema', () => {
   it('accepts all valid categories', () => {
-    for (const cat of ['security', 'correctness', 'performance', 'testing', 'architecture', 'style', 'documentation', 'naming', 'error-handling', 'general']) {
+    for (const cat of [
+      'security',
+      'correctness',
+      'performance',
+      'testing',
+      'architecture',
+      'style',
+      'documentation',
+      'naming',
+      'error-handling',
+      'general',
+    ]) {
       expect(findingCategorySchema.safeParse(cat).success).toBe(true);
     }
   });

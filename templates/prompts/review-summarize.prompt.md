@@ -1,6 +1,6 @@
 ---
 agent: agent
-description: "Generate an MR/PR description summary from the revkit bundle"
+description: 'Generate an MR/PR description summary from the revkit bundle'
 ---
 
 # MR/PR Summary Generation

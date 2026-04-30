@@ -20,10 +20,12 @@ export async function loadConfig(): Promise<AppConfig> {
   let fileConfig: Record<string, unknown> = {};
   try {
     const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
-    fileConfig = JSON.parse(raw);
+    fileConfig = JSON.parse(raw) as Record<string, unknown>;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw new ConfigError(`Failed to load configuration from ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)}`);
+      throw new ConfigError(
+        `Failed to load configuration from ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -34,12 +36,18 @@ export async function loadConfig(): Promise<AppConfig> {
     ...(process.env.REVKIT_PROVIDER && { provider: process.env.REVKIT_PROVIDER }),
     ...(process.env.REVKIT_GITLAB_URL && { gitlabUrl: process.env.REVKIT_GITLAB_URL }),
     ...(process.env.REVKIT_GITLAB_TOKEN && { gitlabToken: process.env.REVKIT_GITLAB_TOKEN }),
-    ...(process.env.GITLAB_TOKEN && !fileConfig.gitlabToken && !process.env.REVKIT_GITLAB_TOKEN && { gitlabToken: process.env.GITLAB_TOKEN }),
+    ...(process.env.GITLAB_TOKEN &&
+      !fileConfig.gitlabToken &&
+      !process.env.REVKIT_GITLAB_TOKEN && { gitlabToken: process.env.GITLAB_TOKEN }),
     ...(process.env.REVKIT_GITHUB_TOKEN && { githubToken: process.env.REVKIT_GITHUB_TOKEN }),
-    ...(process.env.GITHUB_TOKEN && !fileConfig.githubToken && !process.env.REVKIT_GITHUB_TOKEN && { githubToken: process.env.GITHUB_TOKEN }),
+    ...(process.env.GITHUB_TOKEN &&
+      !fileConfig.githubToken &&
+      !process.env.REVKIT_GITHUB_TOKEN && { githubToken: process.env.GITHUB_TOKEN }),
     ...(process.env.REVKIT_REPO && { defaultRepository: process.env.REVKIT_REPO }),
     ...(process.env.REVKIT_CA_FILE && { caFile: process.env.REVKIT_CA_FILE }),
-    ...(process.env.REVKIT_TLS_VERIFY && { tlsVerify: parseBooleanEnv('REVKIT_TLS_VERIFY', process.env.REVKIT_TLS_VERIFY) }),
+    ...(process.env.REVKIT_TLS_VERIFY && {
+      tlsVerify: parseBooleanEnv('REVKIT_TLS_VERIFY', process.env.REVKIT_TLS_VERIFY),
+    }),
   };
 
   const result = configSchema.safeParse(merged);
@@ -60,10 +68,12 @@ export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
   let existing: Record<string, unknown> = {};
   try {
     const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
-    existing = JSON.parse(raw);
+    existing = JSON.parse(raw) as Record<string, unknown>;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw new ConfigError(`Failed to load existing configuration from ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)}`);
+      throw new ConfigError(
+        `Failed to load existing configuration from ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

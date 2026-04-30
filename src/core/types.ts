@@ -168,12 +168,7 @@ export interface NewFinding {
 /**
  * Reply disposition (internal tracking, not published to GitLab).
  */
-export type ReplyDisposition =
-  | 'already_fixed'
-  | 'explain'
-  | 'suggest_fix'
-  | 'disagree'
-  | 'escalate';
+export type ReplyDisposition = 'already_fixed' | 'explain' | 'suggest_fix' | 'disagree' | 'escalate';
 
 /**
  * A reply to an existing thread, written to outputs/replies.json.

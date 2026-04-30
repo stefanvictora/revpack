@@ -1,7 +1,10 @@
 // Application-level error types.
 
 export class ReviewAssistError extends Error {
-  constructor(message: string, public readonly code: string) {
+  constructor(
+    message: string,
+    public readonly code: string,
+  ) {
     super(message);
     this.name = 'ReviewAssistError';
   }
@@ -19,7 +22,10 @@ export class ProviderError extends ReviewAssistError {
 }
 
 export class AuthenticationError extends ReviewAssistError {
-  constructor(message: string, public readonly provider: string) {
+  constructor(
+    message: string,
+    public readonly provider: string,
+  ) {
     super(message, 'AUTH_ERROR');
     this.name = 'AuthenticationError';
   }

@@ -28,15 +28,7 @@ describe('mergeWithMarkers', () => {
   });
 
   it('replaces content between existing markers', () => {
-    const existing = [
-      'Original description',
-      '',
-      '---',
-      '',
-      MARKER_START,
-      'Old summary v1',
-      MARKER_END,
-    ].join('\n');
+    const existing = ['Original description', '', '---', '', MARKER_START, 'Old summary v1', MARKER_END].join('\n');
 
     const result = mergeWithMarkers(existing, 'Updated summary v2');
 
@@ -49,13 +41,7 @@ describe('mergeWithMarkers', () => {
   });
 
   it('preserves text before and after markers when replacing', () => {
-    const existing = [
-      'Before the markers',
-      MARKER_START,
-      'Old content',
-      MARKER_END,
-      'After the markers',
-    ].join('\n');
+    const existing = ['Before the markers', MARKER_START, 'Old content', MARKER_END, 'After the markers'].join('\n');
 
     const result = mergeWithMarkers(existing, 'New content');
 

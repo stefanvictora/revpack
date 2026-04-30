@@ -36,13 +36,15 @@ export function registerStatusCommand(program: Command): void {
 
           outputJson({
             target,
-            bundle: bundleState ? {
-              preparedAt: bundleState.preparedAt,
-              mode: bundleState.prepare.mode,
-              targetCodeChanged: bundleState.prepare.comparison.targetCodeChangedSinceCheckpoint,
-              threadsChanged: bundleState.prepare.comparison.threadsChangedSinceCheckpoint,
-              publishedActionCount: bundleState.publishedActions.length,
-            } : null,
+            bundle: bundleState
+              ? {
+                  preparedAt: bundleState.preparedAt,
+                  mode: bundleState.prepare.mode,
+                  targetCodeChanged: bundleState.prepare.comparison.targetCodeChangedSinceCheckpoint,
+                  threadsChanged: bundleState.prepare.comparison.threadsChangedSinceCheckpoint,
+                  publishedActionCount: bundleState.publishedActions.length,
+                }
+              : null,
             local: bundleState?.local ?? null,
             pending: {
               replies: pendingReplies,
@@ -112,8 +114,16 @@ export function registerStatusCommand(program: Command): void {
           const mismatch = await orchestrator.checkBranchMismatch();
           if (mismatch) {
             console.log('');
-            console.log(chalk.yellow(`  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but bundle targets "${mismatch.expectedBranch}" (!${mismatch.targetId})`));
-            console.log(chalk.yellow(`    Run \`revkit clean\` to remove the stale bundle, or switch to "${mismatch.expectedBranch}".`));
+            console.log(
+              chalk.yellow(
+                `  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but bundle targets "${mismatch.expectedBranch}" (!${mismatch.targetId})`,
+              ),
+            );
+            console.log(
+              chalk.yellow(
+                `    Run \`revkit clean\` to remove the stale bundle, or switch to "${mismatch.expectedBranch}".`,
+              ),
+            );
           }
 
           // Pending outputs
@@ -137,7 +147,6 @@ export function registerStatusCommand(program: Command): void {
             console.log(chalk.dim('Next:'));
             console.log(chalk.dim('  revkit publish'));
           }
-
         } else {
           // No bundle — fall back to fetching target from provider
           const target = await orchestrator.open(ref, defaultRepo);
@@ -161,18 +170,23 @@ export function registerStatusCommand(program: Command): void {
 
 function getStateColor(state: string): (text: string) => string {
   switch (state) {
-    case 'opened': return chalk.green;
-    case 'merged': return chalk.magenta;
-    case 'closed': return chalk.red;
-    case 'locked': return chalk.yellow;
-    default: return chalk.white;
+    case 'opened':
+      return chalk.green;
+    case 'merged':
+      return chalk.magenta;
+    case 'closed':
+      return chalk.red;
+    case 'locked':
+      return chalk.yellow;
+    default:
+      return chalk.white;
   }
 }
 
 async function countJsonArray(filePath: string): Promise<number> {
   try {
     const raw = await fs.readFile(filePath, 'utf-8');
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.length : 0;
   } catch {
     return 0;
@@ -181,11 +195,16 @@ async function countJsonArray(filePath: string): Promise<number> {
 
 function formatOutputState(state: string): string {
   switch (state) {
-    case 'empty': return chalk.dim('empty');
-    case 'pending': return chalk.yellow('pending');
-    case 'published': return chalk.green('published');
-    case 'modified since publish': return chalk.yellow('modified since publish');
-    default: return state;
+    case 'empty':
+      return chalk.dim('empty');
+    case 'pending':
+      return chalk.yellow('pending');
+    case 'published':
+      return chalk.green('published');
+    case 'modified since publish':
+      return chalk.yellow('modified since publish');
+    default:
+      return state;
   }
 }
 
@@ -197,7 +216,9 @@ function formatDate(iso: string): string {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
     const formatted = d.toLocaleDateString('en-US', {
-      year: 'numeric', month: 'short', day: 'numeric',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
     });
 
     if (diffDays === 0) return `${formatted} (today)`;

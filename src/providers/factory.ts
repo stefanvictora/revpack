@@ -16,6 +16,6 @@ export function createProvider(config: AppConfig): ReviewProvider {
     case 'github':
       throw new ConfigError('GitHub provider is not yet implemented');
     default:
-      throw new ConfigError(`Unknown provider: ${config.provider}`);
+      throw new ConfigError(`Unknown provider: ${config.provider as string}`);
   }
 }

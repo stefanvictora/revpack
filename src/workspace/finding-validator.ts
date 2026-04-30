@@ -54,9 +54,7 @@ export function validateFindings(findings: unknown[], lineMap: LineMap): Validat
 
 function validateFindingPosition(finding: NewFinding, index: number, lineMap: LineMap): ValidationError | null {
   // Find matching file entry
-  const fileEntry = lineMap.files.find(
-    (f) => f.oldPath === finding.oldPath && f.newPath === finding.newPath,
-  );
+  const fileEntry = lineMap.files.find((f) => f.oldPath === finding.oldPath && f.newPath === finding.newPath);
 
   if (!fileEntry) {
     return {
@@ -73,13 +71,9 @@ function validateFindingPosition(finding: NewFinding, index: number, lineMap: Li
 
   if (hasNewLine && !hasOldLine) {
     // Must match an added line
-    const match = fileEntry.lines.find(
-      (l) => l.type === 'added' && l.newLine === finding.newLine,
-    );
+    const match = fileEntry.lines.find((l) => l.type === 'added' && l.newLine === finding.newLine);
     if (!match) {
-      const contextMatch = fileEntry.lines.find(
-        (l) => l.type === 'context' && l.newLine === finding.newLine,
-      );
+      const contextMatch = fileEntry.lines.find((l) => l.type === 'context' && l.newLine === finding.newLine);
       if (contextMatch) {
         return {
           index,
@@ -101,9 +95,7 @@ function validateFindingPosition(finding: NewFinding, index: number, lineMap: Li
     }
   } else if (hasOldLine && !hasNewLine) {
     // Must match a removed line
-    const match = fileEntry.lines.find(
-      (l) => l.type === 'removed' && l.oldLine === finding.oldLine,
-    );
+    const match = fileEntry.lines.find((l) => l.type === 'removed' && l.oldLine === finding.oldLine);
     if (!match) {
       return {
         index,
@@ -136,14 +128,18 @@ function validateFindingPosition(finding: NewFinding, index: number, lineMap: Li
  * Format validation errors into a human-readable report.
  */
 export function formatValidationErrors(errors: ValidationError[]): string {
-  return errors.map((e) => {
-    const location = [
-      e.finding.oldPath ? `oldPath: ${e.finding.oldPath}` : null,
-      e.finding.newPath ? `newPath: ${e.finding.newPath}` : null,
-      e.finding.oldLine != null ? `oldLine: ${e.finding.oldLine}` : null,
-      e.finding.newLine != null ? `newLine: ${e.finding.newLine}` : null,
-    ].filter(Boolean).join('\n  ');
+  return errors
+    .map((e) => {
+      const location = [
+        e.finding.oldPath ? `oldPath: ${e.finding.oldPath}` : null,
+        e.finding.newPath ? `newPath: ${e.finding.newPath}` : null,
+        e.finding.oldLine != null ? `oldLine: ${e.finding.oldLine}` : null,
+        e.finding.newLine != null ? `newLine: ${e.finding.newLine}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n  ');
 
-    return `Invalid finding position in outputs/new-findings.json[${e.index}]:\n\n  ${location}\n\n${e.message}`;
-  }).join('\n\n---\n\n');
+      return `Invalid finding position in outputs/new-findings.json[${e.index}]:\n\n  ${location}\n\n${e.message}`;
+    })
+    .join('\n\n---\n\n');
 }

@@ -7,12 +7,15 @@
     "revkit": "./dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc",
-    "prepare": "tsc",
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
     "dev": "tsx src/cli/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "clean": "rimraf dist"
   },
   "files": [
@@ -20,7 +23,7 @@
     "templates"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13.0"
   },
   "keywords": [
     "code-review",
@@ -32,10 +35,16 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.19.39",
+    "@vitest/eslint-plugin": "^1.6.16",
+    "eslint": "^10.2.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.3",
     "rimraf": "^5.0.5",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.1",
     "vitest": "^1.2.0"
   },
   "dependencies": {

@@ -16,14 +16,12 @@ export class GitHelper {
    * Streams git output to the terminal for progress visibility.
    * Returns the absolute path of the cloned directory.
    */
-  static async clone(
-    cloneUrl: string,
-    branch: string,
-    parentDir: string,
-    dirName?: string,
-  ): Promise<string> {
+  static async clone(cloneUrl: string, branch: string, parentDir: string, dirName?: string): Promise<string> {
     // Derive directory name: <repo>-<branch> for easy multi-branch checkout
-    const repoName = cloneUrl.replace(/\.git$/, '').split('/').pop()!;
+    const repoName = cloneUrl
+      .replace(/\.git$/, '')
+      .split('/')
+      .pop()!;
     const sanitizedBranch = branch.replace(/[/\\:*?"<>|]/g, '-');
     const resolvedName = dirName ?? `${repoName}-${sanitizedBranch}`;
 
@@ -42,8 +40,7 @@ export class GitHelper {
       child.on('error', reject);
     });
 
-    const { resolve: pathResolve } = await import('node:path');
-    return pathResolve(parentDir, resolvedName);
+    return (await import('node:path')).resolve(parentDir, resolvedName);
   }
 
   /** Get current branch name. */

@@ -6,11 +6,7 @@ import { ReviewOrchestrator } from '../orchestration/orchestrator.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
 import { computeContentHash } from '../workspace/thread-digest.js';
-import {
-  buildCheckpointState,
-  buildReviewNoteBody,
-  parseCheckpointMarker,
-} from '../workspace/checkpoint.js';
+import { buildCheckpointState, buildReviewNoteBody, parseCheckpointMarker } from '../workspace/checkpoint.js';
 import type { ReviewProvider } from '../providers/provider.js';
 import type { ReviewTarget, ReviewThread, ReviewDiff, ReviewVersion, ReviewTargetRef } from '../core/types.js';
 
@@ -35,7 +31,6 @@ const mockTarget: ReviewTarget = {
   labels: [],
   diffRefs: { baseSha: 'aaa', headSha: 'bbb', startSha: 'aaa' },
 };
-
 
 const mockThread: ReviewThread = {
   provider: 'gitlab',
@@ -109,15 +104,17 @@ function createReviewNoteThread(noteId: string, noteBody: string): ReviewThread 
     threadId: 'review-note-thread',
     resolved: false,
     resolvable: false,
-    comments: [{
-      id: noteId,
-      body: noteBody,
-      author: 'revkit-bot',
-      createdAt: '2026-04-27T12:00:00Z',
-      updatedAt: '2026-04-27T12:00:00Z',
-      origin: 'bot',
-      system: false,
-    }],
+    comments: [
+      {
+        id: noteId,
+        body: noteBody,
+        author: 'revkit-bot',
+        createdAt: '2026-04-27T12:00:00Z',
+        updatedAt: '2026-04-27T12:00:00Z',
+        origin: 'bot',
+        system: false,
+      },
+    ],
   };
 }
 
@@ -285,8 +282,9 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
-      await expect(orchestrator.prepare(undefined, 'group/project'))
-        .rejects.toThrow('Could not determine which MR to prepare');
+      await expect(orchestrator.prepare(undefined, 'group/project')).rejects.toThrow(
+        'Could not determine which MR to prepare',
+      );
     });
 
     it('returns prepare stats on second run', async () => {
@@ -302,8 +300,7 @@ describe('ReviewOrchestrator', () => {
         ...mockThread,
         threadId: 'thread-new',
       };
-      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([mockThread, newThread]);
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([mockThread, newThread]);
 
       const second = await orchestrator.prepare('!42', 'group/project');
       expect(second.mode).toBe('refresh');
@@ -375,8 +372,11 @@ describe('ReviewOrchestrator', () => {
       };
 
       // Provider returns: system thread, real thread, general comment
-      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([systemThread, mockThread, generalComment]);
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        systemThread,
+        mockThread,
+        generalComment,
+      ]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
@@ -387,7 +387,7 @@ describe('ReviewOrchestrator', () => {
 
       // Thread files: T-001 = mockThread (index 0 after filtering), T-002 = generalComment
       const threadDir = path.join(tmpDir, '.revkit', 'threads');
-      const files = (await fs.readdir(threadDir)).filter(f => f.endsWith('.json')).sort();
+      const files = (await fs.readdir(threadDir)).filter((f) => f.endsWith('.json')).sort();
       expect(files).toEqual(['T-001.json', 'T-002.json']);
 
       const t1 = JSON.parse(await fs.readFile(path.join(threadDir, 'T-001.json'), 'utf-8'));
@@ -448,8 +448,9 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([mockTarget, secondTarget]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.prepare(undefined, undefined))
-        .rejects.toThrow('Multiple open MRs found for branch "feature/test": !42, !99');
+      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow(
+        'Multiple open MRs found for branch "feature/test": !42, !99',
+      );
     });
 
     it('throws when no MR found for the current branch', async () => {
@@ -458,8 +459,9 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.prepare(undefined, undefined))
-        .rejects.toThrow('Could not determine which MR to prepare');
+      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow(
+        'Could not determine which MR to prepare',
+      );
     });
 
     it('falls through to error on detached HEAD', async () => {
@@ -467,8 +469,9 @@ describe('ReviewOrchestrator', () => {
       currentBranchSpy.mockResolvedValue('HEAD');
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.prepare(undefined, undefined))
-        .rejects.toThrow('Could not determine which MR to prepare');
+      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow(
+        'Could not determine which MR to prepare',
+      );
       expect(mockProvider.findTargetByBranch).not.toHaveBeenCalled();
     });
 
@@ -532,8 +535,7 @@ describe('ReviewOrchestrator', () => {
 
       currentBranchSpy.mockResolvedValue('wrong-branch');
 
-      await expect(orchestrator.prepare(undefined, 'group/project'))
-        .rejects.toThrow(/Branch mismatch|does not match/);
+      await expect(orchestrator.prepare(undefined, 'group/project')).rejects.toThrow(/Branch mismatch|does not match/);
     });
 
     it('throws when explicit ref is provided on wrong branch', async () => {
@@ -543,8 +545,7 @@ describe('ReviewOrchestrator', () => {
       currentBranchSpy.mockResolvedValue('wrong-branch');
 
       // Source consistency check prevents prepare even with explicit ref
-      await expect(orchestrator.prepare('!42', 'group/project'))
-        .rejects.toThrow('does not match the MR source branch');
+      await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow('does not match the MR source branch');
     });
   });
 
@@ -563,8 +564,9 @@ describe('ReviewOrchestrator', () => {
       isAncestorSpy.mockResolvedValue(false);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.prepare('!42', 'group/project'))
-        .rejects.toThrow('local checkout is behind the MR head');
+      await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow(
+        'local checkout is behind the MR head',
+      );
     });
 
     it('fails when local is ahead of target head', async () => {
@@ -572,16 +574,16 @@ describe('ReviewOrchestrator', () => {
       isAncestorSpy.mockResolvedValue(true);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.prepare('!42', 'group/project'))
-        .rejects.toThrow('local checkout is ahead of the MR head');
+      await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow(
+        'local checkout is ahead of the MR head',
+      );
     });
 
     it('fails when current branch does not match source branch', async () => {
       currentBranchSpy.mockResolvedValue('develop');
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.prepare('!42', 'group/project'))
-        .rejects.toThrow('does not match the MR source branch');
+      await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow('does not match the MR source branch');
     });
 
     it('failed prepare does not modify existing bundle files', async () => {
@@ -596,8 +598,7 @@ describe('ReviewOrchestrator', () => {
       headShaSpy.mockResolvedValue('wrong-sha');
 
       // Second prepare should fail
-      await expect(orchestrator.prepare('!42', 'group/project'))
-        .rejects.toThrow();
+      await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow();
 
       // Bundle should be unchanged
       const afterBundle = await fs.readFile(bundlePath, 'utf-8');
@@ -617,8 +618,7 @@ describe('ReviewOrchestrator', () => {
       // Make the second prepare fail
       headShaSpy.mockResolvedValue('different-sha');
 
-      await expect(orchestrator.prepare('!42', 'group/project'))
-        .rejects.toThrow();
+      await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow();
 
       // preparedAt should not have changed
       const bundleAfter = await ws.loadBundleState();
@@ -644,8 +644,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
       // First attempt fails
-      await expect(orchestrator.prepare('!42', 'group/project'))
-        .rejects.toThrow('behind the MR head');
+      await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow('behind the MR head');
 
       // After "git pull", HEAD now matches
       headShaSpy.mockResolvedValue('bbb');
@@ -883,8 +882,10 @@ describe('ReviewOrchestrator', () => {
       const noteBody = buildReviewNoteBody('Previous review notes.', checkpointState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });
-      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        mockThread,
+        createReviewNoteThread('note-42', noteBody),
+      ]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
@@ -902,14 +903,14 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('repeated prepare does not advance checkpoint', async () => {
-      const checkpointState = buildCheckpointState(
-        targetRef, 'bbb', 'aaa', 'aaa', null, 'v1',
-      );
+      const checkpointState = buildCheckpointState(targetRef, 'bbb', 'aaa', 'aaa', null, 'v1');
       const noteBody = buildReviewNoteBody('Review notes.', checkpointState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });
-      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        mockThread,
+        createReviewNoteThread('note-42', noteBody),
+      ]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
@@ -930,14 +931,14 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('repeated prepare before publishing keeps target-code-changed status stable', async () => {
-      const checkpointState = buildCheckpointState(
-        targetRef, 'old-head', 'aaa', 'aaa', 'sha256:old-threads', 'v1',
-      );
+      const checkpointState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', 'sha256:old-threads', 'v1');
       const noteBody = buildReviewNoteBody('Review notes.', checkpointState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });
-      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        mockThread,
+        createReviewNoteThread('note-42', noteBody),
+      ]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
@@ -952,14 +953,14 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('incremental patch is generated from checkpoint head to current head', async () => {
-      const checkpointState = buildCheckpointState(
-        targetRef, 'old-head', 'aaa', 'aaa', null, 'v-old',
-      );
+      const checkpointState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null, 'v-old');
       const noteBody = buildReviewNoteBody('Review notes.', checkpointState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });
-      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>)
-        .mockResolvedValue([mockThread, createReviewNoteThread('note-42', noteBody)]);
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        mockThread,
+        createReviewNoteThread('note-42', noteBody),
+      ]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -1005,7 +1006,10 @@ describe('ReviewOrchestrator', () => {
       const oldState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null);
       const existingBody = buildReviewNoteBody('Old review notes.', oldState);
 
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'existing-note-id', body: existingBody });
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'existing-note-id',
+        body: existingBody,
+      });
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         mockThread,
         createReviewNoteThread('existing-note-id', existingBody),
@@ -1048,7 +1052,10 @@ describe('ReviewOrchestrator', () => {
       const oldState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null);
       const existingBody = buildReviewNoteBody('Important review notes to keep.', oldState);
 
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'existing-note-id', body: existingBody });
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'existing-note-id',
+        body: existingBody,
+      });
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         mockThread,
         createReviewNoteThread('existing-note-id', existingBody),
@@ -1090,9 +1097,7 @@ describe('ReviewOrchestrator', () => {
 
   describe('state recovery', () => {
     it('reconstructs checkpoint from managed note after deleting .revkit/', async () => {
-      const checkpointState = buildCheckpointState(
-        targetRef, 'old-head', 'aaa', 'aaa', 'sha256:old-threads', 'v1',
-      );
+      const checkpointState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', 'sha256:old-threads', 'v1');
       const noteBody = buildReviewNoteBody('Review from earlier.', checkpointState);
 
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'note-42', body: noteBody });

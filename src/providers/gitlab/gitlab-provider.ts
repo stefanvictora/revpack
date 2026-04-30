@@ -39,7 +39,7 @@ export class GitLabProvider implements ReviewProvider {
 
   // ─── Target resolution ──────────────────────────────────
 
-  async resolveTarget(ref: string): Promise<ReviewTargetRef> {
+  resolveTarget(ref: string): ReviewTargetRef {
     // Support formats: "!123", "123", "group/project!123", full URL
     // Full URL: extract path between host and /-/merge_requests/
     const urlMatch = ref.match(/https?:\/\/[^/]+\/(.+?)\/-\/merge_requests\/(\d+)/);
@@ -80,27 +80,23 @@ export class GitLabProvider implements ReviewProvider {
 
   async listOpenReviewTargets(repo: string): Promise<ReviewTarget[]> {
     const projectId = encodeURIComponent(repo);
-    const data = await this.request<GitLabMR[]>(
-      `/api/v4/projects/${projectId}/merge_requests`,
-      { params: { state: 'opened', per_page: '50' } },
-    );
+    const data = await this.request<GitLabMR[]>(`/api/v4/projects/${projectId}/merge_requests`, {
+      params: { state: 'opened', per_page: '50' },
+    });
     return data.map((mr) => this.mapMR(repo, mr));
   }
 
   async findTargetByBranch(repo: string, branchName: string): Promise<ReviewTarget[]> {
     const projectId = encodeURIComponent(repo);
-    const data = await this.request<GitLabMR[]>(
-      `/api/v4/projects/${projectId}/merge_requests`,
-      { params: { state: 'opened', source_branch: branchName, per_page: '10' } },
-    );
+    const data = await this.request<GitLabMR[]>(`/api/v4/projects/${projectId}/merge_requests`, {
+      params: { state: 'opened', source_branch: branchName, per_page: '10' },
+    });
     return data.map((mr) => this.mapMR(repo, mr));
   }
 
   async getTargetSnapshot(ref: ReviewTargetRef): Promise<ReviewTarget> {
     const projectId = encodeURIComponent(ref.repository);
-    const mr = await this.request<GitLabMR>(
-      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`,
-    );
+    const mr = await this.request<GitLabMR>(`/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`);
     return this.mapMR(ref.repository, mr);
   }
 
@@ -133,11 +129,7 @@ export class GitLabProvider implements ReviewProvider {
     return versions.map((v) => this.mapVersion(ref, v));
   }
 
-  async getIncrementalDiff(
-    ref: ReviewTargetRef,
-    fromVersion: string,
-    toVersion: string,
-  ): Promise<ReviewDiff[]> {
+  async getIncrementalDiff(ref: ReviewTargetRef, fromVersion: string, toVersion: string): Promise<ReviewDiff[]> {
     const projectId = encodeURIComponent(ref.repository);
     const basePath = `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/versions`;
 
@@ -157,35 +149,33 @@ export class GitLabProvider implements ReviewProvider {
     }
 
     // Return only files whose diff content changed between the two versions
-    return toDiffs
-      .filter((d) => fromByPath.get(d.new_path) !== (d.diff ?? ''))
-      .map((d) => this.mapDiff(d));
+    return toDiffs.filter((d) => fromByPath.get(d.new_path) !== (d.diff ?? '')).map((d) => this.mapDiff(d));
   }
 
   // ─── Write operations ───────────────────────────────────
 
   async postReply(ref: ReviewTargetRef, threadId: string, body: string): Promise<void> {
     const projectId = encodeURIComponent(ref.repository);
-    await this.request(
-      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/discussions/${threadId}/notes`,
-      { method: 'POST', body: { body } },
-    );
+    await this.request(`/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/discussions/${threadId}/notes`, {
+      method: 'POST',
+      body: { body },
+    });
   }
 
   async resolveThread(ref: ReviewTargetRef, threadId: string): Promise<void> {
     const projectId = encodeURIComponent(ref.repository);
-    await this.request(
-      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/discussions/${threadId}`,
-      { method: 'PUT', body: { resolved: true } },
-    );
+    await this.request(`/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/discussions/${threadId}`, {
+      method: 'PUT',
+      body: { resolved: true },
+    });
   }
 
   async updateDescription(ref: ReviewTargetRef, body: string): Promise<void> {
     const projectId = encodeURIComponent(ref.repository);
-    await this.request(
-      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`,
-      { method: 'PUT', body: { description: body } },
-    );
+    await this.request(`/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`, {
+      method: 'PUT',
+      body: { description: body },
+    });
   }
 
   async createThread(ref: ReviewTargetRef, body: string, position?: NewThreadPosition): Promise<string> {
@@ -209,9 +199,7 @@ export class GitLabProvider implements ReviewProvider {
         startSha = latest.start_commit_sha;
       } else {
         // Fallback to MR diff_refs
-        const mr = await this.request<GitLabMR>(
-          `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`,
-        );
+        const mr = await this.request<GitLabMR>(`/api/v4/projects/${projectId}/merge_requests/${ref.targetId}`);
         baseSha = mr.diff_refs?.base_sha;
         headSha = mr.diff_refs?.head_sha;
         startSha = mr.diff_refs?.start_sha;
@@ -230,35 +218,31 @@ export class GitLabProvider implements ReviewProvider {
 
       // Try diff-positioned note with the values the agent provided.
       try {
-        const result = await this.request<GitLabDiscussion>(
-          discussionsUrl,
-          { method: 'POST', body: { body, position: positionPayload } },
-        );
+        const result = await this.request<GitLabDiscussion>(discussionsUrl, {
+          method: 'POST',
+          body: { body, position: positionPayload },
+        });
         return result.id;
       } catch (err) {
         // GitLab rejects with 400 "line_code can't be blank" when the line is
         // outside every diff hunk (e.g. the agent pointed at a line far from
         // any change).  Fall back to a general comment with a file anchor.
-        const isLineCodeError = err instanceof Error
-          && err.message.includes('400')
-          && err.message.toLowerCase().includes('line_code');
+        const isLineCodeError =
+          err instanceof Error && err.message.includes('400') && err.message.toLowerCase().includes('line_code');
         if (!isLineCodeError) throw err;
       }
 
       // Fallback: post as a general MR comment with a file/line anchor.
       const displayPath = position.newPath || position.oldPath;
       const anchor = `📌 \`${displayPath}:${position.newLine ?? position.oldLine}\`\n\n`;
-      const result = await this.request<GitLabDiscussion>(
-        discussionsUrl,
-        { method: 'POST', body: { body: anchor + body } },
-      );
+      const result = await this.request<GitLabDiscussion>(discussionsUrl, {
+        method: 'POST',
+        body: { body: anchor + body },
+      });
       return result.id;
     }
 
-    const result = await this.request<GitLabDiscussion>(
-      discussionsUrl,
-      { method: 'POST', body: { body } },
-    );
+    const result = await this.request<GitLabDiscussion>(discussionsUrl, { method: 'POST', body: { body } });
     return result.id;
   }
 
@@ -284,10 +268,10 @@ export class GitLabProvider implements ReviewProvider {
 
   async updateNote(ref: ReviewTargetRef, noteId: string, body: string): Promise<void> {
     const projectId = encodeURIComponent(ref.repository);
-    await this.request(
-      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/notes/${noteId}`,
-      { method: 'PUT', body: { body } },
-    );
+    await this.request(`/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/notes/${noteId}`, {
+      method: 'PUT',
+      body: { body },
+    });
   }
 
   getCloneUrl(repo: string): string {
@@ -322,10 +306,7 @@ export class GitLabProvider implements ReviewProvider {
       const detail = (cause as NodeJS.ErrnoException).cause
         ? ` (${String((cause as NodeJS.ErrnoException).cause)})`
         : '';
-      throw new ProviderError(
-        `Network error reaching ${url.hostname}${detail}: ${cause.message}`,
-        'gitlab',
-      );
+      throw new ProviderError(`Network error reaching ${url.hostname}${detail}: ${cause.message}`, 'gitlab');
     }
 
     if (res.status === 401 || res.status === 403) {
@@ -334,11 +315,7 @@ export class GitLabProvider implements ReviewProvider {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new ProviderError(
-        `GitLab API error: ${res.status} ${res.statusText} — ${text}`,
-        'gitlab',
-        res.status,
-      );
+      throw new ProviderError(`GitLab API error: ${res.status} ${res.statusText} — ${text}`, 'gitlab', res.status);
     }
 
     return res.json() as Promise<T>;
@@ -370,10 +347,7 @@ export class GitLabProvider implements ReviewProvider {
         const detail = (cause as NodeJS.ErrnoException).cause
           ? ` (${String((cause as NodeJS.ErrnoException).cause)})`
           : '';
-        throw new ProviderError(
-          `Network error reaching ${url.hostname}${detail}: ${cause.message}`,
-          'gitlab',
-        );
+        throw new ProviderError(`Network error reaching ${url.hostname}${detail}: ${cause.message}`, 'gitlab');
       }
 
       if (res.status === 401 || res.status === 403) {
@@ -382,11 +356,7 @@ export class GitLabProvider implements ReviewProvider {
 
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new ProviderError(
-          `GitLab API error: ${res.status} ${res.statusText} — ${text}`,
-          'gitlab',
-          res.status,
-        );
+        throw new ProviderError(`GitLab API error: ${res.status} ${res.statusText} — ${text}`, 'gitlab', res.status);
       }
 
       const data = (await res.json()) as T[];
