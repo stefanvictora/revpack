@@ -487,13 +487,21 @@ export class ReviewOrchestrator {
     const targetRef = await this.resolveRef(undefined, defaultRepo);
     const marker = REVIEW_NOTE_MARKER;
 
-    // Fetch current state for the checkpoint
-    const [target, rawThreads] = await Promise.all([
+    // Fetch current state for the checkpoint (include existing note lookup for consistent filtering)
+    const [target, rawThreads, existingNote] = await Promise.all([
       this.provider.getTargetSnapshot(targetRef),
       this.provider.listAllThreads(targetRef),
+      this.provider.findNoteByMarker(targetRef, marker).catch(() => null),
     ]);
 
-    const allThreads = rawThreads.filter((t) => !t.comments.every((c) => c.system));
+    // Exclude system-only threads AND the review note's own thread
+    // (must match the filtering in prepare() to produce consistent digests)
+    const reviewNoteId = existingNote?.id ?? null;
+    const allThreads = rawThreads.filter(
+      (t) =>
+        !t.comments.every((c) => c.system) &&
+        !(reviewNoteId && t.comments.some((c) => c.id === reviewNoteId)),
+    );
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
     const currentDescriptionDigest = computeContentHash(target.description ?? '');
 
@@ -510,8 +518,6 @@ export class ReviewOrchestrator {
       latestVersionId,
       currentDescriptionDigest,
     );
-
-    const existingNote = await this.provider.findNoteByMarker(targetRef, marker);
 
     if (existingNote) {
       // Update existing managed note
