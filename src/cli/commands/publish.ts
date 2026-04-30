@@ -369,7 +369,7 @@ export function registerPublishCommand(program: Command): void {
   publish.action(() => {
     console.log(chalk.yellow('Please specify what to publish:'));
     console.log('');
-    console.log('  revkit publish all          Publish everything pending');
+    console.log('  revkit publish all           Publish everything pending');
     console.log('  revkit publish findings      Publish findings only');
     console.log('  revkit publish replies       Publish replies only');
     console.log('  revkit publish description   Update MR description');
@@ -385,21 +385,23 @@ export function registerPublishCommand(program: Command): void {
       try {
         const parentOpts = cmd.parent?.opts();
         let total = 0;
-        try {
-          total += await publishReviewCmd({});
-        } catch {
-          /* no review */
-        }
+        const replyCount = await publishReplies({ noRefresh: true });
+        total += replyCount;
+        const findingCount = await publishFindings({ noRefresh: true });
+        total += findingCount;
+
         try {
           total += await publishDescription({ fromSummary: true });
         } catch {
           /* no description */
         }
 
-        const replyCount = await publishReplies({ noRefresh: true });
-        total += replyCount;
-        const findingCount = await publishFindings({ noRefresh: true });
-        total += findingCount;
+        /* Publish review and advance checkpoint */
+        try {
+          total += await publishReviewCmd({});
+        } catch {
+          /* no review */
+        }
 
         if (total === 0) {
           console.log(chalk.dim('Nothing to publish.'));

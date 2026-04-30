@@ -129,10 +129,10 @@ export function registerStatusCommand(program: Command): void {
           // Pending outputs
           console.log('');
           console.log(chalk.dim('─ Pending outputs ─'));
-          console.log(`  ${chalk.dim('replies:')}       ${pendingReplies > 0 ? pendingReplies : 'none'}`);
-          console.log(`  ${chalk.dim('findings:')}      ${pendingFindings > 0 ? pendingFindings : 'none'}`);
-          console.log(`  ${chalk.dim('summary:')}       ${formatOutputState(summaryState)}`);
-          console.log(`  ${chalk.dim('review:')}        ${formatOutputState(reviewState)}`);
+          console.log(`  ${chalk.dim('replies:')}  ${pendingReplies > 0 ? pendingReplies : 'none'}`);
+          console.log(`  ${chalk.dim('findings:')} ${pendingFindings > 0 ? pendingFindings : 'none'}`);
+          console.log(`  ${chalk.dim('summary:')}  ${formatOutputState(summaryState)}`);
+          console.log(`  ${chalk.dim('review:')}   ${formatOutputState(reviewState)}`);
 
           // Published actions
           if (bundleState.publishedActions.length > 0) {
