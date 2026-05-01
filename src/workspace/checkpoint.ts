@@ -143,7 +143,7 @@ export function buildReviewNoteBody(visibleContent: string, state: CheckpointSta
 
   if (visibleContent.trim()) {
     parts.push(visibleContent.trim());
-    parts.push(REVIEW_NOTE_FOOTER.trimStart());
+    parts.push(REVIEW_NOTE_FOOTER);
   }
 
   parts.push('');
