@@ -13,6 +13,7 @@ export async function createOrchestrator(): Promise<ReviewOrchestrator> {
   return new ReviewOrchestrator({
     provider,
     workingDir: process.cwd(),
+    runtimeConfig: config,
   });
 }
 
@@ -25,6 +26,7 @@ export async function createOrchestratorAt(workingDir: string): Promise<ReviewOr
   return new ReviewOrchestrator({
     provider,
     workingDir,
+    runtimeConfig: config,
   });
 }
 

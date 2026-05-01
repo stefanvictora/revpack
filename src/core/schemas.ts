@@ -51,16 +51,38 @@ export const replyDraftSchema = z.object({
 export const newFindingsArraySchema = z.array(newFindingSchema);
 export const repliesArraySchema = z.array(replyDraftSchema);
 
-export const configSchema = z.object({
+// ─── Token Source Schema ─────────────────────────────────
+
+export const tokenSourceSchema = z.object({
+  type: z.literal('env'),
+  name: z.string().min(1),
+});
+
+// ─── Profile Schema ──────────────────────────────────────
+
+export const profileSchema = z.object({
   provider: providerTypeSchema,
+  remoteUrlPatterns: z.array(z.string()).optional(),
   gitlabUrl: z.string().url().optional(),
-  gitlabToken: z.string().min(1).optional(),
-  githubToken: z.string().min(1).optional(),
+  gitlabTokenSource: tokenSourceSchema.optional(),
+  githubTokenSource: tokenSourceSchema.optional(),
   defaultRepository: z.string().optional(),
-  /** Path to a PEM-encoded CA certificate file for self-signed/internal TLS. */
   caFile: z.string().optional(),
-  /** Set to false to disable TLS certificate verification (not recommended). */
+  tlsVerify: z.boolean().optional(),
+});
+
+// ─── App Config Schema ───────────────────────────────────
+
+export const configSchema = z.object({
+  defaultProfile: z.string().optional(),
+  profiles: z.record(z.string(), profileSchema).optional(),
+  provider: providerTypeSchema.optional(),
+  gitlabUrl: z.string().url().optional(),
+  gitlabTokenSource: tokenSourceSchema.optional(),
+  githubTokenSource: tokenSourceSchema.optional(),
+  defaultRepository: z.string().optional(),
+  caFile: z.string().optional(),
   tlsVerify: z.boolean().default(true),
 });
 
-export type AppConfig = z.infer<typeof configSchema>;
+export type AppConfigSchema = z.infer<typeof configSchema>;

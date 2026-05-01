@@ -1,9 +1,9 @@
 import type { ReviewProvider } from './provider.js';
 import { GitLabProvider } from './gitlab/gitlab-provider.js';
-import type { AppConfig } from '../core/schemas.js';
+import type { ResolvedAppConfig } from '../config/types.js';
 import { ConfigError } from '../core/errors.js';
 
-export function createProvider(config: AppConfig): ReviewProvider {
+export function createProvider(config: ResolvedAppConfig): ReviewProvider {
   switch (config.provider) {
     case 'gitlab': {
       if (!config.gitlabUrl) throw new ConfigError('gitlabUrl is required for GitLab provider');

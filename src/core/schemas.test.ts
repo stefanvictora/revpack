@@ -9,11 +9,11 @@ import {
 } from '../core/schemas.js';
 
 describe('configSchema', () => {
-  it('validates a complete gitlab config', () => {
+  it('validates a complete gitlab config with token source', () => {
     const result = configSchema.safeParse({
       provider: 'gitlab',
       gitlabUrl: 'https://gitlab.example.com',
-      gitlabToken: 'glpat-abc123',
+      gitlabTokenSource: { type: 'env', name: 'GITLAB_TOKEN' },
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -41,6 +41,26 @@ describe('configSchema', () => {
     const result = configSchema.safeParse({
       provider: 'gitlab',
     });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates config with profiles', () => {
+    const result = configSchema.safeParse({
+      defaultProfile: 'dev',
+      profiles: {
+        dev: {
+          provider: 'gitlab',
+          remoteUrlPatterns: ['gitlab.dev.local'],
+          gitlabUrl: 'https://gitlab.dev.local',
+          gitlabTokenSource: { type: 'env', name: 'DEV_TOKEN' },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('allows empty config', () => {
+    const result = configSchema.safeParse({});
     expect(result.success).toBe(true);
   });
 });
