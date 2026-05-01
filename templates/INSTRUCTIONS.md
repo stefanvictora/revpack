@@ -60,7 +60,7 @@ Only write a reply when the reply adds useful information for another human revi
 Write a reply only when one of these is true:
 
 - the thread asks a concrete question and you can answer it
-- the thread reports a concrete issue and you can confirm it is fixed
+- the thread reports a concrete issue, no human has already confirmed it as fixed/addressed, and you can confirm it is fixed
 - the thread reports a concrete issue and you can provide a fix suggestion
 - the thread reports a concrete issue and you disagree with a clear technical reason
 - the thread has follow-up discussion that needs clarification
@@ -74,6 +74,8 @@ Do not reply to:
 - comments without a concrete code concern
 - general notes that do not require an answer
 - threads where your only response would be “acknowledged”, “no action needed”, “nothing to do”, or “no code change suggested”
+- threads where a human already confirmed the issue was fixed/addressed and the current code agrees
+    - Human comments such as “fixed”, “done”, “removed”, “addressed”, “changed”, “resolved”, or equivalent wording count as human confirmation.
 
 For those cases, omit the thread from `outputs/replies.json`.
 

@@ -441,12 +441,18 @@ export class WorkspaceManager {
     const generalComments = threads.filter((t) => !t.resolvable && !t.comments.every((c) => c.system));
 
     // Strip the bot-published marker and find the first meaningful line of a comment body.
-    const cleanSnippet = (body: string, maxLen: number): string =>
-      body
-        .replace(/^<!-- revkit -->\n?/, '')
-        .split('\n')
-        .find((l) => l.trim()) // first non-empty line after stripping the marker
-        ?.slice(0, maxLen) ?? '';
+    // For revkit findings, skip the severity/category metadata line (e.g. "_🔴 High_ | _security_").
+    const cleanSnippet = (body: string, maxLen: number): string => {
+      const lines = body.replace(/^<!-- revkit -->\n?/, '').split('\n');
+      const meaningful = lines.find((l) => {
+        const trimmed = l.trim();
+        if (!trimmed) return false;
+        // Skip lines that are only severity/category badges like "_🔴 High_ | _security_"
+        if (/^_[^_]+_(\s*\|\s*_[^_]+_)*\s*$/.test(trimmed)) return false;
+        return true;
+      });
+      return meaningful?.slice(0, maxLen) ?? '';
+    };
 
     // Derive SELF/REPLIED from comment origins (marker-based)
     const selfThreadIds = new Set<string>();
@@ -607,8 +613,9 @@ export class WorkspaceManager {
         for (const t of [...changedUnresolved, ...changedResolved]) {
           const prefix = threadIndex.get(t.threadId) ?? '?';
           const status = t.resolved ? 'resolved' : 'unresolved';
+          const lineNum = t.position?.newLine ?? t.position?.oldLine;
           const file = t.position?.filePath
-            ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
+            ? `\`${t.position.filePath}\`${lineNum ? `:${lineNum}` : ''}`
             : 'general';
           const firstComment = t.comments.find((c) => !c.system);
           const snippet = cleanSnippet(firstComment?.body ?? '', 80);
@@ -635,8 +642,9 @@ export class WorkspaceManager {
 
         const firstComment = t.comments.find((c) => !c.system);
         const author = firstComment?.author ?? '?';
+        const lineNum = t.position?.newLine ?? t.position?.oldLine;
         const file = t.position?.filePath
-          ? `\`${t.position.filePath}\`${t.position.newLine ? `:${t.position.newLine}` : ''}`
+          ? `\`${t.position.filePath}\`${lineNum ? `:${lineNum}` : ''}`
           : 'general';
         const snippet = cleanSnippet(firstComment?.body ?? '', 80);
         lines.push(`| ${prefix} | ${flagStr} | @${author} | ${file} | ${snippet} |`);
@@ -1113,11 +1121,11 @@ export class WorkspaceManager {
         lines.push('> ℹ️ **System event** — ' + comment.createdAt);
         lines.push('>');
         for (const bodyLine of comment.body.split('\n')) {
-          lines.push(`> ${bodyLine}`);
+          lines.push(`> ${comment.author} ${bodyLine}`);
         }
         lines.push('>');
         lines.push(
-          '> *This system event may indicate that the MR author pushed changes related to this thread. Check the current source code to verify.*',
+          '> *This is informational context only. It may mean the author addressed the thread, but it does not require a reply. Use the current source code when deciding whether the thread is still actionable.*',
         );
         lines.push('');
       } else {
