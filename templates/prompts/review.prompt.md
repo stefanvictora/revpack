@@ -7,33 +7,37 @@ description: 'Full code review: address threads, find issues, suggest fixes'
 
 A review workspace has been prepared in `.revkit/`.
 
-Your role is to review and provide feedback. Do **not** modify source files directly.
+Your role is to review the MR/PR and write structured review outputs. Do **not** modify source files or project files outside `.revkit/outputs/`.
 
 ## Read first
 
-1. `.revkit/CONTEXT.md` — MR-specific metadata, changed files, existing threads, previous actions, and output locations.
-2. `.revkit/INSTRUCTIONS.md` — stable review workflow, output schemas, finding quality bar, positional anchor rules, and formatting rules.
+1. `.revkit/CONTEXT.md` — MR/PR-specific metadata, bundle contents, changed files, existing threads, and output locations.
+2. `.revkit/INSTRUCTIONS.md` — authoritative review workflow, output schemas, finding quality bar, diff navigation rules, positional anchor rules, and formatting rules.
 3. `REVIEW.md`, if present — project-specific review priorities and conventions.
 
 ## Work to perform
 
-1. Address existing review threads where a reply is useful.
-2. Review the changed behavior for additional concrete issues.
-3. Write all required output files.
-4. Present a concise summary table to the developer.
+1. Re-check existing unresolved review threads against the current code and diff.
+2. Reply to existing threads only when a reply is useful according to `.revkit/INSTRUCTIONS.md`.
+3. Mark own revkit-created threads for resolution when the issue is fixed.
+4. Review the changed behavior for additional concrete issues.
+5. Write all required output files.
+6. Present a concise summary table to the developer.
 
-## Non-negotiables
+## Critical rules
 
 - Do **not** modify source files.
-- Use `.revkit/diffs/line-map.ndjson` as the source of truth for positional finding anchors.
+- Do **not** publish anything unless the developer explicitly asks you to publish.
 - Prefer fewer, high-confidence findings over many speculative findings.
-- Do not duplicate existing unresolved threads or previous actions.
-- Always write:
-  - `outputs/replies.json`
-  - `outputs/new-findings.json`
-  - `outputs/summary.md`
-  - `outputs/review.md`
+- Do not duplicate existing unresolved threads.
+- Use patch files to understand the code change.
+- Use `.revkit/diffs/line-map.ndjson` as the source of truth for positional finding anchors.
+- Do not calculate old or new line numbers manually from patches or checked-out files.
+- Always write or update:
+    - `.revkit/outputs/replies.json`
+    - `.revkit/outputs/new-findings.json`
+    - `.revkit/outputs/summary.md`
+    - `.revkit/outputs/review.md`
 - Use `[]` for empty JSON outputs.
-- Do not publish anything unless the developer explicitly asks you to publish.
 
-Follow `.revkit/INSTRUCTIONS.md` for all schemas, formatting rules, quality rules, and GitLab positional anchor rules.
+For all details, follow `.revkit/INSTRUCTIONS.md`. If this prompt and `.revkit/INSTRUCTIONS.md` disagree, `.revkit/INSTRUCTIONS.md` wins.
