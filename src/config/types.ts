@@ -1,90 +1,72 @@
 // Configuration types for revkit.
-// Separates file config, runtime config, and display config.
+// Profile-only config model. No flat config, no default profile, no default repository.
 
-// ─── Token Source ────────────────────────────────────────
+// ─── Provider Type ───────────────────────────────────────
 
-export type TokenSource = {
-  type: 'env';
-  name: string;
-};
+export type ProviderType = 'gitlab' | 'github';
 
 // ─── Profile Config ──────────────────────────────────────
 
 export interface RevkitProfile {
-  provider: 'gitlab' | 'github';
-
-  /**
-   * Used to match this profile to a local repository.
-   * Examples:
-   * - https://gitlab.customer-a.local/
-   * - git@gitlab.customer-a.local:
-   * - customer-a.local
-   */
-  remoteUrlPatterns?: string[];
-
-  gitlabUrl?: string;
-  gitlabTokenSource?: TokenSource;
-
-  githubTokenSource?: TokenSource;
-
-  defaultRepository?: string;
-
+  provider: ProviderType;
+  url?: string;
+  tokenEnv?: string;
+  remotePatterns?: string[];
   caFile?: string;
   tlsVerify?: boolean;
 }
 
-// ─── App Config (file config) ────────────────────────────
+// ─── File Config ─────────────────────────────────────────
 
-export interface AppConfig {
-  defaultProfile?: string;
+export interface RevkitConfig {
   profiles?: Record<string, RevkitProfile>;
-
-  // Flat fallback (single-profile use)
-  provider?: 'gitlab' | 'github';
-
-  gitlabUrl?: string;
-  gitlabTokenSource?: TokenSource;
-
-  githubTokenSource?: TokenSource;
-
-  defaultRepository?: string;
-  caFile?: string;
-  tlsVerify?: boolean;
 }
 
-// ─── Runtime Config (resolved secrets) ───────────────────
+// ─── Runtime Config (resolved at runtime) ────────────────
 
 export interface ResolvedAppConfig {
-  provider: 'gitlab' | 'github';
-
-  gitlabUrl?: string;
-  gitlabToken?: string;
-
-  githubToken?: string;
-
-  defaultRepository?: string;
+  provider: ProviderType;
+  url?: string;
+  token?: string;
   caFile?: string;
   tlsVerify: boolean;
 }
 
-// ─── Display Config (safe for output) ────────────────────
+// ─── Profile Resolution Result ───────────────────────────
 
-export interface DisplayTokenInfo {
-  type: 'env';
-  name: string;
-  resolved: boolean;
+export interface ProfileResolutionResult {
+  profile: RevkitProfile;
+  profileName: string;
+  matchedBy: 'explicit' | 'remote-match';
+  matchedPattern?: string;
+  matchSource?: 'url-derived' | 'remote-pattern';
 }
 
+// ─── Display Config (safe for output) ────────────────────
+
 export interface DisplayAppConfig {
-  provider?: 'gitlab' | 'github';
-  activeProfile?: string;
-
-  gitlabUrl?: string;
-  gitlabTokenSource?: DisplayTokenInfo;
-
-  githubTokenSource?: DisplayTokenInfo;
-
-  defaultRepository?: string;
+  profileName: string;
+  matchedBy: 'explicit' | 'remote-match';
+  matchedPattern?: string;
+  matchSource?: 'url-derived' | 'remote-pattern';
+  provider: ProviderType;
+  url?: string;
+  tokenEnv?: string;
+  tokenResolved: boolean;
   caFile?: string;
-  tlsVerify?: boolean;
+  tlsVerify: boolean;
+}
+
+// ─── Doctor Result ───────────────────────────────────────
+
+export interface DoctorCheck {
+  ok: boolean;
+  label: string;
+  detail?: string;
+}
+
+export interface DoctorResult {
+  checks: DoctorCheck[];
+  profileName?: string;
+  nextSteps: string[];
 }

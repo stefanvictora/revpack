@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import chalk from 'chalk';
-import { createOrchestrator, createOrchestratorAt, getDefaultRepo, handleError } from '../helpers.js';
+import { createOrchestrator, createOrchestratorAt, getRepoFromGit, handleError } from '../helpers.js';
 
 export function registerCheckoutCommand(program: Command): void {
   program
@@ -17,7 +17,7 @@ export function registerCheckoutCommand(program: Command): void {
     .action(async (ref: string, opts: { prepare?: boolean; repo?: string }) => {
       try {
         let orchestrator = await createOrchestrator();
-        const defaultRepo = opts.repo ?? (await getDefaultRepo());
+        const defaultRepo = opts.repo ?? (await getRepoFromGit());
 
         // Switch branch (or clone if no git repo)
         const result = await orchestrator.checkout(ref, defaultRepo);

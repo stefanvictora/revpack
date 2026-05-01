@@ -6,9 +6,9 @@ import { ConfigError } from '../core/errors.js';
 export function createProvider(config: ResolvedAppConfig): ReviewProvider {
   switch (config.provider) {
     case 'gitlab': {
-      if (!config.gitlabUrl) throw new ConfigError('gitlabUrl is required for GitLab provider');
-      if (!config.gitlabToken) throw new ConfigError('gitlabToken is required for GitLab provider');
-      return new GitLabProvider(config.gitlabUrl, config.gitlabToken, {
+      if (!config.url) throw new ConfigError('url is required for GitLab provider');
+      if (!config.token) throw new ConfigError('token is required for GitLab provider (set the configured tokenEnv)');
+      return new GitLabProvider(config.url, config.token, {
         caFile: config.caFile,
         tlsVerify: config.tlsVerify,
       });

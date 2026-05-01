@@ -684,16 +684,31 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), []);
 
       // First save a bundle state
-      const bundleState = manager.buildBundleState(makeTarget(), [], [], new Map(), {
-        mode: 'fresh',
-        checkpoint: null,
-        current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
-        comparison: {
-          targetCodeChangedSinceCheckpoint: null,
-          threadsChangedSinceCheckpoint: null,
-          descriptionChangedSinceCheckpoint: null,
+      const bundleState = manager.buildBundleState(
+        makeTarget(),
+        [],
+        [],
+        new Map(),
+        {
+          mode: 'fresh',
+          checkpoint: null,
+          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: null,
+            threadsChangedSinceCheckpoint: null,
+            descriptionChangedSinceCheckpoint: null,
+          },
         },
-      });
+        {
+          repositoryRoot: tmpDir,
+          branch: 'feature/test',
+          headSha: 'bbb',
+          matchesTargetSourceBranch: true,
+          matchesTargetHead: true,
+          workingTreeClean: true,
+          checkedAt: '2026-01-01T00:00:00Z',
+        },
+      );
       await manager.saveBundleState(bundleState);
 
       const appended = await manager.appendPublishedAction({
@@ -712,16 +727,31 @@ describe('WorkspaceManager', () => {
     it('accumulates multiple actions', async () => {
       await createBundle(manager, makeTarget(), []);
 
-      const bundleState = manager.buildBundleState(makeTarget(), [], [], new Map(), {
-        mode: 'fresh',
-        checkpoint: null,
-        current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
-        comparison: {
-          targetCodeChangedSinceCheckpoint: null,
-          threadsChangedSinceCheckpoint: null,
-          descriptionChangedSinceCheckpoint: null,
+      const bundleState = manager.buildBundleState(
+        makeTarget(),
+        [],
+        [],
+        new Map(),
+        {
+          mode: 'fresh',
+          checkpoint: null,
+          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: null,
+            threadsChangedSinceCheckpoint: null,
+            descriptionChangedSinceCheckpoint: null,
+          },
         },
-      });
+        {
+          repositoryRoot: tmpDir,
+          branch: 'feature/test',
+          headSha: 'bbb',
+          matchesTargetSourceBranch: true,
+          matchesTargetHead: true,
+          workingTreeClean: true,
+          checkedAt: '2026-01-01T00:00:00Z',
+        },
+      );
       await manager.saveBundleState(bundleState);
 
       await manager.appendPublishedAction({

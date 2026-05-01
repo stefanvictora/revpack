@@ -652,7 +652,7 @@ export class WorkspaceManager {
         const prefix = threadIndex.get(t.threadId) ?? '?';
         const firstComment = t.comments.find((c) => !c.system);
         const snippet = cleanSnippet(firstComment?.body ?? '', 120);
-        lines.push(`- **${prefix}** (@${firstComment?.author ?? '?'}): ${snippet}`);;
+        lines.push(`- **${prefix}** (@${firstComment?.author ?? '?'}): ${snippet}`);
       }
       lines.push('');
     }

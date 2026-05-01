@@ -9,50 +9,69 @@ import {
 } from '../core/schemas.js';
 
 describe('configSchema', () => {
-  it('validates a complete gitlab config with token source', () => {
+  it('validates a profile-based config', () => {
     const result = configSchema.safeParse({
-      provider: 'gitlab',
-      gitlabUrl: 'https://gitlab.example.com',
-      gitlabTokenSource: { type: 'env', name: 'GITLAB_TOKEN' },
+      profiles: {
+        work: {
+          provider: 'gitlab',
+          url: 'https://gitlab.example.com',
+          tokenEnv: 'GITLAB_TOKEN',
+          remotePatterns: ['gitlab.example.com'],
+        },
+      },
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
-    expect(result.data.provider).toBe('gitlab');
-    expect(result.data.gitlabUrl).toBe('https://gitlab.example.com');
+    expect(result.data.profiles?.work?.provider).toBe('gitlab');
+    expect(result.data.profiles?.work?.url).toBe('https://gitlab.example.com');
   });
 
-  it('rejects invalid provider', () => {
+  it('rejects invalid provider in profile', () => {
     const result = configSchema.safeParse({
-      provider: 'bitbucket',
-      gitlabUrl: 'https://gitlab.example.com',
+      profiles: {
+        bad: {
+          provider: 'bitbucket',
+          url: 'https://example.com',
+        },
+      },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects invalid gitlabUrl', () => {
+  it('rejects invalid url in profile', () => {
     const result = configSchema.safeParse({
-      provider: 'gitlab',
-      gitlabUrl: 'not-a-url',
+      profiles: {
+        bad: {
+          provider: 'gitlab',
+          url: 'not-a-url',
+        },
+      },
     });
     expect(result.success).toBe(false);
   });
 
-  it('allows minimal config', () => {
+  it('allows minimal profile (provider only)', () => {
     const result = configSchema.safeParse({
-      provider: 'gitlab',
+      profiles: {
+        min: { provider: 'gitlab' },
+      },
     });
     expect(result.success).toBe(true);
   });
 
-  it('validates config with profiles', () => {
+  it('validates multiple profiles', () => {
     const result = configSchema.safeParse({
-      defaultProfile: 'dev',
       profiles: {
-        dev: {
+        work: {
           provider: 'gitlab',
-          remoteUrlPatterns: ['gitlab.dev.local'],
-          gitlabUrl: 'https://gitlab.dev.local',
-          gitlabTokenSource: { type: 'env', name: 'DEV_TOKEN' },
+          url: 'https://gitlab.work.com',
+          remotePatterns: ['gitlab.work.com'],
+          tokenEnv: 'WORK_TOKEN',
+        },
+        oss: {
+          provider: 'github',
+          tokenEnv: 'GH_TOKEN',
+          remotePatterns: ['github.com'],
         },
       },
     });
@@ -61,6 +80,20 @@ describe('configSchema', () => {
 
   it('allows empty config', () => {
     const result = configSchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  it('validates profile with caFile and tlsVerify', () => {
+    const result = configSchema.safeParse({
+      profiles: {
+        secure: {
+          provider: 'gitlab',
+          url: 'https://gitlab.internal.com',
+          caFile: '/etc/ssl/custom-ca.pem',
+          tlsVerify: false,
+        },
+      },
+    });
     expect(result.success).toBe(true);
   });
 });

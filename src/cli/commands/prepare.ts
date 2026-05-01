@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import chalk from 'chalk';
-import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../helpers.js';
+import { createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
 
 export function registerPrepareCommand(program: Command): void {
   program
@@ -12,7 +12,7 @@ export function registerPrepareCommand(program: Command): void {
     .action(async (ref: string | undefined, opts: { json?: boolean; fresh?: boolean; discardOutputs?: boolean }) => {
       try {
         const orchestrator = await createOrchestrator();
-        const defaultRepo = await getDefaultRepo();
+        const defaultRepo = await getRepoFromGit();
 
         const result = await orchestrator.prepare(ref, defaultRepo, {
           fresh: opts.fresh,

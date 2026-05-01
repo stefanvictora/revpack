@@ -516,9 +516,7 @@ export class ReviewOrchestrator {
     // (must match the filtering in prepare() to produce consistent digests)
     const reviewNoteId = existingNote?.id ?? null;
     const allThreads = rawThreads.filter(
-      (t) =>
-        !t.comments.every((c) => c.system) &&
-        !(reviewNoteId && t.comments.some((c) => c.id === reviewNoteId)),
+      (t) => !t.comments.every((c) => c.system) && !(reviewNoteId && t.comments.some((c) => c.id === reviewNoteId)),
     );
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
     const currentDescriptionDigest = computeContentHash(target.description ?? '');

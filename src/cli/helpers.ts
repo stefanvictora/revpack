@@ -48,16 +48,6 @@ export async function createOrchestratorAt(workingDir: string): Promise<ReviewOr
 }
 
 /**
- * Get default repository from config or git.
- */
-export async function getDefaultRepo(): Promise<string | undefined> {
-  const cwd = process.cwd();
-  const remoteUrls = await getRemoteUrls(cwd);
-  const config = await loadRuntimeConfig(remoteUrls);
-  return config.defaultRepository;
-}
-
-/**
  * Standard error handler for CLI commands.
  */
 export function handleError(err: unknown): never {
@@ -89,4 +79,33 @@ export function handleError(err: unknown): never {
  */
 export function outputJson(data: unknown): void {
   console.log(JSON.stringify(data, null, 2));
+}
+
+/**
+ * Derive the repository slug (group/project) from git remotes in the cwd.
+ * Parses the path from the first remote URL.
+ */
+export async function getRepoFromGit(): Promise<string | undefined> {
+  try {
+    const cwd = process.cwd();
+    const git = new GitHelper(cwd);
+    const urls = await git.listRemoteUrls();
+    if (urls.length === 0) return undefined;
+
+    const url = urls[0];
+    // SSH: git@host:group/project.git
+    const sshMatch = url.match(/:([^/].*?)(?:\.git)?$/);
+    if (sshMatch) return sshMatch[1];
+
+    // HTTPS: https://host/group/project.git
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname.replace(/^\//, '').replace(/\.git$/, '');
+      return path || undefined;
+    } catch {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
 }

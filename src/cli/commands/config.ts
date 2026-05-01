@@ -1,257 +1,208 @@
 import type { Command } from 'commander';
 import chalk from 'chalk';
 import {
-  loadDisplayConfig,
   loadFileConfig,
-  saveConfig,
-  saveRawConfig,
-  unsetConfig,
+  loadDisplayConfig,
+  saveFileConfig,
+  runDoctor,
+  resolveProfile,
   CONFIG_FILE,
 } from '../../config/index.js';
-import type { RevkitProfile, TokenSource } from '../../config/types.js';
+import type { RevkitConfig, RevkitProfile } from '../../config/types.js';
+import { CONFIG_KEYS, VALID_CONFIG_KEYS } from '../../config/keys.js';
+import { ConfigError } from '../../core/errors.js';
 import { GitHelper } from '../../workspace/git-helper.js';
 import { handleError, outputJson } from '../helpers.js';
 
 export function registerConfigCommand(program: Command): void {
-  const configCmd = program.command('config').description('View or update configuration');
+  const configCmd = program
+    .command('config')
+    .description('View or update configuration')
+    .action(async () => {
+      // `revkit config` behaves like `revkit config show`
+      await showAction({ json: false, sources: false });
+    });
 
   // ─── config show ─────────────────────────────────────────
 
   configCmd
     .command('show')
-    .description('Show current configuration (resolved via git remote or --profile)')
+    .description('Show resolved configuration for the current directory')
+    .option('--profile <name>', 'Show a specific profile')
     .option('--json', 'Output as JSON')
-    .option('--profile <name>', 'Show configuration for a specific profile')
-    .action(async (opts: { json?: boolean; profile?: string }) => {
-      try {
-        const remoteUrls = await getRemoteUrlsSafe();
-        const display = await loadDisplayConfig(remoteUrls, opts.profile);
-
-        if (opts.json) {
-          outputJson(display);
-          return;
-        }
-
-        console.log(chalk.bold('Current configuration:'));
-        console.log('');
-        if (display.activeProfile) {
-          console.log(`  ${chalk.dim('Profile:')}      ${chalk.cyan(display.activeProfile)}`);
-        }
-        console.log(`  ${chalk.dim('Provider:')}     ${display.provider ?? chalk.dim('(not set)')}`);
-        console.log(`  ${chalk.dim('GitLab URL:')}   ${display.gitlabUrl ?? chalk.dim('(not set)')}`);
-        console.log(
-          `  ${chalk.dim('GitLab token:')} ${formatTokenDisplay(display.gitlabTokenSource)}`,
-        );
-        console.log(
-          `  ${chalk.dim('GitHub token:')} ${formatTokenDisplay(display.githubTokenSource)}`,
-        );
-        console.log(
-          `  ${chalk.dim('Default repo:')} ${display.defaultRepository ?? chalk.dim('(not set)')}`,
-        );
-        console.log(`  ${chalk.dim('CA file:')}      ${display.caFile ?? chalk.dim('(not set)')}`);
-        console.log(
-          `  ${chalk.dim('TLS verify:')}   ${display.tlsVerify ? chalk.green('true') : chalk.yellow('false')}`,
-        );
-        console.log('');
-        console.log(chalk.dim(`Config file: ${CONFIG_FILE}`));
-      } catch (err) {
-        handleError(err);
-      }
+    .option('--sources', 'Show where each value comes from')
+    .action(async (opts: { profile?: string; json?: boolean; sources?: boolean }) => {
+      await showAction(opts);
     });
 
-  // ─── config profiles ────────────────────────────────────
+  // ─── config setup ────────────────────────────────────────
 
   configCmd
-    .command('profiles')
-    .description('List all configured profiles')
-    .option('--json', 'Output as JSON')
-    .action(async (opts: { json?: boolean }) => {
+    .command('setup')
+    .description('Interactive profile setup')
+    .action(async () => {
       try {
-        const fileConfig = await loadFileConfig();
-        const profiles = fileConfig.profiles ?? {};
-        const names = Object.keys(profiles);
+        const remoteUrls = await getRemoteUrlsSafe();
+
+        // Derive suggested values from git remotes
+        let suggestedUrl = '';
+        let suggestedName = '';
+        if (remoteUrls.length > 0) {
+          const firstRemote = remoteUrls[0];
+          try {
+            // Handle SSH URLs like git@host:group/project.git
+            const sshMatch = firstRemote.match(/@([^:]+):/);
+            if (sshMatch) {
+              suggestedUrl = `https://${sshMatch[1]}`;
+              suggestedName = sshMatch[1].split('.')[0];
+            } else {
+              const parsed = new URL(firstRemote);
+              suggestedUrl = `${parsed.protocol}//${parsed.host}`;
+              suggestedName = parsed.hostname.split('.')[0];
+            }
+          } catch {
+            // ignore parse errors
+          }
+        }
+
+        // Use readline for interactive prompts
+        const { createInterface } = await import('node:readline');
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        const ask = (prompt: string): Promise<string> => new Promise((resolve) => rl.question(prompt, resolve));
+
+        console.log(chalk.bold('revkit — Profile Setup'));
+        console.log('');
+
+        const name =
+          (await ask(`Profile name${suggestedName ? ` [${suggestedName}]` : ''}: `)) || suggestedName || 'default';
+        const providerInput = (await ask(`Provider (gitlab/github) [gitlab]: `)) || 'gitlab';
+        const url = (await ask(`Provider URL${suggestedUrl ? ` [${suggestedUrl}]` : ''}: `)) || suggestedUrl;
+        const tokenEnv = (await ask(`Token environment variable [REVKIT_GITLAB_TOKEN]: `)) || 'REVKIT_GITLAB_TOKEN';
+
+        // Derive host from URL for matching info
+        let derivedHost = '';
+        if (url) {
+          try {
+            derivedHost = new URL(url).host;
+          } catch {
+            /* ignore */
+          }
+        }
+        const extraPatternPrompt = derivedHost
+          ? `Custom remote match pattern? (optional, leave empty to use ${derivedHost}): `
+          : `Remote match pattern: `;
+        const extraPattern = await ask(extraPatternPrompt);
+
+        const caFileInput = await ask(`Custom CA file (optional): `);
+        const tlsInput = (await ask(`Verify TLS certificates [yes]: `)) || 'yes';
+
+        rl.close();
+
+        // Validate provider
+        if (providerInput !== 'gitlab' && providerInput !== 'github') {
+          throw new ConfigError(`Invalid provider: "${providerInput}". Must be "gitlab" or "github".`);
+        }
+
+        const profile: RevkitProfile = {
+          provider: providerInput,
+        };
+        if (url) profile.url = url;
+        if (tokenEnv) profile.tokenEnv = tokenEnv;
+        if (extraPattern) {
+          profile.remotePatterns = extraPattern
+            .split(',')
+            .map((p) => p.trim())
+            .filter(Boolean);
+        }
+        if (caFileInput) profile.caFile = caFileInput.replace(/^['"]|['"]$/g, '');
+        if (tlsInput.trim().toLowerCase() === 'no' || tlsInput.trim().toLowerCase() === 'false') {
+          profile.tlsVerify = false;
+        }
+
+        // Write
+        const config = await loadFileConfig();
+        config.profiles ??= {};
+        config.profiles[name] = profile;
+        await saveFileConfig(config);
+
+        // Summary
+        console.log('');
+        console.log(chalk.green(`✓ Profile "${name}" created`));
+        console.log('');
+        console.log(`  ${chalk.dim('Provider:')}         ${profile.provider}`);
+        if (profile.url) console.log(`  ${chalk.dim('URL:')}              ${profile.url}`);
+        if (profile.tokenEnv) console.log(`  ${chalk.dim('Token env:')}        ${profile.tokenEnv}`);
+        const matchDisplay = derivedHost ? `${derivedHost} ${chalk.dim('(derived from URL)')}` : chalk.dim('(none)');
+        console.log(`  ${chalk.dim('Remote matching:')}  ${matchDisplay}`);
+        if (profile.remotePatterns?.length) {
+          console.log(`  ${chalk.dim('Extra patterns:')}   ${profile.remotePatterns.join(', ')}`);
+        }
+        if (profile.caFile) console.log(`  ${chalk.dim('CA file:')}          ${profile.caFile}`);
+        console.log(`  ${chalk.dim('TLS verify:')}       ${profile.tlsVerify === false ? 'false' : 'true'}`);
+        console.log('');
+        console.log(chalk.bold('Next:'));
+        if (profile.tokenEnv) {
+          console.log(`  export ${profile.tokenEnv}=...`);
+        }
+        console.log(`  revkit config doctor --profile ${name}`);
+      } catch (err) {
+        handleError(err);
+      }
+    });
+
+  // ─── config doctor ───────────────────────────────────────
+
+  configCmd
+    .command('doctor')
+    .description('Check configuration health')
+    .option('--profile <name>', 'Check a specific profile')
+    .option('--json', 'Output as JSON')
+    .action(async (opts: { profile?: string; json?: boolean }) => {
+      try {
+        const remoteUrls = await getRemoteUrlsSafe();
+        const result = await runDoctor(remoteUrls, opts.profile);
 
         if (opts.json) {
-          const items = names.map((name) => ({
-            name,
-            isDefault: fileConfig.defaultProfile === name,
-            provider: profiles[name].provider,
-            gitlabUrl: profiles[name].gitlabUrl,
-            remoteUrlPatterns: profiles[name].remoteUrlPatterns ?? [],
-          }));
-          outputJson(items);
+          outputJson(result);
           return;
         }
 
-        if (names.length === 0) {
-          console.log(chalk.dim('No profiles configured.'));
-          console.log('');
-          console.log(`Run ${chalk.cyan('revkit config profile add <name>')} to create one.`);
-
-          // Check for flat config fallback
-          if (fileConfig.provider) {
-            console.log('');
-            console.log(chalk.dim('A flat (non-profile) configuration exists:'));
-            console.log(`  ${chalk.dim('Provider:')} ${fileConfig.provider}`);
-            if (fileConfig.gitlabUrl) {
-              console.log(`  ${chalk.dim('GitLab URL:')} ${fileConfig.gitlabUrl}`);
-            }
-          }
-          return;
-        }
-
-        console.log(chalk.bold(`Profiles (${names.length}):`));
+        console.log(chalk.bold('Configuration check'));
         console.log('');
-        for (const name of names) {
-          const p = profiles[name];
-          const isDefault = fileConfig.defaultProfile === name;
-          const label = isDefault ? `${name} ${chalk.green('(default)')}` : name;
-          console.log(`  ${chalk.bold(label)}`);
-          console.log(`    ${chalk.dim('Provider:')} ${p.provider}`);
-          if (p.gitlabUrl) console.log(`    ${chalk.dim('GitLab URL:')} ${p.gitlabUrl}`);
-          if (p.gitlabTokenSource) {
-            console.log(
-              `    ${chalk.dim('GitLab token:')} env:${p.gitlabTokenSource.name}`,
-            );
-          }
-          if (p.remoteUrlPatterns?.length) {
-            console.log(`    ${chalk.dim('Remote patterns:')} ${p.remoteUrlPatterns.join(', ')}`);
-          }
-          if (p.defaultRepository) {
-            console.log(`    ${chalk.dim('Default repo:')} ${p.defaultRepository}`);
-          }
+        for (const check of result.checks) {
+          const icon = check.ok ? chalk.green('✓') : chalk.red('✗');
+          const detail = check.detail ? chalk.dim(` — ${check.detail}`) : '';
+          console.log(`  ${icon} ${check.label}${detail}`);
+        }
+
+        if (result.nextSteps.length > 0) {
           console.log('');
+          console.log(chalk.bold('Next:'));
+          for (const step of result.nextSteps) {
+            console.log(`  ${step}`);
+          }
         }
       } catch (err) {
         handleError(err);
       }
     });
 
-  // ─── config profile add ─────────────────────────────────
+  // ─── config get ──────────────────────────────────────────
 
-  const profileCmd = configCmd
-    .command('profile')
-    .description('Manage configuration profiles');
-
-  profileCmd
-    .command('add <name>')
-    .description('Create or update a named profile')
-    .requiredOption('--provider <type>', 'Provider type: gitlab or github')
-    .option('--gitlab-url <url>', 'GitLab instance URL')
-    .option('--token-env <name>', 'Environment variable name for the provider token')
-    .option('--remote-patterns <patterns>', 'Comma-separated git remote URL patterns for auto-matching')
-    .option('--default-repo <repo>', 'Default repository (group/project)')
-    .option('--ca-file <path>', 'Path to CA certificate file')
-    .option('--no-tls-verify', 'Disable TLS verification')
-    .option('--set-default', 'Set this profile as the default')
-    .action(
-      async (
-        name: string,
-        opts: {
-          provider: string;
-          gitlabUrl?: string;
-          tokenEnv?: string;
-          remotePatterns?: string;
-          defaultRepo?: string;
-          caFile?: string;
-          tlsVerify?: boolean;
-          setDefault?: boolean;
-        },
-      ) => {
-        try {
-          if (!['gitlab', 'github'].includes(opts.provider)) {
-            console.error(chalk.red('--provider must be "gitlab" or "github"'));
-            process.exit(1);
-          }
-
-          const profile: RevkitProfile = {
-            provider: opts.provider as 'gitlab' | 'github',
-          };
-
-          if (opts.gitlabUrl) profile.gitlabUrl = opts.gitlabUrl;
-          if (opts.tokenEnv) {
-            const tokenSource: TokenSource = { type: 'env', name: opts.tokenEnv };
-            if (opts.provider === 'gitlab') {
-              profile.gitlabTokenSource = tokenSource;
-            } else {
-              profile.githubTokenSource = tokenSource;
-            }
-          }
-          if (opts.remotePatterns) {
-            profile.remoteUrlPatterns = opts.remotePatterns.split(',').map((p) => p.trim());
-          }
-          if (opts.defaultRepo) profile.defaultRepository = opts.defaultRepo;
-          if (opts.caFile) profile.caFile = opts.caFile;
-          if (opts.tlsVerify === false) profile.tlsVerify = false;
-
-          const data: Record<string, unknown> = {
-            profiles: { [name]: profile },
-          };
-          if (opts.setDefault) {
-            data.defaultProfile = name;
-          }
-
-          await saveRawConfig(data);
-          console.log(chalk.green(`✓ Profile "${name}" saved`));
-          console.log('');
-          console.log(`  ${chalk.dim('Provider:')} ${profile.provider}`);
-          if (profile.gitlabUrl) console.log(`  ${chalk.dim('GitLab URL:')} ${profile.gitlabUrl}`);
-          if (profile.gitlabTokenSource) {
-            console.log(
-              `  ${chalk.dim('GitLab token:')} env:${profile.gitlabTokenSource.name}`,
-            );
-          }
-          if (profile.remoteUrlPatterns?.length) {
-            console.log(
-                `  ${chalk.dim('Remote patterns:')} ${profile.remoteUrlPatterns.join(', ')}`,
-            );
-          }
-          if (opts.setDefault) {
-            console.log(`  ${chalk.dim('Default:')} ${chalk.green('yes')}`);
-          }
-        } catch (err) {
-          handleError(err);
-        }
-      },
-    );
-
-  profileCmd
-    .command('remove <name>')
-    .description('Remove a named profile')
-    .action(async (name: string) => {
+  configCmd
+    .command('get <key>')
+    .description('Get a profile config value')
+    .option('--profile <name>', 'Target profile')
+    .action(async (key: string, opts: { profile?: string }) => {
       try {
-        const fileConfig = await loadFileConfig();
-        if (!fileConfig.profiles?.[name]) {
-          console.error(chalk.red(`Profile "${name}" not found`));
-          process.exit(1);
+        validateKey(key);
+        const { profile } = await resolveWriteTarget(opts.profile);
+        const value = profile[key as keyof RevkitProfile];
+        if (value === undefined) {
+          console.log(chalk.dim('(not set)'));
+        } else {
+          console.log(Array.isArray(value) ? value.join(', ') : String(value));
         }
-
-        delete fileConfig.profiles[name];
-
-        // Clear defaultProfile if it points to the removed profile
-        if (fileConfig.defaultProfile === name) {
-          delete fileConfig.defaultProfile;
-        }
-
-        await saveRawConfig(fileConfig as unknown as Record<string, unknown>);
-        console.log(chalk.green(`✓ Profile "${name}" removed`));
-      } catch (err) {
-        handleError(err);
-      }
-    });
-
-  profileCmd
-    .command('set-default <name>')
-    .description('Set the default profile')
-    .action(async (name: string) => {
-      try {
-        const fileConfig = await loadFileConfig();
-        if (!fileConfig.profiles?.[name]) {
-          console.error(chalk.red(`Profile "${name}" not found`));
-          process.exit(1);
-        }
-        await saveRawConfig({ defaultProfile: name });
-        console.log(chalk.green(`✓ Default profile set to "${name}"`));
       } catch (err) {
         handleError(err);
       }
@@ -261,18 +212,21 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('set <key> <value>')
-    .description('Set a flat configuration value')
-    .action(async (key: string, value: string) => {
+    .description('Set a profile config value')
+    .option('--profile <name>', 'Target profile')
+    .option('--current', 'Resolve profile from current git repository')
+    .action(async (key: string, value: string, opts: { profile?: string; current?: boolean }) => {
       try {
-        const allowedKeys = ['provider', 'gitlabUrl', 'defaultRepository', 'caFile', 'tlsVerify'];
-        if (!allowedKeys.includes(key)) {
-          console.error(
-            chalk.red(`Unknown config key: ${key}. Allowed: ${allowedKeys.join(', ')}`),
-          );
-          process.exit(1);
-        }
-        await saveConfig({ [key]: parseConfigValue(key, value) });
-        console.log(chalk.green(`✓ ${key} updated`));
+        validateKey(key);
+        const parsed = CONFIG_KEYS[key].parse(value);
+        const { profileName, config } = await resolveWriteTarget(opts.current ? undefined : opts.profile, opts.current);
+
+        config.profiles ??= {};
+        config.profiles[profileName] ??= { provider: 'gitlab' };
+        (config.profiles[profileName] as unknown as Record<string, unknown>)[key] = parsed;
+
+        await saveFileConfig(config);
+        console.log(chalk.green(`✓ ${key} updated on profile "${profileName}"`));
       } catch (err) {
         handleError(err);
       }
@@ -282,99 +236,375 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('unset <key>')
-    .description('Remove a configuration value (supports dotted keys)')
-    .action(async (key: string) => {
+    .description('Remove a profile config value')
+    .option('--profile <name>', 'Target profile')
+    .option('--current', 'Resolve profile from current git repository')
+    .action(async (key: string, opts: { profile?: string; current?: boolean }) => {
       try {
-        const removed = await unsetConfig(key);
-        if (removed) {
-          console.log(chalk.green(`✓ ${key} removed`));
-        } else {
-          console.log(chalk.dim(`${key} was not set`));
+        validateKey(key);
+        const { profileName, config } = await resolveWriteTarget(opts.current ? undefined : opts.profile, opts.current);
+
+        const profile = config.profiles?.[profileName];
+        if (!profile || !(key in profile)) {
+          console.log(chalk.dim(`${key} was not set on profile "${profileName}"`));
+          return;
+        }
+
+        delete (profile as unknown as Record<string, unknown>)[key];
+        await saveFileConfig(config);
+        console.log(chalk.green(`✓ ${key} removed from profile "${profileName}"`));
+      } catch (err) {
+        handleError(err);
+      }
+    });
+
+  // ─── config profile ──────────────────────────────────────
+
+  const profileCmd = configCmd.command('profile').description('Manage configuration profiles');
+
+  // profile list
+  profileCmd
+    .command('list')
+    .description('List all configured profiles')
+    .option('--json', 'Output as JSON')
+    .action(async (opts: { json?: boolean }) => {
+      try {
+        const config = await loadFileConfig();
+        const profiles = config.profiles ?? {};
+        const names = Object.keys(profiles);
+
+        if (opts.json) {
+          const items = names.map((name) => ({
+            name,
+            ...profiles[name],
+          }));
+          outputJson(items);
+          return;
+        }
+
+        if (names.length === 0) {
+          console.log(chalk.dim('No profiles configured.'));
+          console.log('');
+          console.log(`Run ${chalk.cyan('revkit config setup')} to create one.`);
+          return;
+        }
+
+        console.log(chalk.bold(`Profiles (${names.length}):`));
+        console.log('');
+        for (const name of names) {
+          const p = profiles[name];
+          console.log(`  ${chalk.bold(name)}`);
+          console.log(`    ${chalk.dim('Provider:')} ${p.provider}`);
+          if (p.url) console.log(`    ${chalk.dim('URL:')}      ${p.url}`);
+          // Show matching info
+          let matchInfo = '';
+          try {
+            if (p.url) matchInfo = new URL(p.url).host;
+          } catch {
+            /* ignore */
+          }
+          if (p.remotePatterns?.length) {
+            matchInfo += (matchInfo ? ', ' : '') + p.remotePatterns.join(', ');
+          }
+          if (matchInfo) console.log(`    ${chalk.dim('Matches:')}  ${matchInfo}`);
+          if (p.tokenEnv) console.log(`    ${chalk.dim('Token:')}    env:${p.tokenEnv}`);
+          console.log('');
         }
       } catch (err) {
         handleError(err);
       }
     });
 
-  // ─── config init ─────────────────────────────────────────
-
-  configCmd
-    .command('init')
-    .description('Show configuration help and examples')
-    .action(() => {
+  // profile show
+  profileCmd
+    .command('show <name>')
+    .description('Show a specific profile')
+    .option('--json', 'Output as JSON')
+    .option('--sources', 'Show value sources')
+    .action(async (name: string, opts: { json?: boolean; sources?: boolean }) => {
       try {
-        console.log(chalk.bold('revkit — Configuration'));
+        const config = await loadFileConfig();
+        const profile = config.profiles?.[name];
+        if (!profile) {
+          throw new ConfigError(
+            `Profile "${name}" not found. Available: ${Object.keys(config.profiles ?? {}).join(', ') || '(none)'}`,
+          );
+        }
+
+        if (opts.json) {
+          const tokenResolved = profile.tokenEnv ? Boolean(process.env[profile.tokenEnv]) : false;
+          outputJson({ name, ...profile, tokenResolved });
+          return;
+        }
+
+        console.log(chalk.bold(`Profile: ${name}`));
         console.log('');
-        console.log(chalk.bold('Quick start (single instance):'));
-        console.log('');
-        console.log(`  ${chalk.cyan('revkit config set provider gitlab')}`);
-        console.log(`  ${chalk.cyan('revkit config set gitlabUrl https://gitlab.example.com')}`);
-        console.log(
-          `  ${chalk.dim('# Set your token via environment variable (never stored in config):')}`,
-        );
-        console.log(`  ${chalk.cyan('export REVKIT_GITLAB_TOKEN=glpat-xxxxxxxxxxxx')}`);
-        console.log('');
-        console.log(chalk.bold('Profile-based setup (multiple instances):'));
-        console.log('');
-        console.log(
-          `  ${chalk.cyan(`revkit config profile add my-gitlab \\`)}`,
-        );
-        console.log(
-          `    ${chalk.cyan(`--provider gitlab \\`)}`,
-        );
-        console.log(
-          `    ${chalk.cyan(`--gitlab-url https://gitlab.example.com \\`)}`,
-        );
-        console.log(
-          `    ${chalk.cyan(`--token-env MY_GITLAB_TOKEN \\`)}`,
-        );
-        console.log(
-          `    ${chalk.cyan(`--remote-patterns gitlab.example.com \\`)}`,
-        );
-        console.log(
-          `    ${chalk.cyan(`--set-default`)}`,
-        );
-        console.log('');
-        console.log(chalk.bold('View configuration:'));
-        console.log('');
-        console.log(`  ${chalk.cyan('revkit config show')}              ${chalk.dim('# resolved for current repo')}`);
-        console.log(`  ${chalk.cyan('revkit config show --profile X')}  ${chalk.dim('# show specific profile')}`);
-        console.log(`  ${chalk.cyan('revkit config show --json')}       ${chalk.dim('# JSON output')}`);
-        console.log(`  ${chalk.cyan('revkit config profiles')}          ${chalk.dim('# list all profiles')}`);
-        console.log('');
-        console.log(chalk.bold('Token resolution (in priority order):'));
-        console.log('');
-        console.log(`  1. Profile ${chalk.cyan('gitlabTokenSource')} → env var name configured per profile`);
-        console.log(`  2. ${chalk.cyan('REVKIT_GITLAB_TOKEN')} environment variable`);
-        console.log(`  3. ${chalk.cyan('GITLAB_TOKEN')} environment variable (fallback)`);
-        console.log('');
-        console.log(chalk.bold('Profile auto-selection:'));
-        console.log('');
-        console.log(
-          `  Profiles with ${chalk.cyan('remoteUrlPatterns')} are auto-selected when a pattern`,
-        );
-        console.log('  matches a git remote URL in the current repository.');
-        console.log('');
-        console.log(chalk.dim(`Config file: ${CONFIG_FILE}`));
+        printProfileDetails(profile, opts.sources);
+      } catch (err) {
+        handleError(err);
+      }
+    });
+
+  // profile create
+  profileCmd
+    .command('create <name>')
+    .description('Create or update a profile')
+    .requiredOption('--provider <type>', 'Provider type: gitlab or github')
+    .option('--url <url>', 'Provider base URL')
+    .option('--token-env <name>', 'Environment variable name for the token')
+    .option(
+      '--match <pattern>',
+      'Additional git remote URL pattern for selecting this profile (repeatable)',
+      collectValues,
+      [],
+    )
+    .option('--ca-file <path>', 'Path to CA certificate file')
+    .option('--no-tls-verify', 'Disable TLS verification')
+    .action(
+      async (
+        name: string,
+        opts: {
+          provider: string;
+          url?: string;
+          tokenEnv?: string;
+          match: string[];
+          caFile?: string;
+          tlsVerify?: boolean;
+        },
+      ) => {
+        try {
+          const provider = CONFIG_KEYS.provider.parse(opts.provider) as 'gitlab' | 'github';
+
+          const profile: RevkitProfile = { provider };
+          if (opts.url) profile.url = CONFIG_KEYS.url.parse(opts.url) as string;
+          if (opts.tokenEnv) profile.tokenEnv = CONFIG_KEYS.tokenEnv.parse(opts.tokenEnv) as string;
+          if (opts.match.length > 0) {
+            profile.remotePatterns = opts.match;
+          }
+          if (opts.caFile) profile.caFile = opts.caFile;
+          if (opts.tlsVerify === false) profile.tlsVerify = false;
+
+          const config = await loadFileConfig();
+          config.profiles ??= {};
+          config.profiles[name] = profile;
+          await saveFileConfig(config);
+
+          console.log(chalk.green(`✓ Profile "${name}" saved`));
+          console.log('');
+          printProfileDetails(profile, false);
+        } catch (err) {
+          handleError(err);
+        }
+      },
+    );
+
+  // profile delete
+  profileCmd
+    .command('delete <name>')
+    .description('Delete a profile')
+    .action(async (name: string) => {
+      try {
+        const config = await loadFileConfig();
+        if (!config.profiles?.[name]) {
+          throw new ConfigError(
+            `Profile "${name}" not found. Available: ${Object.keys(config.profiles ?? {}).join(', ') || '(none)'}`,
+          );
+        }
+
+        delete config.profiles[name];
+        await saveFileConfig(config);
+        console.log(chalk.green(`✓ Profile "${name}" deleted`));
       } catch (err) {
         handleError(err);
       }
     });
 }
 
-function parseConfigValue(key: string, value: string): string | boolean {
-  if (key !== 'tlsVerify') return value;
+// ─── Helpers ─────────────────────────────────────────────
 
-  const normalized = value.trim().toLowerCase();
-  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
-  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
-  throw new Error('tlsVerify must be one of: true, false, 1, 0, yes, no, on, off');
+async function showAction(opts: { profile?: string; json?: boolean; sources?: boolean }): Promise<void> {
+  try {
+    const remoteUrls = await getRemoteUrlsSafe();
+
+    // Try to resolve. On failure, show helpful no-match message.
+    let display;
+    try {
+      display = await loadDisplayConfig(remoteUrls, opts.profile);
+    } catch (err) {
+      if (opts.json) {
+        outputJson({ error: (err as Error).message });
+        return;
+      }
+      await showNoMatchMessage(remoteUrls);
+      return;
+    }
+
+    if (opts.json) {
+      outputJson(display);
+      return;
+    }
+
+    console.log(chalk.bold('Current configuration'));
+    console.log('');
+    const matchDesc =
+      display.matchedBy === 'explicit'
+        ? '--profile flag'
+        : display.matchSource === 'url-derived'
+          ? `git remote matched provider host "${display.matchedPattern}"`
+          : `git remote matched pattern "${display.matchedPattern}"`;
+    console.log(`  ${chalk.dim('Profile:')}      ${chalk.cyan(display.profileName)}`);
+    console.log(`  ${chalk.dim('Selected by:')}  ${matchDesc}`);
+    console.log(`  ${chalk.dim('Provider:')}     ${display.provider}`);
+    if (display.url) {
+      console.log(
+        `  ${chalk.dim('URL:')}          ${display.url}${src(opts.sources, 'profile:' + display.profileName)}`,
+      );
+    }
+    const tokenStatus = display.tokenResolved ? chalk.green('set') : chalk.red('missing');
+    console.log(
+      `  ${chalk.dim('Token:')}        ${tokenStatus}${src(opts.sources, display.tokenEnv ? `env:${display.tokenEnv}` : undefined)}`,
+    );
+    if (display.tokenEnv) {
+      console.log(`  ${chalk.dim('Token env:')}    ${display.tokenEnv}`);
+    }
+    if (display.caFile) {
+      console.log(
+        `  ${chalk.dim('CA file:')}      ${display.caFile}${src(opts.sources, 'profile:' + display.profileName)}`,
+      );
+    }
+    console.log(`  ${chalk.dim('TLS verify:')}   ${display.tlsVerify}${src(opts.sources, 'default')}`);
+    console.log('');
+    console.log(chalk.dim(`Config file: ${CONFIG_FILE}`));
+  } catch (err) {
+    handleError(err);
+  }
 }
 
-function formatTokenDisplay(tokenInfo?: { type: string; name: string; resolved: boolean }): string {
-  if (!tokenInfo) return chalk.dim('(not set)');
-  const status = tokenInfo.resolved ? chalk.green('set') : chalk.red('missing');
-  return `${status} via ${tokenInfo.type}:${tokenInfo.name}`;
+async function showNoMatchMessage(remoteUrls: string[]): Promise<void> {
+  console.log(chalk.yellow('No profile matched the current repository.'));
+  console.log('');
+
+  if (remoteUrls.length > 0) {
+    console.log(chalk.dim('Current git remotes:'));
+    for (const url of remoteUrls) {
+      console.log(`  ${url}`);
+    }
+    console.log('');
+  }
+
+  const config = await loadFileConfig();
+  const profiles = config.profiles ?? {};
+  const names = Object.keys(profiles);
+
+  if (names.length > 0) {
+    console.log(chalk.dim('Configured profiles:'));
+    for (const name of names) {
+      const p = profiles[name];
+      let matchInfo = '';
+      try {
+        if (p.url) matchInfo = new URL(p.url).host;
+      } catch {
+        /* ignore */
+      }
+      if (p.remotePatterns?.length) {
+        matchInfo += (matchInfo ? ', ' : '') + p.remotePatterns.join(', ');
+      }
+      console.log(`  ${chalk.bold(name)}  ${p.provider}  matches: ${matchInfo || '(none)'}`);
+    }
+    console.log('');
+    console.log(chalk.dim('Profiles are matched using:'));
+    console.log(chalk.dim('  - the host from the profile URL'));
+    console.log(chalk.dim('  - optional remotePatterns'));
+    console.log('');
+  }
+
+  console.log(chalk.bold('Next:'));
+  console.log(`  revkit config setup`);
+  if (remoteUrls.length > 0 && names.length > 0) {
+    const firstName = names[0];
+    console.log(`  revkit config set remotePatterns <pattern> --profile ${firstName}`);
+  }
+}
+
+function printProfileDetails(profile: RevkitProfile, sources?: boolean): void {
+  console.log(`  ${chalk.dim('Provider:')}    ${profile.provider}`);
+  if (profile.url) console.log(`  ${chalk.dim('URL:')}         ${profile.url}`);
+  if (profile.tokenEnv) {
+    const resolved = Boolean(process.env[profile.tokenEnv]);
+    const status = resolved ? chalk.green('set') : chalk.red('missing');
+    console.log(`  ${chalk.dim('Token:')}       ${status}${sources ? chalk.dim(` (env:${profile.tokenEnv})`) : ''}`);
+    console.log(`  ${chalk.dim('Token env:')}   ${profile.tokenEnv}`);
+  }
+  if (profile.caFile) console.log(`  ${chalk.dim('CA file:')}     ${profile.caFile}`);
+  console.log(`  ${chalk.dim('TLS verify:')}  ${profile.tlsVerify === false ? 'false' : 'true'}`);
+  console.log('');
+  // Remote matching section
+  console.log(`  ${chalk.dim('Remote matching:')}`);
+  let derivedHost = '';
+  if (profile.url) {
+    try {
+      derivedHost = new URL(profile.url).host;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (derivedHost) {
+    console.log(`    ${chalk.dim('Derived from URL:')} ${derivedHost}`);
+  } else {
+    console.log(`    ${chalk.dim('Derived from URL:')} ${chalk.dim('(no URL set)')}`);
+  }
+  if (profile.remotePatterns?.length) {
+    console.log(`    ${chalk.dim('Extra patterns:')}   ${profile.remotePatterns.join(', ')}`);
+  } else {
+    console.log(`    ${chalk.dim('Extra patterns:')}   ${chalk.dim('none')}`);
+  }
+}
+
+function src(showSources: boolean | undefined, source: string | undefined): string {
+  if (!showSources || !source) return '';
+  return chalk.dim(`  [${source}]`);
+}
+
+function validateKey(key: string): void {
+  if (!VALID_CONFIG_KEYS.includes(key)) {
+    throw new ConfigError(`Unknown config key: "${key}". Valid keys: ${VALID_CONFIG_KEYS.join(', ')}`);
+  }
+}
+
+async function resolveWriteTarget(
+  explicitProfile?: string,
+  useCurrent?: boolean,
+): Promise<{ profileName: string; profile: RevkitProfile; config: RevkitConfig }> {
+  const config = await loadFileConfig();
+
+  if (explicitProfile) {
+    const profile = config.profiles?.[explicitProfile];
+    if (!profile) {
+      throw new ConfigError(
+        `Profile "${explicitProfile}" not found. Available: ${Object.keys(config.profiles ?? {}).join(', ') || '(none)'}`,
+      );
+    }
+    return { profileName: explicitProfile, profile, config };
+  }
+
+  if (useCurrent) {
+    const remoteUrls = await getRemoteUrlsSafe();
+    const result = resolveProfile(config, remoteUrls);
+    return { profileName: result.profileName, profile: result.profile, config };
+  }
+
+  // Try resolving from current dir
+  const remoteUrls = await getRemoteUrlsSafe();
+  if (remoteUrls.length > 0) {
+    try {
+      const result = resolveProfile(config, remoteUrls);
+      return { profileName: result.profileName, profile: result.profile, config };
+    } catch {
+      // Fall through to error
+    }
+  }
+
+  throw new ConfigError('Cannot determine target profile. Use --profile <name> or --current to specify.');
 }
 
 async function getRemoteUrlsSafe(): Promise<string[]> {
@@ -384,4 +614,8 @@ async function getRemoteUrlsSafe(): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+function collectValues(value: string, previous: string[]): string[] {
+  return [...previous, value];
 }

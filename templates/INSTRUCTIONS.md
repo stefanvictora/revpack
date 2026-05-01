@@ -18,12 +18,12 @@ Use `[]` for empty JSON outputs.
 
 Required files:
 
-| File | Purpose |
-|---|---|
-| `.revkit/outputs/replies.json` | Replies to existing MR/PR threads |
-| `.revkit/outputs/new-findings.json` | New positional review findings to post as threads |
-| `.revkit/outputs/summary.md` | **Changelog-style description of what the MR/PR changes** — not what you found |
-| `.revkit/outputs/review.md` | Public review note with broad observations, risks, or follow-up questions |
+| File                                | Purpose                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------ |
+| `.revkit/outputs/replies.json`      | Replies to existing MR/PR threads                                              |
+| `.revkit/outputs/new-findings.json` | New positional review findings to post as threads                              |
+| `.revkit/outputs/summary.md`        | **Changelog-style description of what the MR/PR changes** — not what you found |
+| `.revkit/outputs/review.md`         | Public review note with broad observations, risks, or follow-up questions      |
 
 If there are no review notes worth publishing, write an empty file or a short neutral note, depending on the existing tool convention.
 

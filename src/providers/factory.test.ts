@@ -7,27 +7,27 @@ describe('createProvider', () => {
   it('creates a GitLab provider', () => {
     const config: ResolvedAppConfig = {
       provider: 'gitlab',
-      gitlabUrl: 'https://gitlab.example.com',
-      gitlabToken: 'glpat-xxx',
+      url: 'https://gitlab.example.com',
+      token: 'glpat-xxx',
       tlsVerify: true,
     };
     const provider = createProvider(config);
     expect(provider.providerType).toBe('gitlab');
   });
 
-  it('throws on missing gitlabUrl', () => {
+  it('throws on missing url', () => {
     const config: ResolvedAppConfig = {
       provider: 'gitlab',
-      gitlabToken: 'glpat-xxx',
+      token: 'glpat-xxx',
       tlsVerify: true,
     };
     expect(() => createProvider(config)).toThrow(ConfigError);
   });
 
-  it('throws on missing gitlabToken', () => {
+  it('throws on missing token', () => {
     const config: ResolvedAppConfig = {
       provider: 'gitlab',
-      gitlabUrl: 'https://gitlab.example.com',
+      url: 'https://gitlab.example.com',
       tlsVerify: true,
     };
     expect(() => createProvider(config)).toThrow(ConfigError);

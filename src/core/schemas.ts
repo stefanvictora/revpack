@@ -51,38 +51,21 @@ export const replyDraftSchema = z.object({
 export const newFindingsArraySchema = z.array(newFindingSchema);
 export const repliesArraySchema = z.array(replyDraftSchema);
 
-// ─── Token Source Schema ─────────────────────────────────
-
-export const tokenSourceSchema = z.object({
-  type: z.literal('env'),
-  name: z.string().min(1),
-});
-
 // ─── Profile Schema ──────────────────────────────────────
 
 export const profileSchema = z.object({
   provider: providerTypeSchema,
-  remoteUrlPatterns: z.array(z.string()).optional(),
-  gitlabUrl: z.string().url().optional(),
-  gitlabTokenSource: tokenSourceSchema.optional(),
-  githubTokenSource: tokenSourceSchema.optional(),
-  defaultRepository: z.string().optional(),
-  caFile: z.string().optional(),
+  url: z.string().url().optional(),
+  tokenEnv: z.string().min(1).optional(),
+  remotePatterns: z.array(z.string().min(1)).optional(),
+  caFile: z.string().min(1).optional(),
   tlsVerify: z.boolean().optional(),
 });
 
-// ─── App Config Schema ───────────────────────────────────
+// ─── Config Schema (profile-only) ────────────────────────
 
 export const configSchema = z.object({
-  defaultProfile: z.string().optional(),
   profiles: z.record(z.string(), profileSchema).optional(),
-  provider: providerTypeSchema.optional(),
-  gitlabUrl: z.string().url().optional(),
-  gitlabTokenSource: tokenSourceSchema.optional(),
-  githubTokenSource: tokenSourceSchema.optional(),
-  defaultRepository: z.string().optional(),
-  caFile: z.string().optional(),
-  tlsVerify: z.boolean().default(true),
 });
 
-export type AppConfigSchema = z.infer<typeof configSchema>;
+export type ConfigSchema = z.infer<typeof configSchema>;

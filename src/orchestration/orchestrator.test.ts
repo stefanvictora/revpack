@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -122,11 +122,11 @@ function createReviewNoteThread(noteId: string, noteBody: string): ReviewThread 
 describe('ReviewOrchestrator', () => {
   let mockProvider: ReviewProvider;
   let tmpDir: string;
-  let headShaSpy: ReturnType<typeof vi.spyOn>;
-  let currentBranchSpy: ReturnType<typeof vi.spyOn>;
-  let repositoryRootSpy: ReturnType<typeof vi.spyOn>;
-  let isCleanSpy: ReturnType<typeof vi.spyOn>;
-  let isAncestorSpy: ReturnType<typeof vi.spyOn>;
+  let headShaSpy: MockInstance<any[], any>;
+  let currentBranchSpy: MockInstance<any[], any>;
+  let repositoryRootSpy: MockInstance<any[], any>;
+  let isCleanSpy: MockInstance<any[], any>;
+  let isAncestorSpy: MockInstance<any[], any>;
 
   beforeEach(async () => {
     mockProvider = createMockProvider();
@@ -425,7 +425,7 @@ describe('ReviewOrchestrator', () => {
   });
 
   describe('resolveRef auto-detect from branch', () => {
-    let deriveSlugSpy: ReturnType<typeof vi.spyOn>;
+    let deriveSlugSpy: MockInstance<any[], any>;
 
     afterEach(() => {
       deriveSlugSpy?.mockRestore();

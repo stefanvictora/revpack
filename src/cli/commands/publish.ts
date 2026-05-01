@@ -5,7 +5,7 @@ import type { NewFinding } from '../../core/types.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { parsePatch } from '../../workspace/patch-parser.js';
 import { validateFindings, formatValidationErrors } from '../../workspace/finding-validator.js';
-import { createOrchestrator, getDefaultRepo, handleError } from '../helpers.js';
+import { createOrchestrator, getRepoFromGit, handleError } from '../helpers.js';
 import { computeContentHash } from '../../workspace/thread-digest.js';
 import { mergeWithMarkers, MARKER_START, MARKER_END } from '../../workspace/description-summary.js';
 
@@ -92,7 +92,7 @@ async function publishReplies(opts: {
   noRefresh?: boolean;
 }): Promise<number> {
   const orchestrator = await createOrchestrator();
-  const defaultRepo = await getDefaultRepo();
+  const defaultRepo = await getRepoFromGit();
   const repliesFile = opts.from ?? DEFAULT_REPLIES_FILE;
 
   if (opts.thread) {
@@ -225,7 +225,7 @@ async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefres
   }
 
   const orchestrator = await createOrchestrator();
-  const defaultRepo = await getDefaultRepo();
+  const defaultRepo = await getRepoFromGit();
   const ws = new WorkspaceManager(process.cwd());
 
   let published = 0;
@@ -288,7 +288,7 @@ async function publishDescription(opts: {
   }
 
   const orchestrator = await createOrchestrator();
-  const defaultRepo = opts.repo ?? (await getDefaultRepo());
+  const defaultRepo = opts.repo ?? (await getRepoFromGit());
 
   let body: string;
   if (opts.replace) {
@@ -325,7 +325,7 @@ async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise
   }
 
   const orchestrator = await createOrchestrator();
-  const defaultRepo = opts.repo ?? (await getDefaultRepo());
+  const defaultRepo = opts.repo ?? (await getRepoFromGit());
 
   const result = await orchestrator.publishReview(content, defaultRepo);
   if (result.created) {
@@ -350,7 +350,7 @@ async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise
 async function autoRefresh(): Promise<void> {
   try {
     const orchestrator = await createOrchestrator();
-    const defaultRepo = await getDefaultRepo();
+    const defaultRepo = await getRepoFromGit();
     await orchestrator.prepare(undefined, defaultRepo);
     console.log(chalk.dim('Bundle refreshed.'));
   } catch {

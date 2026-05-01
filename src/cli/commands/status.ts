@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { GitHelper } from '../../workspace/git-helper.js';
-import { createOrchestrator, getDefaultRepo, handleError, outputJson } from '../helpers.js';
+import { createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
 
 export function registerStatusCommand(program: Command): void {
   program
@@ -13,7 +13,7 @@ export function registerStatusCommand(program: Command): void {
     .action(async (ref: string | undefined, opts: { json?: boolean }) => {
       try {
         const orchestrator = await createOrchestrator();
-        const defaultRepo = await getDefaultRepo();
+        const defaultRepo = await getRepoFromGit();
 
         // Load bundle state
         const ws = new WorkspaceManager(process.cwd());

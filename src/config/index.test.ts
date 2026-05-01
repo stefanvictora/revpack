@@ -1,450 +1,276 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as os from 'node:os';
+import { resolveProfile, loadDisplayConfig, loadRuntimeConfig, runDoctor, loadFileConfig } from './index.js';
+import type { RevkitConfig } from './types.js';
 
-// We mock fs so nothing touches the real filesystem
+// Mock fs
 vi.mock('node:fs/promises');
 
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'revkit');
-const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const mockFs = vi.mocked(fs);
 
-// Dynamic import after mocking
-const { loadFileConfig, loadRuntimeConfig, loadDisplayConfig, saveConfig, unsetConfig, saveRawConfig } =
-  await import('./index.js');
-
-// Helper: make readFile return a JSON config
-function mockConfigFile(config: Record<string, unknown>): void {
-  vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(config));
+function writeConfig(config: RevkitConfig): void {
+  mockFs.readFile.mockResolvedValue(JSON.stringify(config));
 }
-
-// Helper: make readFile throw ENOENT (no config file)
-function mockNoConfigFile(): void {
-  const err = new Error('ENOENT') as NodeJS.ErrnoException;
-  err.code = 'ENOENT';
-  vi.mocked(fs.readFile).mockRejectedValue(err);
-}
-
-// Env snapshot and cleanup
-const originalEnv = { ...process.env };
-
-beforeEach(() => {
-  vi.resetAllMocks();
-  vi.mocked(fs.mkdir).mockResolvedValue(undefined);
-  vi.mocked(fs.writeFile).mockResolvedValue(undefined);
-
-  // Clear relevant env vars
-  delete process.env.REVKIT_PROVIDER;
-  delete process.env.REVKIT_GITLAB_URL;
-  delete process.env.REVKIT_REPO;
-  delete process.env.REVKIT_CA_FILE;
-  delete process.env.REVKIT_TLS_VERIFY;
-  delete process.env.REVKIT_GITLAB_TOKEN;
-  delete process.env.GITLAB_TOKEN;
-  delete process.env.REVKIT_GITHUB_TOKEN;
-  delete process.env.GITHUB_TOKEN;
-});
-
-afterEach(() => {
-  process.env = { ...originalEnv };
-});
-
-// ─── loadFileConfig ──────────────────────────────────────
 
 describe('loadFileConfig', () => {
-  it('returns empty defaults when no config file exists', async () => {
-    mockNoConfigFile();
-    const config = await loadFileConfig();
-    expect(config).toEqual({ tlsVerify: true });
+  beforeEach(() => {
+    vi.resetAllMocks();
   });
 
-  it('loads a flat config from file', async () => {
-    mockConfigFile({
-      provider: 'gitlab',
-      gitlabUrl: 'https://gitlab.example.com',
-      defaultRepository: 'group/project',
-    });
-
-    const config = await loadFileConfig();
-    expect(config.provider).toBe('gitlab');
-    expect(config.gitlabUrl).toBe('https://gitlab.example.com');
-    expect(config.defaultRepository).toBe('group/project');
+  it('returns empty config when file does not exist', async () => {
+    mockFs.readFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+    const result = await loadFileConfig();
+    expect(result).toEqual({});
   });
 
-  it('loads a profile-based config from file', async () => {
-    mockConfigFile({
-      defaultProfile: 'work',
+  it('parses valid config', async () => {
+    const config: RevkitConfig = {
       profiles: {
-        work: {
-          provider: 'gitlab',
-          gitlabUrl: 'https://gitlab.work.com',
-          gitlabTokenSource: { type: 'env', name: 'WORK_TOKEN' },
-          remoteUrlPatterns: ['gitlab.work.com'],
-        },
+        work: { provider: 'gitlab', url: 'https://gitlab.work.com', tokenEnv: 'GL_TOKEN' },
       },
-    });
-
-    const config = await loadFileConfig();
-    expect(config.defaultProfile).toBe('work');
-    expect(config.profiles?.work?.provider).toBe('gitlab');
-    expect(config.profiles?.work?.gitlabTokenSource).toEqual({ type: 'env', name: 'WORK_TOKEN' });
+    };
+    writeConfig(config);
+    const result = await loadFileConfig();
+    expect(result.profiles?.work?.provider).toBe('gitlab');
   });
 
-  it('applies REVKIT_PROVIDER env override', async () => {
-    mockConfigFile({ provider: 'gitlab' });
-    process.env.REVKIT_PROVIDER = 'github';
-
-    const config = await loadFileConfig();
-    expect(config.provider).toBe('github');
+  it('throws on invalid JSON', async () => {
+    mockFs.readFile.mockResolvedValue('not json {{{');
+    await expect(loadFileConfig()).rejects.toThrow(/not valid JSON/);
   });
 
-  it('applies REVKIT_GITLAB_URL env override', async () => {
-    mockConfigFile({});
-    process.env.REVKIT_GITLAB_URL = 'https://override.example.com';
-
-    const config = await loadFileConfig();
-    expect(config.gitlabUrl).toBe('https://override.example.com');
-  });
-
-  it('applies REVKIT_TLS_VERIFY env override', async () => {
-    mockConfigFile({});
-    process.env.REVKIT_TLS_VERIFY = 'false';
-
-    const config = await loadFileConfig();
-    expect(config.tlsVerify).toBe(false);
-  });
-
-  it('throws on invalid REVKIT_TLS_VERIFY value', async () => {
-    mockConfigFile({});
-    process.env.REVKIT_TLS_VERIFY = 'maybe';
-
-    await expect(loadFileConfig()).rejects.toThrow('must be one of');
-  });
-
-  it('throws on invalid JSON in config file', async () => {
-    vi.mocked(fs.readFile).mockResolvedValue('not-json');
-    await expect(loadFileConfig()).rejects.toThrow();
-  });
-
-  it('throws on non-ENOENT read errors', async () => {
-    const err = new Error('EACCES') as NodeJS.ErrnoException;
-    err.code = 'EACCES';
-    vi.mocked(fs.readFile).mockRejectedValue(err);
-
-    await expect(loadFileConfig()).rejects.toThrow('Failed to load configuration');
+  it('throws on invalid config structure', async () => {
+    mockFs.readFile.mockResolvedValue(JSON.stringify({ profiles: { bad: { provider: 'bitbucket' } } }));
+    await expect(loadFileConfig()).rejects.toThrow(/Invalid configuration/);
   });
 });
 
-// ─── loadRuntimeConfig ───────────────────────────────────
+describe('resolveProfile', () => {
+  it('resolves by explicit name', () => {
+    const config: RevkitConfig = {
+      profiles: {
+        work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
+      },
+    };
+    const result = resolveProfile(config, [], 'work');
+    expect(result.profileName).toBe('work');
+    expect(result.matchedBy).toBe('explicit');
+  });
+
+  it('resolves by URL-derived remote match', () => {
+    const config: RevkitConfig = {
+      profiles: {
+        work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
+      },
+    };
+    const result = resolveProfile(config, ['git@gitlab.work.com:team/repo.git']);
+    expect(result.profileName).toBe('work');
+    expect(result.matchedBy).toBe('remote-match');
+    expect(result.matchedPattern).toBe('gitlab.work.com');
+    expect(result.matchSource).toBe('url-derived');
+  });
+
+  it('resolves by remotePatterns match', () => {
+    const config: RevkitConfig = {
+      profiles: {
+        custom: { provider: 'github', remotePatterns: ['custom-host'] },
+      },
+    };
+    const result = resolveProfile(config, ['git@custom-host:org/repo.git']);
+    expect(result.matchedPattern).toBe('custom-host');
+    expect(result.matchSource).toBe('remote-pattern');
+  });
+
+  it('explicit takes priority over remote-match', () => {
+    const config: RevkitConfig = {
+      profiles: {
+        work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
+        oss: { provider: 'github', url: 'https://github.com' },
+      },
+    };
+    const result = resolveProfile(config, ['git@gitlab.work.com:team/repo.git'], 'oss');
+    expect(result.matchedBy).toBe('explicit');
+    expect(result.profileName).toBe('oss');
+  });
+
+  it('throws when no match', () => {
+    const config: RevkitConfig = {
+      profiles: { work: { provider: 'gitlab', url: 'https://gitlab.work.com' } },
+    };
+    expect(() => resolveProfile(config, ['git@other.com:team/repo.git'])).toThrow(/No profile matched/);
+  });
+
+  it('throws for explicit profile that does not exist', () => {
+    const config: RevkitConfig = {
+      profiles: { work: { provider: 'gitlab' } },
+    };
+    expect(() => resolveProfile(config, [], 'missing')).toThrow(/not found/);
+  });
+});
 
 describe('loadRuntimeConfig', () => {
-  it('resolves flat config with env token fallback', async () => {
-    mockConfigFile({ provider: 'gitlab', gitlabUrl: 'https://gl.example.com' });
-    process.env.REVKIT_GITLAB_TOKEN = 'my-secret-token';
-
-    const config = await loadRuntimeConfig();
-    expect(config.provider).toBe('gitlab');
-    expect(config.gitlabUrl).toBe('https://gl.example.com');
-    expect(config.gitlabToken).toBe('my-secret-token');
-    expect(config.tlsVerify).toBe(true);
+  beforeEach(() => {
+    vi.resetAllMocks();
   });
 
-  it('resolves profile by explicit name', async () => {
-    mockConfigFile({
-      profiles: {
-        customer: {
-          provider: 'gitlab',
-          gitlabUrl: 'https://customer.gitlab.com',
-          gitlabTokenSource: { type: 'env', name: 'CUSTOMER_TOKEN' },
-        },
-      },
-    });
-    process.env.CUSTOMER_TOKEN = 'cust-secret';
-
-    const config = await loadRuntimeConfig([], 'customer');
-    expect(config.provider).toBe('gitlab');
-    expect(config.gitlabUrl).toBe('https://customer.gitlab.com');
-    expect(config.gitlabToken).toBe('cust-secret');
+  afterEach(() => {
+    delete process.env.TEST_TOKEN;
   });
 
-  it('resolves profile by remote URL pattern match', async () => {
-    mockConfigFile({
+  it('resolves profile and token', async () => {
+    const config: RevkitConfig = {
       profiles: {
         work: {
           provider: 'gitlab',
-          gitlabUrl: 'https://work.gitlab.com',
-          remoteUrlPatterns: ['work.gitlab.com'],
-        },
-        personal: {
-          provider: 'github',
-          remoteUrlPatterns: ['github.com'],
+          url: 'https://gitlab.work.com',
+          tokenEnv: 'TEST_TOKEN',
         },
       },
-    });
+    };
+    writeConfig(config);
+    process.env.TEST_TOKEN = 'secret123';
 
-    const config = await loadRuntimeConfig(['git@work.gitlab.com:team/repo.git']);
-    expect(config.provider).toBe('gitlab');
-    expect(config.gitlabUrl).toBe('https://work.gitlab.com');
+    const result = await loadRuntimeConfig(['git@gitlab.work.com:team/repo.git']);
+    expect(result.provider).toBe('gitlab');
+    expect(result.url).toBe('https://gitlab.work.com');
+    expect(result.token).toBe('secret123');
+    expect(result.tlsVerify).toBe(true);
   });
 
-  it('falls back to GITLAB_TOKEN when no tokenSource and no REVKIT_GITLAB_TOKEN', async () => {
-    mockConfigFile({ provider: 'gitlab' });
-    process.env.GITLAB_TOKEN = 'fallback-token';
-
-    const config = await loadRuntimeConfig();
-    expect(config.gitlabToken).toBe('fallback-token');
-  });
-
-  it('resolves GitHub token from env', async () => {
-    mockConfigFile({ provider: 'github' });
-    process.env.REVKIT_GITHUB_TOKEN = 'gh-token';
-
-    const config = await loadRuntimeConfig();
-    expect(config.githubToken).toBe('gh-token');
-  });
-
-  it('falls back to GITHUB_TOKEN env var', async () => {
-    mockConfigFile({ provider: 'github' });
-    process.env.GITHUB_TOKEN = 'gh-fallback';
-
-    const config = await loadRuntimeConfig();
-    expect(config.githubToken).toBe('gh-fallback');
-  });
-
-  it('resolves token from profile tokenSource env var', async () => {
-    mockConfigFile({
+  it('handles missing token env gracefully', async () => {
+    const config: RevkitConfig = {
       profiles: {
-        test: {
-          provider: 'gitlab',
-          gitlabTokenSource: { type: 'env', name: 'CUSTOM_GL_TOKEN' },
-        },
+        work: { provider: 'gitlab', url: 'https://gitlab.work.com', tokenEnv: 'TEST_TOKEN' },
       },
-      defaultProfile: 'test',
-    });
-    process.env.CUSTOM_GL_TOKEN = 'custom-secret';
+    };
+    writeConfig(config);
+    delete process.env.TEST_TOKEN;
 
-    const config = await loadRuntimeConfig();
-    expect(config.gitlabToken).toBe('custom-secret');
+    const result = await loadRuntimeConfig(['git@gitlab.work.com:t/r.git']);
+    expect(result.token).toBeUndefined();
   });
 
-  it('sets tlsVerify from profile', async () => {
-    mockConfigFile({
+  it('respects tlsVerify false', async () => {
+    const config: RevkitConfig = {
       profiles: {
-        insecure: {
-          provider: 'gitlab',
-          tlsVerify: false,
-        },
+        insecure: { provider: 'gitlab', tlsVerify: false, remotePatterns: ['insecure.com'] },
       },
-      defaultProfile: 'insecure',
-    });
-
-    const config = await loadRuntimeConfig();
-    expect(config.tlsVerify).toBe(false);
-  });
-
-  it('inherits tlsVerify from root config when profile does not set it', async () => {
-    mockConfigFile({
-      tlsVerify: false,
-      profiles: {
-        p: { provider: 'gitlab' },
-      },
-      defaultProfile: 'p',
-    });
-
-    const config = await loadRuntimeConfig();
-    expect(config.tlsVerify).toBe(false);
+    };
+    writeConfig(config);
+    const result = await loadRuntimeConfig(['git@insecure.com:t/r.git']);
+    expect(result.tlsVerify).toBe(false);
   });
 });
-
-// ─── loadDisplayConfig ───────────────────────────────────
 
 describe('loadDisplayConfig', () => {
-  it('shows profile info without exposing secrets', async () => {
-    mockConfigFile({
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  afterEach(() => {
+    delete process.env.TEST_TOKEN;
+  });
+
+  it('includes match information for remote-match', async () => {
+    const config: RevkitConfig = {
       profiles: {
         work: {
           provider: 'gitlab',
-          gitlabUrl: 'https://work.gl.com',
-          gitlabTokenSource: { type: 'env', name: 'WORK_TOKEN' },
+          url: 'https://gitlab.work.com',
+          tokenEnv: 'TEST_TOKEN',
         },
       },
-      defaultProfile: 'work',
-    });
-    process.env.WORK_TOKEN = 'secret';
+    };
+    writeConfig(config);
+    process.env.TEST_TOKEN = 'x';
 
-    const display = await loadDisplayConfig();
-    expect(display.provider).toBe('gitlab');
-    expect(display.activeProfile).toBe('work');
-    expect(display.gitlabTokenSource).toEqual({
-      type: 'env',
-      name: 'WORK_TOKEN',
-      resolved: true,
-    });
-    // No actual token value in display config
-    expect(display).not.toHaveProperty('gitlabToken');
+    const display = await loadDisplayConfig(['git@gitlab.work.com:team/repo.git']);
+    expect(display.profileName).toBe('work');
+    expect(display.matchedBy).toBe('remote-match');
+    expect(display.matchedPattern).toBe('gitlab.work.com');
+    expect(display.matchSource).toBe('url-derived');
+    expect(display.tokenResolved).toBe(true);
   });
 
-  it('shows unresolved token when env var is not set', async () => {
-    mockConfigFile({
+  it('includes explicit match info', async () => {
+    const config: RevkitConfig = {
       profiles: {
         work: {
           provider: 'gitlab',
-          gitlabTokenSource: { type: 'env', name: 'MISSING_TOKEN' },
+          url: 'https://gitlab.work.com',
+          tokenEnv: 'TEST_TOKEN',
+          remotePatterns: ['example.com'],
         },
       },
-      defaultProfile: 'work',
-    });
+    };
+    writeConfig(config);
 
-    const display = await loadDisplayConfig();
-    expect(display.gitlabTokenSource).toEqual({
-      type: 'env',
-      name: 'MISSING_TOKEN',
-      resolved: false,
-    });
-  });
-
-  it('falls back to root config when profile resolution fails', async () => {
-    mockConfigFile({
-      provider: 'github',
-      gitlabUrl: 'https://fallback.example.com',
-    });
-
-    const display = await loadDisplayConfig();
-    expect(display.provider).toBe('github');
-    expect(display.gitlabUrl).toBe('https://fallback.example.com');
-    expect(display.activeProfile).toBeUndefined();
-  });
-
-  it('resolves specific profile with --profile', async () => {
-    mockConfigFile({
-      profiles: {
-        alpha: { provider: 'gitlab', gitlabUrl: 'https://alpha.com' },
-        beta: { provider: 'github' },
-      },
-      defaultProfile: 'beta',
-    });
-
-    const display = await loadDisplayConfig([], 'alpha');
-    expect(display.activeProfile).toBe('alpha');
-    expect(display.provider).toBe('gitlab');
-    expect(display.gitlabUrl).toBe('https://alpha.com');
+    const display = await loadDisplayConfig([], 'work');
+    expect(display.matchedBy).toBe('explicit');
+    expect(display.matchedPattern).toBeUndefined();
   });
 });
 
-// ─── saveConfig ──────────────────────────────────────────
-
-describe('saveConfig', () => {
-  it('creates directory and writes config when no existing file', async () => {
-    mockNoConfigFile();
-
-    await saveConfig({ provider: 'gitlab' });
-
-    expect(fs.mkdir).toHaveBeenCalledWith(CONFIG_DIR, { recursive: true });
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      CONFIG_FILE,
-      expect.stringContaining('"provider": "gitlab"'),
-      'utf-8',
-    );
+describe('runDoctor', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
   });
 
-  it('merges with existing config', async () => {
-    mockConfigFile({ provider: 'gitlab', gitlabUrl: 'https://old.com' });
-
-    await saveConfig({ gitlabUrl: 'https://new.com' });
-
-    const written = vi.mocked(fs.writeFile).mock.calls[0][1] as string;
-    const parsed = JSON.parse(written);
-    expect(parsed.provider).toBe('gitlab');
-    expect(parsed.gitlabUrl).toBe('https://new.com');
-  });
-});
-
-// ─── unsetConfig ─────────────────────────────────────────
-
-describe('unsetConfig', () => {
-  it('removes a top-level key', async () => {
-    mockConfigFile({ provider: 'gitlab', gitlabUrl: 'https://example.com' });
-
-    const removed = await unsetConfig('gitlabUrl');
-    expect(removed).toBe(true);
-
-    const written = vi.mocked(fs.writeFile).mock.calls[0][1] as string;
-    const parsed = JSON.parse(written);
-    expect(parsed).not.toHaveProperty('gitlabUrl');
-    expect(parsed.provider).toBe('gitlab');
+  afterEach(() => {
+    delete process.env.DOC_TOKEN;
   });
 
-  it('removes a nested key via dotted path', async () => {
-    mockConfigFile({
+  it('reports healthy config', async () => {
+    const config: RevkitConfig = {
       profiles: {
-        work: { provider: 'gitlab', gitlabUrl: 'https://work.com' },
+        work: {
+          provider: 'gitlab',
+          url: 'https://gitlab.work.com',
+          tokenEnv: 'DOC_TOKEN',
+        },
       },
-    });
+    };
+    writeConfig(config);
+    process.env.DOC_TOKEN = 'val';
+    mockFs.access.mockResolvedValue(undefined);
 
-    const removed = await unsetConfig('profiles.work.gitlabUrl');
-    expect(removed).toBe(true);
-
-    const written = vi.mocked(fs.writeFile).mock.calls[0][1] as string;
-    const parsed = JSON.parse(written);
-    expect(parsed.profiles.work).not.toHaveProperty('gitlabUrl');
-    expect(parsed.profiles.work.provider).toBe('gitlab');
+    const result = await runDoctor(['git@gitlab.work.com:t/r.git']);
+    expect(result.profileName).toBe('work');
+    const failingChecks = result.checks.filter((c) => !c.ok);
+    expect(failingChecks).toHaveLength(0);
   });
 
-  it('returns false when key does not exist', async () => {
-    mockConfigFile({ provider: 'gitlab' });
-
-    const removed = await unsetConfig('nonExistent');
-    expect(removed).toBe(false);
-  });
-
-  it('returns false when config file does not exist', async () => {
-    mockNoConfigFile();
-
-    const removed = await unsetConfig('anything');
-    expect(removed).toBe(false);
-  });
-});
-
-// ─── saveRawConfig ───────────────────────────────────────
-
-describe('saveRawConfig', () => {
-  it('deep-merges profiles into existing config', async () => {
-    mockConfigFile({
+  it('reports when token env is not set', async () => {
+    const config: RevkitConfig = {
       profiles: {
-        existing: { provider: 'gitlab', gitlabUrl: 'https://existing.com' },
+        work: {
+          provider: 'gitlab',
+          url: 'https://gitlab.work.com',
+          tokenEnv: 'DOC_TOKEN',
+        },
       },
-    });
+    };
+    writeConfig(config);
+    delete process.env.DOC_TOKEN;
 
-    await saveRawConfig({
+    const result = await runDoctor(['git@gitlab.work.com:t/r.git']);
+    const tokenCheck = result.checks.find((c) => c.label.includes('Token env is not set'));
+    expect(tokenCheck).toBeDefined();
+    expect(tokenCheck!.ok).toBe(false);
+  });
+
+  it('reports when no profile matches', async () => {
+    const config: RevkitConfig = {
       profiles: {
-        newProfile: { provider: 'github' },
+        work: { provider: 'gitlab', url: 'https://gitlab.work.com', tokenEnv: 'DOC_TOKEN' },
       },
-    });
+    };
+    writeConfig(config);
+    process.env.DOC_TOKEN = 'x';
 
-    const written = vi.mocked(fs.writeFile).mock.calls[0][1] as string;
-    const parsed = JSON.parse(written);
-    expect(parsed.profiles.existing.provider).toBe('gitlab');
-    expect(parsed.profiles.newProfile.provider).toBe('github');
-  });
-
-  it('overwrites scalar values', async () => {
-    mockConfigFile({ defaultProfile: 'old' });
-
-    await saveRawConfig({ defaultProfile: 'new' });
-
-    const written = vi.mocked(fs.writeFile).mock.calls[0][1] as string;
-    const parsed = JSON.parse(written);
-    expect(parsed.defaultProfile).toBe('new');
-  });
-
-  it('creates config file from scratch when none exists', async () => {
-    mockNoConfigFile();
-
-    await saveRawConfig({ profiles: { test: { provider: 'gitlab' } } });
-
-    expect(fs.writeFile).toHaveBeenCalled();
-    const written = vi.mocked(fs.writeFile).mock.calls[0][1] as string;
-    const parsed = JSON.parse(written);
-    expect(parsed.profiles.test.provider).toBe('gitlab');
+    const result = await runDoctor(['git@other.com:t/r.git']);
+    const noMatch = result.checks.find((c) => c.label.includes('Profile resolution'));
+    expect(noMatch).toBeDefined();
+    expect(noMatch!.ok).toBe(false);
   });
 });

@@ -4,297 +4,258 @@ import * as os from 'node:os';
 import { configSchema } from '../core/schemas.js';
 import { ConfigError } from '../core/errors.js';
 import type {
-  AppConfig,
+  RevkitConfig,
+  RevkitProfile,
   ResolvedAppConfig,
   DisplayAppConfig,
-  DisplayTokenInfo,
-  TokenSource,
-  RevkitProfile,
+  ProfileResolutionResult,
+  DoctorCheck,
+  DoctorResult,
 } from './types.js';
-import { SecretResolver } from './secret-resolver.js';
-import { ProfileResolver } from './profile-resolver.js';
+import { ProfileResolver, getProfileRemotePatterns } from './profile-resolver.js';
 
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'revkit');
-const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+export const CONFIG_DIR = path.join(os.homedir(), '.config', 'revkit');
+export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+
+// ─── File I/O ────────────────────────────────────────────
 
 /**
- * Load raw file config from ~/.config/revkit/config.json.
+ * Load raw config from ~/.config/revkit/config.json.
  */
-export async function loadFileConfig(): Promise<AppConfig> {
-  let fileConfig: Record<string, unknown> = {};
+export async function loadFileConfig(): Promise<RevkitConfig> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
-    fileConfig = JSON.parse(raw) as Record<string, unknown>;
+    raw = await fs.readFile(CONFIG_FILE, 'utf-8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw new ConfigError(
-        `Failed to load configuration from ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {};
     }
+    throw new ConfigError(
+      `Failed to read config from ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
-  // Apply env overrides for flat config
-  const merged = {
-    ...fileConfig,
-    ...(process.env.REVKIT_PROVIDER && { provider: process.env.REVKIT_PROVIDER }),
-    ...(process.env.REVKIT_GITLAB_URL && { gitlabUrl: process.env.REVKIT_GITLAB_URL }),
-    ...(process.env.REVKIT_REPO && { defaultRepository: process.env.REVKIT_REPO }),
-    ...(process.env.REVKIT_CA_FILE && { caFile: process.env.REVKIT_CA_FILE }),
-    ...(process.env.REVKIT_TLS_VERIFY && {
-      tlsVerify: parseBooleanEnv('REVKIT_TLS_VERIFY', process.env.REVKIT_TLS_VERIFY),
-    }),
-  };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ConfigError(`Config file is not valid JSON: ${CONFIG_FILE}`);
+  }
 
-  const result = configSchema.safeParse(merged);
+  const result = configSchema.safeParse(parsed);
   if (!result.success) {
     const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new ConfigError(`Invalid configuration: ${issues}`);
   }
 
-  return result.data as AppConfig;
+  return result.data;
 }
 
 /**
- * Resolve the active profile and return a fully resolved runtime config.
- * Resolves secrets from token sources.
+ * Write a full config object to disk (explicit read-modify-write).
+ */
+export async function saveFileConfig(config: RevkitConfig): Promise<void> {
+  await fs.mkdir(CONFIG_DIR, { recursive: true });
+  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+}
+
+// ─── Profile Resolution ──────────────────────────────────
+
+/**
+ * Resolve the active profile. Throws if no profile matches.
+ */
+export function resolveProfile(
+  config: RevkitConfig,
+  remoteUrls: string[],
+  explicitProfile?: string,
+): ProfileResolutionResult {
+  const resolver = new ProfileResolver();
+  return resolver.resolve(config, remoteUrls, explicitProfile);
+}
+
+// ─── Runtime Config ──────────────────────────────────────
+
+/**
+ * Load config, resolve profile, resolve token → ready for use.
  */
 export async function loadRuntimeConfig(
   remoteUrls: string[] = [],
   explicitProfile?: string,
 ): Promise<ResolvedAppConfig> {
   const fileConfig = await loadFileConfig();
-  const profileResolver = new ProfileResolver();
-  const secretResolver = new SecretResolver();
-
-  const { profile } = profileResolver.resolve(fileConfig, remoteUrls, explicitProfile);
+  const { profile } = resolveProfile(fileConfig, remoteUrls, explicitProfile);
 
   const resolved: ResolvedAppConfig = {
     provider: profile.provider,
-    gitlabUrl: profile.gitlabUrl,
-    defaultRepository: profile.defaultRepository,
+    url: profile.url,
     caFile: profile.caFile,
-    tlsVerify: profile.tlsVerify ?? fileConfig.tlsVerify ?? true,
+    tlsVerify: profile.tlsVerify ?? true,
   };
 
-  // Resolve GitLab token
-  if (profile.gitlabTokenSource) {
-    const secret = await secretResolver.resolve(profile.gitlabTokenSource);
-    if (secret.value) {
-      resolved.gitlabToken = secret.value;
+  // Resolve token from configured env var
+  if (profile.tokenEnv) {
+    const value = process.env[profile.tokenEnv];
+    if (value && value.length > 0) {
+      resolved.token = value;
     }
-  }
-  // Env fallbacks for GitLab token
-  if (!resolved.gitlabToken && process.env.REVKIT_GITLAB_TOKEN) {
-    resolved.gitlabToken = process.env.REVKIT_GITLAB_TOKEN;
-  }
-  if (!resolved.gitlabToken && process.env.GITLAB_TOKEN) {
-    resolved.gitlabToken = process.env.GITLAB_TOKEN;
-  }
-
-  // Resolve GitHub token
-  if (profile.githubTokenSource) {
-    const secret = await secretResolver.resolve(profile.githubTokenSource);
-    if (secret.value) {
-      resolved.githubToken = secret.value;
-    }
-  }
-  if (!resolved.githubToken && process.env.REVKIT_GITHUB_TOKEN) {
-    resolved.githubToken = process.env.REVKIT_GITHUB_TOKEN;
-  }
-  if (!resolved.githubToken && process.env.GITHUB_TOKEN) {
-    resolved.githubToken = process.env.GITHUB_TOKEN;
   }
 
   return resolved;
 }
 
-/**
- * Load a safe display config (no secrets exposed).
- */
-export async function loadDisplayConfig(
-  remoteUrls: string[] = [],
-  explicitProfile?: string,
-): Promise<DisplayAppConfig> {
-  const fileConfig = await loadFileConfig();
-  const profileResolver = new ProfileResolver();
-  const secretResolver = new SecretResolver();
+// ─── Display Config ──────────────────────────────────────
 
-  let profile: RevkitProfile;
-  let profileName: string | null = null;
+/**
+ * Load config for display (no secrets exposed).
+ */
+export async function loadDisplayConfig(remoteUrls: string[], explicitProfile?: string): Promise<DisplayAppConfig> {
+  const fileConfig = await loadFileConfig();
+  const { profile, profileName, matchedBy, matchedPattern, matchSource } = resolveProfile(
+    fileConfig,
+    remoteUrls,
+    explicitProfile,
+  );
+
+  const tokenResolved = profile.tokenEnv
+    ? Boolean(process.env[profile.tokenEnv] && process.env[profile.tokenEnv]!.length > 0)
+    : false;
+
+  return {
+    profileName,
+    matchedBy,
+    matchedPattern,
+    matchSource,
+    provider: profile.provider,
+    url: profile.url,
+    tokenEnv: profile.tokenEnv,
+    tokenResolved,
+    caFile: profile.caFile,
+    tlsVerify: profile.tlsVerify ?? true,
+  };
+}
+
+// ─── Doctor ──────────────────────────────────────────────
+
+/**
+ * Run local config health checks.
+ */
+export async function runDoctor(remoteUrls: string[], explicitProfile?: string): Promise<DoctorResult> {
+  const checks: DoctorCheck[] = [];
+  const nextSteps: string[] = [];
+  let profileName: string | undefined;
+
+  // 1. Config file readable
+  let fileConfig: RevkitConfig;
   try {
-    const result = profileResolver.resolve(fileConfig, remoteUrls, explicitProfile);
+    fileConfig = await loadFileConfig();
+    checks.push({ ok: true, label: 'Config file readable' });
+  } catch (err) {
+    checks.push({ ok: false, label: 'Config file readable', detail: (err as Error).message });
+    nextSteps.push(`Fix or recreate ${CONFIG_FILE}`);
+    return { checks, nextSteps };
+  }
+
+  // 2. Profile resolution
+  let profile: RevkitProfile;
+  try {
+    const result = resolveProfile(fileConfig, remoteUrls, explicitProfile);
     profile = result.profile;
     profileName = result.profileName;
-  } catch {
-    // If profile resolution fails, show what we can from root config
-    return buildFallbackDisplayConfig(fileConfig, secretResolver);
-  }
-
-  const display: DisplayAppConfig = {
-    provider: profile.provider,
-    activeProfile: profileName ?? undefined,
-    gitlabUrl: profile.gitlabUrl,
-    defaultRepository: profile.defaultRepository,
-    caFile: profile.caFile,
-    tlsVerify: profile.tlsVerify ?? fileConfig.tlsVerify ?? true,
-  };
-
-  if (profile.gitlabTokenSource) {
-    display.gitlabTokenSource = await buildDisplayTokenInfo(profile.gitlabTokenSource, secretResolver);
-  }
-
-  if (profile.githubTokenSource) {
-    display.githubTokenSource = await buildDisplayTokenInfo(profile.githubTokenSource, secretResolver);
-  }
-
-  return display;
-}
-
-async function buildFallbackDisplayConfig(
-  config: AppConfig,
-  secretResolver: SecretResolver,
-): Promise<DisplayAppConfig> {
-  const display: DisplayAppConfig = {
-    provider: config.provider,
-    gitlabUrl: config.gitlabUrl,
-    defaultRepository: config.defaultRepository,
-    caFile: config.caFile,
-    tlsVerify: config.tlsVerify ?? true,
-  };
-
-  if (config.gitlabTokenSource) {
-    display.gitlabTokenSource = await buildDisplayTokenInfo(config.gitlabTokenSource, secretResolver);
-  }
-  if (config.githubTokenSource) {
-    display.githubTokenSource = await buildDisplayTokenInfo(config.githubTokenSource, secretResolver);
-  }
-
-  return display;
-}
-
-async function buildDisplayTokenInfo(
-  source: TokenSource,
-  secretResolver: SecretResolver,
-): Promise<DisplayTokenInfo> {
-  const resolved = await secretResolver.isResolved(source);
-  return {
-    type: source.type,
-    name: source.name,
-    resolved,
-  };
-}
-
-/**
- * Save config to disk.
- */
-export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-
-  let existing: Record<string, unknown> = {};
-  try {
-    const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
-    existing = JSON.parse(raw) as Record<string, unknown>;
+    checks.push({ ok: true, label: `Profile: ${profileName}` });
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw new ConfigError(
-        `Failed to load existing configuration from ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    checks.push({ ok: false, label: 'Profile resolution', detail: (err as Error).message });
+    nextSteps.push('revkit config setup');
+    return { checks, profileName, nextSteps };
   }
 
-  const merged = { ...existing, ...config };
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf-8');
-}
-
-/**
- * Unset a config key from disk.
- */
-export async function unsetConfig(key: string): Promise<boolean> {
-  let existing: Record<string, unknown> = {};
-  try {
-    const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
-    existing = JSON.parse(raw) as Record<string, unknown>;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw new ConfigError(
-        `Failed to load existing configuration from ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-    return false;
-  }
-
-  // Support dotted keys for nested values
-  const parts = key.split('.');
-  if (parts.length === 1) {
-    if (!(key in existing)) return false;
-    delete existing[key];
+  // 3. Provider is valid
+  if (['gitlab', 'github'].includes(profile.provider)) {
+    checks.push({ ok: true, label: `Provider: ${profile.provider}` });
   } else {
-    let obj: Record<string, unknown> = existing;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const next = obj[parts[i]];
-      if (!next || typeof next !== 'object') return false;
-      obj = next as Record<string, unknown>;
-    }
-    const lastKey = parts[parts.length - 1];
-    if (!(lastKey in obj)) return false;
-    delete obj[lastKey];
+    checks.push({ ok: false, label: 'Provider', detail: `Invalid provider: ${profile.provider}` });
   }
 
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(existing, null, 2), 'utf-8');
-  return true;
-}
-
-/**
- * Save raw JSON to config (bypasses schema validation for nested objects).
- */
-export async function saveRawConfig(data: Record<string, unknown>): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-
-  let existing: Record<string, unknown> = {};
-  try {
-    const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
-    existing = JSON.parse(raw) as Record<string, unknown>;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw new ConfigError(
-        `Failed to load existing configuration from ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+  // 4. URL
+  if (profile.url) {
+    try {
+      new URL(profile.url);
+      checks.push({ ok: true, label: `URL: ${profile.url}` });
+    } catch {
+      checks.push({ ok: false, label: 'URL', detail: `Invalid URL: ${profile.url}` });
     }
   }
 
-  const merged = deepMerge(existing, data);
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf-8');
-}
+  // 5. Token env configured
+  if (profile.tokenEnv) {
+    checks.push({ ok: true, label: `Token env configured: ${profile.tokenEnv}` });
 
-function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
-  const result = { ...target };
-  for (const key of Object.keys(source)) {
-    const srcVal = source[key];
-    const tgtVal = target[key];
-    if (srcVal && typeof srcVal === 'object' && !Array.isArray(srcVal) && tgtVal && typeof tgtVal === 'object' && !Array.isArray(tgtVal)) {
-      result[key] = deepMerge(tgtVal as Record<string, unknown>, srcVal as Record<string, unknown>);
+    // 6. Token env is set
+    const value = process.env[profile.tokenEnv];
+    if (value && value.length > 0) {
+      checks.push({ ok: true, label: 'Token env is set' });
     } else {
-      result[key] = srcVal;
+      checks.push({ ok: false, label: 'Token env is not set' });
+      nextSteps.push(`export ${profile.tokenEnv}=...`);
+    }
+  } else {
+    checks.push({ ok: false, label: 'Token env not configured' });
+    nextSteps.push(`revkit config set tokenEnv <ENV_VAR_NAME> --profile ${profileName}`);
+  }
+
+  // 7. CA file
+  if (profile.caFile) {
+    try {
+      await fs.access(profile.caFile);
+      checks.push({ ok: true, label: `CA file exists: ${profile.caFile}` });
+    } catch {
+      checks.push({ ok: false, label: 'CA file', detail: `Not found: ${profile.caFile}` });
     }
   }
-  return result;
+
+  // 8. TLS verify
+  if (profile.tlsVerify === false) {
+    checks.push({ ok: true, label: 'TLS verification disabled (warning)' });
+  } else {
+    checks.push({ ok: true, label: 'TLS verification enabled' });
+  }
+
+  // 9. Remote match (only when not using explicit profile)
+  if (remoteUrls.length > 0 && !explicitProfile) {
+    const profiles = fileConfig.profiles ?? {};
+    const matchingNames: string[] = [];
+    for (const [name, p] of Object.entries(profiles)) {
+      const candidates = getProfileRemotePatterns(p);
+      if (candidates.some(({ pattern }) => remoteUrls.some((url) => url.includes(pattern)))) {
+        matchingNames.push(name);
+      }
+    }
+    if (matchingNames.length === 1) {
+      checks.push({ ok: true, label: 'Current git remote matches profile' });
+    } else if (matchingNames.length === 0) {
+      checks.push({ ok: false, label: 'No profile matches current git remotes' });
+      nextSteps.push(`revkit config set remotePatterns <pattern> --profile ${profileName}`);
+    } else {
+      checks.push({
+        ok: false,
+        label: 'Ambiguous match',
+        detail: `Multiple profiles match: ${matchingNames.join(', ')}`,
+      });
+    }
+  }
+
+  return { checks, profileName, nextSteps };
 }
 
-function parseBooleanEnv(name: string, value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-  throw new ConfigError(`${name} must be one of: true, false, 1, 0, yes, no, on, off`);
-}
+// ─── Re-exports ──────────────────────────────────────────
 
-export { CONFIG_DIR, CONFIG_FILE };
-export { SecretResolver } from './secret-resolver.js';
-export { ProfileResolver } from './profile-resolver.js';
+export { ProfileResolver, getProfileRemotePatterns } from './profile-resolver.js';
 export type {
-  AppConfig,
+  RevkitConfig,
+  RevkitProfile,
   ResolvedAppConfig,
   DisplayAppConfig,
-  TokenSource,
-  RevkitProfile,
+  ProfileResolutionResult,
+  ProviderType,
+  DoctorCheck,
+  DoctorResult,
 } from './types.js';
