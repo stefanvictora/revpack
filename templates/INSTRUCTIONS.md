@@ -139,11 +139,15 @@ If the reply does not add technical value, omit it.
 
 # New findings
 
-Use `.revkit/outputs/new-findings.json` only for concrete, actionable issues tied to a visible diff line.
+Use `.revkit/outputs/new-findings.json` only for concrete, actionable issues that are specific enough to justify a positional review thread.
 
 Prefer fewer, higher-value findings over many speculative findings.
 
 ## Review quality bar
+
+Use `.revkit/outputs/new-findings.json` for concrete, actionable issues that should become positional review threads.
+
+Prefer fewer, higher-value findings over many speculative findings. Findings do not need to be severe, but they must be useful, specific, and tied to a real risk.
 
 Create a new finding only when all of these are true:
 
@@ -487,13 +491,14 @@ Add or update tests covering [specific scenario].
 
 Use `.revkit/outputs/review.md` instead of `.revkit/outputs/new-findings.json` for:
 
+- lower-confidence concerns that deserve human attention but are not proven enough for a positional finding
+- minor maintainability observations that are useful but not worth opening a separate thread
+- possible missing tests where the risk is plausible but no specific broken behavior is visible
 - broad observations about the MR/PR
 - risks that are real but not tied to one changed line
 - architectural concerns requiring discussion
 - issues outside the visible diff
 - uncertainty that needs human confirmation
-- test coverage concerns without a clear broken behavior
-- useful context for reviewers that should not become a blocking positional thread
 
 Use `new-findings.json` only for concrete, actionable issues tied to a visible diff line.
 
