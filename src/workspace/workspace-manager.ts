@@ -566,6 +566,7 @@ export class WorkspaceManager {
     lines.push('9. Use `.revkit/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.');
     lines.push('10. Inspect checked-out source files when needed to understand the new branch state.');
     lines.push('11. Use `.revkit/diffs/views/` only as optional readability aids.');
+    lines.push('12. Read existing `.revkit/outputs/review.md` and `.revkit/outputs/summary.md`, if present, before updating them.');
     lines.push('');
 
     // ─── MR/PR Description ────────────────────────────────

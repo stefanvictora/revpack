@@ -519,15 +519,25 @@ A useful review note may include:
 
 Keep it concise.
 
-When updating `outputs/review.md`, treat the existing file as the current desired public review note.
+### Updating an existing review note
 
-Preserve still-relevant information from the existing note.
+If `outputs/review.md` already exists and is non-empty, update it instead of replacing it from scratch.
 
-Remove or update stale information.
+Treat the existing file as the current published review note. Preserve any content that is still accurate, useful, and not duplicated elsewhere.
+
+Before writing the updated note:
+
+1. Identify existing observations, concerns, and follow-up questions.
+2. Keep items that are still relevant.
+3. Update items whose status or wording changed.
+4. Remove items that are stale, resolved, duplicated, or no longer useful.
+5. Add new observations only when they add value.
+
+Do not discard still-relevant content just because the current run produced new findings.
 
 Do not append repetitive status updates.
 
-The note should remain concise and useful as a single updatable MR/PR comment.
+The result should be a single coherent MR/PR review note, not a chronological log of review runs.
 
 ---
 
