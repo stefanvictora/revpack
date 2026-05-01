@@ -24,6 +24,12 @@ export interface FileEntry {
   oldPath: string;
   newPath: string;
   status: FileStatus;
+  /** True when the diff contains no text hunks and a Binary files marker was found. */
+  binary: boolean;
+  /** True when the old path existed before this change (i.e. not a new file). */
+  oldExists: boolean;
+  /** True when the new path exists after this change (i.e. not a deleted file). */
+  newExists: boolean;
   lines: LineEntry[];
   hunks: HunkInfo[];
 }
@@ -41,6 +47,7 @@ interface PatchFileHeader {
   isDeleted: boolean;
   isRenamed: boolean;
   isCopy: boolean;
+  isBinary: boolean;
 }
 
 /**
@@ -68,6 +75,9 @@ export function parsePatch(patch: string): LineMap {
       oldPath: header.parsed.oldPath,
       newPath: header.parsed.newPath,
       status: inferStatus(header.parsed),
+      binary: header.parsed.isBinary,
+      oldExists: !header.parsed.isNew,
+      newExists: !header.parsed.isDeleted,
       lines: [],
       hunks: [],
     };
@@ -106,6 +116,7 @@ function parseDiffHeader(lines: string[], startIndex: number): { parsed: PatchFi
   let isDeleted = false;
   let isRenamed = false;
   let isCopy = false;
+  let isBinary = false;
 
   let i = startIndex + 1;
 
@@ -115,6 +126,32 @@ function parseDiffHeader(lines: string[], startIndex: number): { parsed: PatchFi
 
     if (line.startsWith('diff --git ') || line.startsWith('@@ ')) {
       break;
+    }
+
+    if (line.startsWith('new file mode ')) {
+      isNew = true;
+      i++;
+      continue;
+    }
+
+    if (line.startsWith('deleted file mode ')) {
+      isDeleted = true;
+      i++;
+      continue;
+    }
+
+    if (line.startsWith('Binary files ')) {
+      isBinary = true;
+      // "Binary files /dev/null and b/file differ" → new file
+      // "Binary files a/file and /dev/null differ" → deleted file
+      const rest = line.slice('Binary files '.length);
+      if (rest.startsWith('/dev/null')) {
+        isNew = true;
+      } else if (/ and \/dev\/null /.test(rest)) {
+        isDeleted = true;
+      }
+      i++;
+      continue;
     }
 
     if (line.startsWith('--- ')) {
@@ -183,7 +220,7 @@ function parseDiffHeader(lines: string[], startIndex: number): { parsed: PatchFi
   }
 
   return {
-    parsed: { oldPath, newPath, renameFrom, renameTo, isNew, isDeleted, isRenamed, isCopy },
+    parsed: { oldPath, newPath, renameFrom, renameTo, isNew, isDeleted, isRenamed, isCopy, isBinary },
     nextIndex: i,
   };
 }

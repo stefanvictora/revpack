@@ -761,6 +761,9 @@ export class WorkspaceManager {
         return {
           fileId: f.fileId,
           status: f.status,
+          binary: f.binary,
+          oldExists: f.oldExists,
+          newExists: f.newExists,
           oldPath: f.oldPath,
           newPath: f.newPath,
           added,
@@ -1029,7 +1032,7 @@ export class WorkspaceManager {
     currentHeadSha: string,
   ): Promise<void> {
     // Build line map from diffs for embedding diff context in thread files
-    const patchContent = diffs.map((d) => `diff --git a/${d.oldPath} b/${d.newPath}\n${d.diff}`).join('\n');
+    const patchContent = diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
     const lineMap = parsePatch(patchContent);
 
     for (const thread of threads) {
@@ -1038,8 +1041,18 @@ export class WorkspaceManager {
         throw new WorkspaceError(`Thread index is missing provider thread ID "${thread.threadId}"`);
       }
 
-      // JSON version
-      await this.writeJson(path.join(this.baseDir, 'threads', `${prefix}.json`), thread);
+      // JSON version — write only the minimal targetRef so agents don't see
+      // the full ReviewTarget object (title, description, branches, etc.).
+      const threadToWrite = {
+        ...thread,
+        targetRef: {
+          provider: thread.targetRef.provider,
+          repository: thread.targetRef.repository,
+          targetType: thread.targetRef.targetType,
+          targetId: thread.targetRef.targetId,
+        },
+      };
+      await this.writeJson(path.join(this.baseDir, 'threads', `${prefix}.json`), threadToWrite);
 
       // Markdown version for human/agent reading
       const md = this.threadToMarkdown(thread, prefix, lineMap, currentHeadSha);
@@ -1048,26 +1061,39 @@ export class WorkspaceManager {
   }
 
   private async writeDiffs(diffs: ReviewDiff[]): Promise<void> {
-    const patchContent = diffs
-      .map((d) => {
-        const header = `diff --git a/${d.oldPath} b/${d.newPath}`;
-        return `${header}\n${d.diff}`;
-      })
-      .join('\n');
-
+    const patchContent = diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'latest.patch'), patchContent, 'utf-8');
   }
 
   async writeIncrementalDiff(diffs: ReviewDiff[]): Promise<void> {
     await this.ensureDir(path.join(this.baseDir, 'diffs'));
-    const patchContent = diffs
-      .map((d) => {
-        const header = `diff --git a/${d.oldPath} b/${d.newPath}`;
-        return `${header}\n${d.diff}`;
-      })
-      .join('\n');
-
+    const patchContent = diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), patchContent, 'utf-8');
+  }
+
+  /**
+   * Build a git-compatible patch text for a single diff, including new/deleted/renamed
+   * metadata lines and a Binary files marker for binary new/deleted files.
+   */
+  static diffToGitPatch(d: ReviewDiff): string {
+    let header = `diff --git a/${d.oldPath} b/${d.newPath}`;
+    if (d.newFile) {
+      header += '\nnew file mode 100644';
+    } else if (d.deletedFile) {
+      header += '\ndeleted file mode 100644';
+    }
+    if (d.renamedFile) {
+      header += `\nrename from ${d.oldPath}\nrename to ${d.newPath}`;
+    }
+    const diffContent = d.diff ?? '';
+    // For binary new/deleted files the diff field is empty; emit a Binary files
+    // marker so the patch parser can detect status and binary flag correctly.
+    if (!diffContent.trim() && (d.newFile || d.deletedFile)) {
+      const oldRef = d.newFile ? '/dev/null' : `a/${d.oldPath}`;
+      const newRef = d.deletedFile ? '/dev/null' : `b/${d.newPath}`;
+      header += `\nBinary files ${oldRef} and ${newRef} differ`;
+    }
+    return `${header}\n${diffContent}`;
   }
 
   /**

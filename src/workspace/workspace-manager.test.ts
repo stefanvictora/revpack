@@ -899,6 +899,130 @@ describe('WorkspaceManager', () => {
       expect(result).toBe(false);
     });
   });
+
+  describe('files.json status and binary metadata', () => {
+    it('marks a text addition as added with oldExists=false, newExists=true', async () => {
+      const addedDiff: ReviewDiff = {
+        oldPath: 'src/New.ts',
+        newPath: 'src/New.ts',
+        diff: '--- /dev/null\n+++ b/src/New.ts\n@@ -0,0 +1,2 @@\n+const x = 1;\n+export default x;\n',
+        newFile: true,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      await createBundle(manager, makeTarget(), [], [addedDiff]);
+
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const entry = filesJson.files[0];
+      expect(entry.status).toBe('added');
+      expect(entry.binary).toBe(false);
+      expect(entry.oldExists).toBe(false);
+      expect(entry.newExists).toBe(true);
+    });
+
+    it('marks a text deletion as deleted with oldExists=true, newExists=false', async () => {
+      const deletedDiff: ReviewDiff = {
+        oldPath: 'src/Gone.ts',
+        newPath: 'src/Gone.ts',
+        diff: '--- a/src/Gone.ts\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-const x = 1;\n-export default x;\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: true,
+      };
+      await createBundle(manager, makeTarget(), [], [deletedDiff]);
+
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const entry = filesJson.files[0];
+      expect(entry.status).toBe('deleted');
+      expect(entry.binary).toBe(false);
+      expect(entry.oldExists).toBe(true);
+      expect(entry.newExists).toBe(false);
+    });
+
+    it('marks a binary addition as added with binary=true', async () => {
+      // GitLab returns an empty diff for binary files
+      const binaryAddedDiff: ReviewDiff = {
+        oldPath: 'assets/logo.png',
+        newPath: 'assets/logo.png',
+        diff: '',
+        newFile: true,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      await createBundle(manager, makeTarget(), [], [binaryAddedDiff]);
+
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const entry = filesJson.files[0];
+      expect(entry.status).toBe('added');
+      expect(entry.binary).toBe(true);
+      expect(entry.oldExists).toBe(false);
+      expect(entry.newExists).toBe(true);
+      expect(entry.added).toBe(0);
+      expect(entry.removed).toBe(0);
+    });
+
+    it('marks a binary deletion as deleted with binary=true', async () => {
+      const binaryDeletedDiff: ReviewDiff = {
+        oldPath: 'assets/old.png',
+        newPath: 'assets/old.png',
+        diff: '',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: true,
+      };
+      await createBundle(manager, makeTarget(), [], [binaryDeletedDiff]);
+
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const entry = filesJson.files[0];
+      expect(entry.status).toBe('deleted');
+      expect(entry.binary).toBe(true);
+      expect(entry.oldExists).toBe(true);
+      expect(entry.newExists).toBe(false);
+    });
+
+    it('marks a regular modification as modified with binary=false, both exist', async () => {
+      await createBundle(manager, makeTarget(), [], [makeDiff()]);
+
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const entry = filesJson.files[0];
+      expect(entry.status).toBe('modified');
+      expect(entry.binary).toBe(false);
+      expect(entry.oldExists).toBe(true);
+      expect(entry.newExists).toBe(true);
+    });
+  });
+
+  describe('thread JSON targetRef', () => {
+    it('writes only the 4 minimal targetRef fields, not the full ReviewTarget', async () => {
+      // Simulate what happens when the provider passes a full ReviewTarget as targetRef
+      // (ReviewTarget extends ReviewTargetRef, so extra fields bleed through at runtime)
+      const threadWithFullTargetRef: ReviewThread = {
+        ...makeThread(),
+        // Cast to satisfy the type but include extra fields that would come from a ReviewTarget
+        targetRef: {
+          provider: 'gitlab',
+          repository: 'group/project',
+          targetType: 'merge_request',
+          targetId: '42',
+          // Extra fields that must NOT appear in the written JSON
+          ...({ title: 'Should not be here', author: 'alice', state: 'opened' } as object),
+        } as ReviewThread['targetRef'],
+      };
+
+      await createBundle(manager, makeTarget(), [threadWithFullTargetRef]);
+
+      const threadJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'threads', 'T-001.json'), 'utf-8'));
+
+      expect(Object.keys(threadJson.targetRef)).toEqual(['provider', 'repository', 'targetType', 'targetId']);
+      expect(threadJson.targetRef.provider).toBe('gitlab');
+      expect(threadJson.targetRef.repository).toBe('group/project');
+      expect(threadJson.targetRef.targetType).toBe('merge_request');
+      expect(threadJson.targetRef.targetId).toBe('42');
+      // Must NOT have extra fields
+      expect((threadJson.targetRef as Record<string, unknown>).title).toBeUndefined();
+      expect((threadJson.targetRef as Record<string, unknown>).author).toBeUndefined();
+    });
+  });
 });
 
 async function fileExists(p: string): Promise<boolean> {

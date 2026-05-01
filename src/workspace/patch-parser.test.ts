@@ -173,8 +173,29 @@ index 0000000..abc1234
       expect(file.oldPath).toBe('src/NewFile.java');
       expect(file.newPath).toBe('src/NewFile.java');
       expect(file.status).toBe('added');
+      expect(file.binary).toBe(false);
+      expect(file.oldExists).toBe(false);
+      expect(file.newExists).toBe(true);
       expect(file.lines).toHaveLength(3);
       expect(file.lines.every((l) => l.type === 'added')).toBe(true);
+    });
+
+    it('detects added status from new file mode alone (no --- /dev/null)', () => {
+      // Binary additions have no --- /dev/null hunk lines; status must come from metadata
+      const patch = `diff --git a/assets/logo.png b/assets/logo.png
+new file mode 100644
+index 0000000..deadbeef
+Binary files /dev/null and b/assets/logo.png differ`;
+
+      const result = parsePatch(patch);
+      const file = result.files[0];
+
+      expect(file.status).toBe('added');
+      expect(file.binary).toBe(true);
+      expect(file.oldExists).toBe(false);
+      expect(file.newExists).toBe(true);
+      expect(file.lines).toHaveLength(0);
+      expect(file.hunks).toHaveLength(0);
     });
   });
 
@@ -196,7 +217,26 @@ index abc1234..0000000
       expect(file.oldPath).toBe('src/OldFile.java');
       expect(file.newPath).toBe('src/OldFile.java');
       expect(file.status).toBe('deleted');
+      expect(file.binary).toBe(false);
+      expect(file.oldExists).toBe(true);
+      expect(file.newExists).toBe(false);
       expect(file.lines.every((l) => l.type === 'removed')).toBe(true);
+    });
+
+    it('detects deleted status from deleted file mode alone (binary deletion)', () => {
+      const patch = `diff --git a/assets/old.png b/assets/old.png
+deleted file mode 100644
+index deadbeef..0000000
+Binary files a/assets/old.png and /dev/null differ`;
+
+      const result = parsePatch(patch);
+      const file = result.files[0];
+
+      expect(file.status).toBe('deleted');
+      expect(file.binary).toBe(true);
+      expect(file.oldExists).toBe(true);
+      expect(file.newExists).toBe(false);
+      expect(file.lines).toHaveLength(0);
     });
   });
 
@@ -296,6 +336,34 @@ diff --git a/src/B.ts b/src/B.ts
         { type: 'added', newLine: 2, text: 'added' },
         { type: 'context', oldLine: 2, newLine: 3, text: 'line2' },
       ]);
+    });
+  });
+
+  describe('binary/oldExists/newExists fields', () => {
+    it('sets binary=false, oldExists=true, newExists=true for a modified text file', () => {
+      const patch = `diff --git a/src/App.ts b/src/App.ts
+--- a/src/App.ts
++++ b/src/App.ts
+@@ -1,2 +1,2 @@
+-old
++new`;
+
+      const file = parsePatch(patch).files[0];
+      expect(file.binary).toBe(false);
+      expect(file.oldExists).toBe(true);
+      expect(file.newExists).toBe(true);
+    });
+
+    it('sets binary=true for a modified binary file', () => {
+      const patch = `diff --git a/assets/icon.png b/assets/icon.png
+index abc1234..def5678 100644
+Binary files a/assets/icon.png and b/assets/icon.png differ`;
+
+      const file = parsePatch(patch).files[0];
+      expect(file.binary).toBe(true);
+      expect(file.status).toBe('modified');
+      expect(file.oldExists).toBe(true);
+      expect(file.newExists).toBe(true);
     });
   });
 });
