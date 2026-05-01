@@ -502,6 +502,7 @@ describe('WorkspaceManager', () => {
             startSha: 'xxx',
             threadsDigest: null,
             descriptionDigest: null,
+            threadDigests: {},
             createdAt: '2026-01-01T00:00:00Z',
           },
           current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },

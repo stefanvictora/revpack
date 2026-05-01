@@ -248,6 +248,8 @@ export interface RemoteCheckpoint {
   providerVersionId?: string;
   threadsDigest: string | null;
   descriptionDigest?: string | null;
+  /** Per-thread digests at checkpoint time, keyed by provider thread ID. */
+  threadDigests: Record<string, string>;
   createdAt: string;
 }
 
@@ -263,6 +265,8 @@ export interface BundleThreads {
   knownProviderThreadIds: string[];
   shortIdMapping: { shortId: string; providerThreadId: string }[];
   items: BundleThreadItem[];
+  /** Per-thread digests at the time of the last checkpoint. Used to detect per-thread changes across multiple prepares. */
+  checkpointDigests: Record<string, string>;
 }
 
 export interface BundleThreadItem {

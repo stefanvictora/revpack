@@ -13,7 +13,7 @@ import type {
 import type { ResolvedAppConfig } from '../config/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
-import { computeAggregateThreadsDigest, computeContentHash, computeThreadDigest } from '../workspace/thread-digest.js';
+import { computeAggregateThreadsDigest, computeContentHash, computeThreadDigest, computeThreadDigestMap } from '../workspace/thread-digest.js';
 import { extractMarkedSummary } from '../workspace/description-summary.js';
 import {
   parseCheckpointMarker,
@@ -140,6 +140,7 @@ export class ReviewOrchestrator {
             providerVersionId: parsed.state.checkpoint.providerVersionId,
             threadsDigest: parsed.state.checkpoint.threadsDigest,
             descriptionDigest: parsed.state.checkpoint.descriptionDigest ?? null,
+            threadDigests: parsed.state.checkpoint.threadDigests ?? {},
             createdAt: parsed.state.checkpoint.createdAt,
           };
         }
@@ -309,18 +310,28 @@ export class ReviewOrchestrator {
     const previousActions = previousBundle && mode !== 'fresh' ? previousBundle.publishedActions : [];
     const previousOutputs = previousBundle && mode !== 'fresh' ? previousBundle.outputs : undefined;
 
-    // Compute per-thread changes since the last checkpoint/prepare
+    // Compute per-thread changes since the last checkpoint.
+    // The checkpoint baseline (per-thread digests at the time of the last publish) is
+    // stable across multiple prepares, so "Changed Threads" persists until a new
+    // checkpoint is published.
     let changedThreadIds: Set<string> | undefined;
-    if (previousBundle && threadsChanged) {
+
+    // Resolve checkpoint baseline: carried-forward local > remote checkpoint > fresh snapshot
+    const checkpointChanged = previousBundle && remoteCheckpoint
+      && previousBundle.prepare.checkpoint?.headSha !== remoteCheckpoint.headSha;
+
+    const checkpointDigests: Record<string, string> =
+      (previousBundle && !checkpointChanged)
+        ? previousBundle.threads.checkpointDigests
+        : remoteCheckpoint?.threadDigests
+          ?? computeThreadDigestMap(allThreads);
+
+    if (threadsChanged) {
       changedThreadIds = new Set<string>();
-      const prevDigestMap = new Map<string, string>();
-      for (const item of previousBundle.threads.items) {
-        prevDigestMap.set(item.providerThreadId, item.digest);
-      }
       for (const t of allThreads) {
         const currentDigest = computeThreadDigest(t);
-        const prevDigest = prevDigestMap.get(t.threadId);
-        if (!prevDigest || prevDigest !== currentDigest) {
+        const baseDigest = checkpointDigests[t.threadId];
+        if (!baseDigest || baseDigest !== currentDigest) {
           changedThreadIds.add(t.threadId);
         }
       }
@@ -344,6 +355,7 @@ export class ReviewOrchestrator {
       previousActions,
       previousOutputs,
       activeThreads,
+      checkpointDigests,
     );
     await this.workspace.saveBundleState(bundleState);
 
@@ -520,6 +532,7 @@ export class ReviewOrchestrator {
     );
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
     const currentDescriptionDigest = computeContentHash(target.description ?? '');
+    const threadDigests = computeThreadDigestMap(allThreads);
 
     const versions = await this.provider.getDiffVersions(targetRef);
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
@@ -533,6 +546,7 @@ export class ReviewOrchestrator {
       currentThreadsDigest,
       latestVersionId,
       currentDescriptionDigest,
+      threadDigests,
     );
 
     if (existingNote) {

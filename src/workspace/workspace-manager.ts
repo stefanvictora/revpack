@@ -142,6 +142,7 @@ export class WorkspaceManager {
     previousActions?: BundlePublishedAction[],
     previousOutputs?: BundleOutputs,
     bundledThreads: ReviewThread[] = threads,
+    checkpointDigests: Record<string, string> = {},
   ): BundleState {
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
 
@@ -199,6 +200,7 @@ export class WorkspaceManager {
           providerThreadId,
         })),
         items: threadItems,
+        checkpointDigests,
       },
       outputs: previousOutputs ?? {
         summary: { path: '.revkit/outputs/summary.md' },
@@ -440,6 +442,13 @@ export class WorkspaceManager {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
     const generalComments = threads.filter((t) => !t.resolvable && !t.comments.every((c) => c.system));
 
+    // Format a thread's file position as a markdown-friendly location string.
+    const threadLocation = (t: ReviewThread): string => {
+      if (!t.position?.filePath) return 'general';
+      const lineNum = t.position.newLine ?? t.position.oldLine;
+      return `\`${t.position.filePath}\`${lineNum ? `:${lineNum}` : ''}`;
+    };
+
     // Strip the bot-published marker and find the first meaningful line of a comment body.
     // For revkit findings, skip the severity/category metadata line (e.g. "_🔴 High_ | _security_").
     const cleanSnippet = (body: string, maxLen: number): string => {
@@ -613,10 +622,7 @@ export class WorkspaceManager {
         for (const t of [...changedUnresolved, ...changedResolved]) {
           const prefix = threadIndex.get(t.threadId) ?? '?';
           const status = t.resolved ? 'resolved' : 'unresolved';
-          const lineNum = t.position?.newLine ?? t.position?.oldLine;
-          const file = t.position?.filePath
-            ? `\`${t.position.filePath}\`${lineNum ? `:${lineNum}` : ''}`
-            : 'general';
+          const file = threadLocation(t);
           const firstComment = t.comments.find((c) => !c.system);
           const snippet = cleanSnippet(firstComment?.body ?? '', 80);
           lines.push(`| ${prefix} | ${status} | ${file} | ${snippet} |`);
@@ -642,10 +648,7 @@ export class WorkspaceManager {
 
         const firstComment = t.comments.find((c) => !c.system);
         const author = firstComment?.author ?? '?';
-        const lineNum = t.position?.newLine ?? t.position?.oldLine;
-        const file = t.position?.filePath
-          ? `\`${t.position.filePath}\`${lineNum ? `:${lineNum}` : ''}`
-          : 'general';
+        const file = threadLocation(t);
         const snippet = cleanSnippet(firstComment?.body ?? '', 80);
         lines.push(`| ${prefix} | ${flagStr} | @${author} | ${file} | ${snippet} |`);
       }
@@ -1082,7 +1085,8 @@ export class WorkspaceManager {
     lines.push(`- **Resolvable**: ${thread.resolvable}`);
     if (thread.position) {
       lines.push(`- **File**: \`${thread.position.filePath}\``);
-      if (thread.position.newLine) lines.push(`- **Line**: ${thread.position.newLine}`);
+      const lineNum = thread.position?.newLine ?? thread.position?.oldLine;
+      if (lineNum) lines.push(`- **Line**: ${lineNum}`);
     }
     lines.push('');
 

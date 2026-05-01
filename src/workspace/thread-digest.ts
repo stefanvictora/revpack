@@ -71,6 +71,13 @@ export function computeThreadDigest(thread: ReviewThread): string {
 }
 
 /**
+ * Compute a map of thread ID → digest for all threads.
+ */
+export function computeThreadDigestMap(threads: ReviewThread[]): Record<string, string> {
+  return Object.fromEntries(threads.map((t) => [t.threadId, computeThreadDigest(t)]));
+}
+
+/**
  * Compute an aggregate threads digest from all threads.
  * Threads are sorted by providerThreadId for stability.
  */

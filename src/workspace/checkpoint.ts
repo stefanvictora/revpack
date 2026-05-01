@@ -19,6 +19,8 @@ export interface CheckpointState {
     providerVersionId?: string;
     threadsDigest: string | null;
     descriptionDigest?: string | null;
+    /** Per-thread digests at checkpoint time, keyed by provider thread ID. Present in all new checkpoints. */
+    threadDigests?: Record<string, string>;
   };
 }
 
@@ -97,6 +99,7 @@ export function buildCheckpointState(
   threadsDigest: string | null,
   providerVersionId?: string,
   descriptionDigest?: string | null,
+  threadDigests?: Record<string, string>,
 ): CheckpointState {
   return {
     schemaVersion: 1,
@@ -115,6 +118,7 @@ export function buildCheckpointState(
       providerVersionId,
       threadsDigest,
       descriptionDigest: descriptionDigest ?? null,
+      threadDigests,
     },
   };
 }
