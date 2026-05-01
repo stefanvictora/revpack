@@ -262,11 +262,7 @@ export interface BundleComparison {
 export interface BundleThreads {
   digestVersion: number;
   digest: string | null;
-  knownProviderThreadIds: string[];
-  shortIdMapping: { shortId: string; providerThreadId: string }[];
   items: BundleThreadItem[];
-  /** Per-thread digests at the time of the last checkpoint. Used to detect per-thread changes across multiple prepares. */
-  checkpointDigests: Record<string, string>;
 }
 
 export interface BundleThreadItem {

@@ -313,19 +313,14 @@ export class ReviewOrchestrator {
     const previousOutputs = previousBundle && mode !== 'fresh' ? previousBundle.outputs : undefined;
 
     // Compute per-thread changes since the last checkpoint.
-    // The checkpoint baseline (per-thread digests at the time of the last publish) is
-    // stable across multiple prepares, so "Changed Threads" persists until a new
-    // checkpoint is published.
+    // The baseline comes directly from the remote checkpoint's per-thread digests.
+    // If no checkpoint exists, we snapshot the current state (no changes detectable).
     let changedThreadIds: Set<string> | undefined;
 
-    // Resolve checkpoint baseline: carried-forward local > remote checkpoint > fresh snapshot
-    const checkpointChanged =
-      previousBundle && remoteCheckpoint && previousBundle.prepare.checkpoint?.headSha !== remoteCheckpoint.headSha;
-
     const checkpointDigests: Record<string, string> =
-      previousBundle && !checkpointChanged
-        ? previousBundle.threads.checkpointDigests
-        : (remoteCheckpoint?.threadDigests ?? computeThreadDigestMap(allThreads));
+      remoteCheckpoint && Object.keys(remoteCheckpoint.threadDigests).length > 0
+        ? remoteCheckpoint.threadDigests
+        : computeThreadDigestMap(allThreads);
 
     if (threadsChanged) {
       changedThreadIds = new Set<string>();
@@ -357,7 +352,6 @@ export class ReviewOrchestrator {
       previousActions,
       previousOutputs,
       activeThreads,
-      checkpointDigests,
     );
     await this.workspace.saveBundleState(bundleState);
 

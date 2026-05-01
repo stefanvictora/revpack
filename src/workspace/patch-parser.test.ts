@@ -117,6 +117,44 @@ index 111..222 100644
     });
   });
 
+  describe('quoted paths', () => {
+    it('parses Git-quoted paths with spaces', () => {
+      const patch = `diff --git "a/src/old name.ts" "b/src/new name.ts"
+similarity index 88%
+rename from "src/old name.ts"
+rename to "src/new name.ts"
+--- "a/src/old name.ts"
++++ "b/src/new name.ts"
+@@ -1,2 +1,3 @@
+ export const name = "old";
++export const extra = true;
+`;
+
+      const result = parsePatch(patch);
+      const file = result.files[0];
+
+      expect(file.oldPath).toBe('src/old name.ts');
+      expect(file.newPath).toBe('src/new name.ts');
+      expect(file.status).toBe('renamed');
+      expect(file.lines[1]).toEqual({ type: 'added', newLine: 2, text: 'export const extra = true;' });
+    });
+
+    it('decodes Git C-style escapes in quoted paths', () => {
+      const patch = `diff --git "a/src/file\\told.ts" "b/src/file\\tnew.ts"
+--- "a/src/file\\told.ts"
++++ "b/src/file\\tnew.ts"
+@@ -1,1 +1,1 @@
+-old
++new`;
+
+      const result = parsePatch(patch);
+      const file = result.files[0];
+
+      expect(file.oldPath).toBe('src/file\told.ts');
+      expect(file.newPath).toBe('src/file\tnew.ts');
+    });
+  });
+
   describe('new file', () => {
     it('parses an added file', () => {
       const patch = `diff --git a/src/NewFile.java b/src/NewFile.java

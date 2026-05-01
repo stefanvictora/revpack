@@ -221,7 +221,9 @@ describe('ReviewOrchestrator', () => {
       expect(bundleState.schemaVersion).toBe(2);
       expect(bundleState.target.id).toBe('42');
       expect(bundleState.target.provider).toBe('gitlab');
-      expect(bundleState.threads.knownProviderThreadIds).toContain('thread-1');
+      expect(bundleState.threads.items.map((i: { providerThreadId: string }) => i.providerThreadId)).toContain(
+        'thread-1',
+      );
       expect(bundleState.prepare.mode).toBe('fresh');
     });
 

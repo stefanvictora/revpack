@@ -149,7 +149,6 @@ export class WorkspaceManager {
     previousActions?: BundlePublishedAction[],
     previousOutputs?: BundleOutputs,
     bundledThreads: ReviewThread[] = threads,
-    checkpointDigests: Record<string, string> = {},
   ): BundleState {
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
 
@@ -199,13 +198,7 @@ export class WorkspaceManager {
       threads: {
         digestVersion: DIGEST_VERSION,
         digest: prepareSummary.current.threadsDigest,
-        knownProviderThreadIds: threads.map((t) => t.threadId),
-        shortIdMapping: [...threadIndex].map(([providerThreadId, shortId]) => ({
-          shortId,
-          providerThreadId,
-        })),
         items: threadItems,
-        checkpointDigests,
       },
       outputs: previousOutputs ?? {
         summary: { path: '.revkit/outputs/summary.md' },

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import chalk from 'chalk';
 import type { NewFinding } from '../../core/types.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
@@ -17,12 +18,34 @@ const DEFAULT_REVIEW_FILE = '.revkit/outputs/review.md';
 const DEFAULT_SUMMARY_FILE = '.revkit/outputs/summary.md';
 const DEFAULT_LATEST_PATCH_FILE = '.revkit/diffs/latest.patch';
 
+function workspacePath(filePath: string): string {
+  return path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+}
+
 // ─── JSON helpers ────────────────────────────────────────
 
 interface ReplyEntry {
   threadId: string;
   body: string;
   resolve?: boolean;
+}
+
+function normalizeThreadRef(ref: string): string {
+  return ref.trim().toUpperCase();
+}
+
+function findReplyEntryIndex(entries: ReplyEntry[], requestedRef: string, resolvedRef: string): number {
+  const normalizedRequested = normalizeThreadRef(requestedRef);
+  return entries.findIndex(
+    (entry) => normalizeThreadRef(entry.threadId) === normalizedRequested || entry.threadId.trim() === resolvedRef,
+  );
+}
+
+function requirePublishableContent(content: string, label: string): string {
+  if (!content.trim()) {
+    throw new Error(`${label} is empty; nothing to publish.`);
+  }
+  return content;
 }
 
 async function loadRepliesJson(filePath: string): Promise<ReplyEntry[]> {
@@ -93,7 +116,7 @@ async function publishReplies(opts: {
 }): Promise<number> {
   const orchestrator = await createOrchestrator();
   const defaultRepo = await getRepoFromGit();
-  const repliesFile = opts.from ?? DEFAULT_REPLIES_FILE;
+  const repliesFile = workspacePath(opts.from ?? DEFAULT_REPLIES_FILE);
 
   if (opts.thread) {
     // Single thread mode
@@ -107,7 +130,7 @@ async function publishReplies(opts: {
     } else {
       entries = await loadRepliesJson(repliesFile);
       const resolved = await orchestrator.resolveThreadRef(opts.thread);
-      matchedIdx = entries.findIndex((e) => e.threadId === opts.thread || e.threadId === resolved);
+      matchedIdx = findReplyEntryIndex(entries, opts.thread, resolved);
       if (matchedIdx === -1) {
         console.error(chalk.red(`No reply found for "${opts.thread}" in ${repliesFile}`));
         console.error(chalk.dim('Available: ' + entries.map((e) => e.threadId).join(', ')));
@@ -119,10 +142,6 @@ async function publishReplies(opts: {
 
     await orchestrator.publishReply(undefined, opts.thread, body, defaultRepo);
     console.log(chalk.green(`✓ Replied to ${opts.thread}`));
-    if (shouldResolve) {
-      await orchestrator.resolveThread(undefined, opts.thread, defaultRepo);
-      console.log(chalk.dim('  thread resolved'));
-    }
 
     const ws = new WorkspaceManager(process.cwd());
     if (entries && matchedIdx >= 0) {
@@ -136,6 +155,8 @@ async function publishReplies(opts: {
       publishedAt: new Date().toISOString(),
     });
     if (shouldResolve) {
+      await orchestrator.resolveThread(undefined, opts.thread, defaultRepo);
+      console.log(chalk.dim('  thread resolved'));
       await ws.appendPublishedAction({
         type: 'resolve',
         providerThreadId: opts.thread,
@@ -152,12 +173,17 @@ async function publishReplies(opts: {
 
   let posted = 0;
   const ws = new WorkspaceManager(process.cwd());
-  const remaining: ReplyEntry[] = [];
+  const remaining: ReplyEntry[] = [...entries];
   for (const entry of entries) {
     try {
       await orchestrator.publishReply(undefined, entry.threadId, entry.body, defaultRepo);
       console.log(chalk.green(`  ✓ ${entry.threadId}`));
       posted++;
+      const remainingIndex = remaining.indexOf(entry);
+      if (remainingIndex !== -1) {
+        remaining.splice(remainingIndex, 1);
+        await saveRepliesJson(repliesFile, remaining);
+      }
       await ws.appendPublishedAction({
         type: 'reply',
         providerThreadId: entry.threadId,
@@ -165,18 +191,25 @@ async function publishReplies(opts: {
         publishedAt: new Date().toISOString(),
       });
       if (entry.resolve || opts.resolve) {
-        await orchestrator.resolveThread(undefined, entry.threadId, defaultRepo);
-        console.log(chalk.dim('    resolved'));
-        await ws.appendPublishedAction({
-          type: 'resolve',
-          providerThreadId: entry.threadId,
-          title: 'Thread resolved',
-          publishedAt: new Date().toISOString(),
-        });
+        try {
+          await orchestrator.resolveThread(undefined, entry.threadId, defaultRepo);
+          console.log(chalk.dim('    resolved'));
+          await ws.appendPublishedAction({
+            type: 'resolve',
+            providerThreadId: entry.threadId,
+            title: 'Thread resolved',
+            publishedAt: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.error(
+            chalk.red(
+              `    resolve failed: ${err instanceof Error ? err.message : String(err)} (reply will not be retried)`,
+            ),
+          );
+        }
       }
     } catch (err) {
       console.error(chalk.red(`  ✗ ${entry.threadId}: ${err instanceof Error ? err.message : String(err)}`));
-      remaining.push(entry);
     }
   }
   await saveRepliesJson(repliesFile, remaining);
@@ -186,11 +219,12 @@ async function publishReplies(opts: {
 
 async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
   const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
-  const rawFindings = await loadNewFindings(filePath);
+  const resolvedFilePath = workspacePath(filePath);
+  const rawFindings = await loadNewFindings(resolvedFilePath);
   if (rawFindings.length === 0) return 0;
 
   // Load line map for validation
-  const patchPath = DEFAULT_LATEST_PATCH_FILE;
+  const patchPath = workspacePath(DEFAULT_LATEST_PATCH_FILE);
   let patchContent: string;
   try {
     patchContent = await fs.readFile(patchPath, 'utf-8');
@@ -261,7 +295,7 @@ async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefres
       remaining.push(finding);
     }
   }
-  await saveFindings(filePath, remaining);
+  await saveFindings(resolvedFilePath, remaining);
   if (published > 0) console.log(chalk.green(`${published}/${findings.length} findings published`));
   return published;
 }
@@ -274,10 +308,10 @@ async function publishDescription(opts: {
 }): Promise<number> {
   let content: string;
   if (opts.from) {
-    content = await fs.readFile(opts.from, 'utf-8');
+    content = await fs.readFile(workspacePath(opts.from), 'utf-8');
   } else if (opts.fromSummary) {
     try {
-      content = await fs.readFile(DEFAULT_SUMMARY_FILE, 'utf-8');
+      content = await fs.readFile(workspacePath(DEFAULT_SUMMARY_FILE), 'utf-8');
     } catch {
       console.error(chalk.red('No summary found. Run `revkit prepare` first.'));
       process.exit(1);
@@ -286,6 +320,7 @@ async function publishDescription(opts: {
     console.error(chalk.red('Provide --from <file> or --from-summary'));
     process.exit(1);
   }
+  requirePublishableContent(content, opts.fromSummary ? DEFAULT_SUMMARY_FILE : (opts.from ?? 'description content'));
 
   const orchestrator = await createOrchestrator();
   const defaultRepo = opts.repo ?? (await getRepoFromGit());
@@ -306,7 +341,7 @@ async function publishDescription(opts: {
     const ws = new WorkspaceManager(process.cwd());
     const bundleState = await ws.loadBundleState();
     if (bundleState) {
-      const summaryContent = await fs.readFile(DEFAULT_SUMMARY_FILE, 'utf-8');
+      const summaryContent = await fs.readFile(workspacePath(DEFAULT_SUMMARY_FILE), 'utf-8');
       const hash = computeContentHash(summaryContent);
       await ws.updateOutputPublishState('summary', hash, bundleState.target.diffRefs.headSha);
     }
@@ -319,7 +354,7 @@ async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise
   const filePath = opts.from ?? DEFAULT_REVIEW_FILE;
   let content: string;
   try {
-    content = await fs.readFile(filePath, 'utf-8');
+    content = await fs.readFile(workspacePath(filePath), 'utf-8');
   } catch {
     content = '';
   }
@@ -344,6 +379,14 @@ async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise
 
   return 1;
 }
+
+export const __testing = {
+  findReplyEntryIndex,
+  normalizeThreadRef,
+  publishReplies,
+  publishDescription,
+  requirePublishableContent,
+};
 
 // ─── Auto-refresh helper ─────────────────────────────────
 

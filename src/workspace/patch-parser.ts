@@ -96,10 +96,10 @@ export function parsePatch(patch: string): LineMap {
 function parseDiffHeader(lines: string[], startIndex: number): { parsed: PatchFileHeader; nextIndex: number } {
   // Parse "diff --git a/path b/path"
   const diffLine = lines[startIndex];
-  const gitMatch = diffLine.match(/^diff --git a\/(.+?) b\/(.+)$/);
+  const gitPaths = parseDiffGitPaths(diffLine);
 
-  let oldPath = gitMatch?.[1] ?? '';
-  let newPath = gitMatch?.[2] ?? '';
+  let oldPath = stripGitPrefix(gitPaths?.oldPath ?? '', 'a/');
+  let newPath = stripGitPrefix(gitPaths?.newPath ?? '', 'b/');
   let renameFrom: string | undefined;
   let renameTo: string | undefined;
   let isNew = false;
@@ -118,36 +118,36 @@ function parseDiffHeader(lines: string[], startIndex: number): { parsed: PatchFi
     }
 
     if (line.startsWith('--- ')) {
-      const path = line.slice(4);
+      const path = parseGitPathToken(line.slice(4));
       if (path === '/dev/null') {
         isNew = true;
-      } else if (path.startsWith('a/')) {
-        oldPath = path.slice(2);
+      } else {
+        oldPath = stripGitPrefix(path, 'a/');
       }
       i++;
       continue;
     }
 
     if (line.startsWith('+++ ')) {
-      const path = line.slice(4);
+      const path = parseGitPathToken(line.slice(4));
       if (path === '/dev/null') {
         isDeleted = true;
-      } else if (path.startsWith('b/')) {
-        newPath = path.slice(2);
+      } else {
+        newPath = stripGitPrefix(path, 'b/');
       }
       i++;
       continue;
     }
 
     if (line.startsWith('rename from ')) {
-      renameFrom = line.slice('rename from '.length);
+      renameFrom = parseGitPathToken(line.slice('rename from '.length));
       isRenamed = true;
       i++;
       continue;
     }
 
     if (line.startsWith('rename to ')) {
-      renameTo = line.slice('rename to '.length);
+      renameTo = parseGitPathToken(line.slice('rename to '.length));
       isRenamed = true;
       i++;
       continue;
@@ -186,6 +186,102 @@ function parseDiffHeader(lines: string[], startIndex: number): { parsed: PatchFi
     parsed: { oldPath, newPath, renameFrom, renameTo, isNew, isDeleted, isRenamed, isCopy },
     nextIndex: i,
   };
+}
+
+function parseDiffGitPaths(line: string): { oldPath: string; newPath: string } | null {
+  const prefix = 'diff --git ';
+  if (!line.startsWith(prefix)) return null;
+
+  const tokens = parseGitPathTokens(line.slice(prefix.length));
+  if (tokens.length < 2) return null;
+  return { oldPath: tokens[0], newPath: tokens[1] };
+}
+
+function parseGitPathToken(input: string): string {
+  return parseGitPathTokens(input.trim())[0] ?? input.trim();
+}
+
+function parseGitPathTokens(input: string): string[] {
+  const tokens: string[] = [];
+  let i = 0;
+
+  while (i < input.length) {
+    while (input[i] === ' ' || input[i] === '\t') i++;
+    if (i >= input.length) break;
+
+    if (input[i] === '"') {
+      const parsed = parseQuotedGitPath(input, i);
+      tokens.push(parsed.value);
+      i = parsed.nextIndex;
+      continue;
+    }
+
+    const start = i;
+    while (i < input.length && input[i] !== ' ' && input[i] !== '\t') i++;
+    tokens.push(input.slice(start, i));
+  }
+
+  return tokens;
+}
+
+function parseQuotedGitPath(input: string, quoteIndex: number): { value: string; nextIndex: number } {
+  let value = '';
+  let i = quoteIndex + 1;
+
+  while (i < input.length) {
+    const char = input[i];
+    if (char === '"') {
+      return { value, nextIndex: i + 1 };
+    }
+    if (char === '\\' && i + 1 < input.length) {
+      const parsed = parseGitEscape(input, i + 1);
+      value += parsed.value;
+      i = parsed.nextIndex;
+      continue;
+    }
+    value += char;
+    i++;
+  }
+
+  return { value, nextIndex: i };
+}
+
+function parseGitEscape(input: string, escapeIndex: number): { value: string; nextIndex: number } {
+  const char = input[escapeIndex];
+  switch (char) {
+    case 'a':
+      return { value: '\x07', nextIndex: escapeIndex + 1 };
+    case 'b':
+      return { value: '\b', nextIndex: escapeIndex + 1 };
+    case 'f':
+      return { value: '\f', nextIndex: escapeIndex + 1 };
+    case 'n':
+      return { value: '\n', nextIndex: escapeIndex + 1 };
+    case 'r':
+      return { value: '\r', nextIndex: escapeIndex + 1 };
+    case 't':
+      return { value: '\t', nextIndex: escapeIndex + 1 };
+    case 'v':
+      return { value: '\v', nextIndex: escapeIndex + 1 };
+    case '\\':
+    case '"':
+      return { value: char, nextIndex: escapeIndex + 1 };
+    default:
+      if (/[0-7]/.test(char)) {
+        let octal = char;
+        let i = escapeIndex + 1;
+        while (i < input.length && octal.length < 3 && /[0-7]/.test(input[i])) {
+          octal += input[i];
+          i++;
+        }
+        return { value: String.fromCharCode(parseInt(octal, 8)), nextIndex: i };
+      }
+      return { value: char, nextIndex: escapeIndex + 1 };
+  }
+}
+
+function stripGitPrefix(path: string, prefix: 'a/' | 'b/'): string {
+  return path.startsWith(prefix) ? path.slice(2) : path;
 }
 
 function inferStatus(header: PatchFileHeader): FileStatus {

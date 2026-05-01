@@ -417,7 +417,6 @@ describe('WorkspaceManager', () => {
       [activeThread],
     );
 
-    expect(bundleState.threads.knownProviderThreadIds).toEqual(['thread-abc', 'thread-resolved']);
     expect(bundleState.threads.items.map((item) => item.providerThreadId)).toEqual(['thread-abc']);
   });
 
