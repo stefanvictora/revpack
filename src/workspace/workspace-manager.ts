@@ -556,12 +556,16 @@ export class WorkspaceManager {
     lines.push('## Suggested Reading Order');
     lines.push('');
     lines.push('1. Read this context file.');
-    lines.push('2. Read `REVIEW.md` in the repository root if present.');
-    lines.push('3. Read `.revkit/INSTRUCTIONS.md`.');
-    lines.push('4. Read relevant thread files in `.revkit/threads/`.');
-    lines.push('5. Review `.revkit/diffs/views/all.annotated.diff.md` for the annotated diff.');
-    lines.push('6. Use `.revkit/diffs/files.json` to locate specific file changes.');
-    lines.push('7. Inspect checked-out source files when needed.');
+    lines.push('2. Read `.revkit/INSTRUCTIONS.md` for the review workflow, diff navigation rules, and output format.');
+    lines.push('3. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
+    lines.push('4. Read relevant unresolved thread files in `.revkit/threads/`.');
+    lines.push('5. Use `.revkit/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.');
+    lines.push('6. Use `.revkit/diffs/latest.patch` for the overall change and cross-file context.');
+    lines.push('7. Use `.revkit/diffs/patches/by-file/` for focused review of individual changed files.');
+    lines.push('8. Use `.revkit/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.');
+    lines.push('9. Use `.revkit/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.');
+    lines.push('10. Inspect checked-out source files when needed to understand the new branch state.');
+    lines.push('11. Use `.revkit/diffs/views/` only as optional readability aids.');
     lines.push('');
 
     // ─── MR/PR Description ────────────────────────────────
@@ -577,18 +581,19 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('| Path | Description |');
     lines.push('|---|---|');
-    lines.push('| `.revkit/INSTRUCTIONS.md` | Stable review workflow and output format rules |');
+    lines.push('| `.revkit/INSTRUCTIONS.md` | Stable review workflow, diff navigation rules, and output format rules |');
     lines.push('| `.revkit/bundle.json` | Machine-readable bundle metadata and local state |');
     lines.push('| `.revkit/description.md` | Raw MR/PR description |');
     const threadFileCount = unresolvedThreads.length + generalComments.length;
     if (threadFileCount > 0) {
       lines.push(`| \`.revkit/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
     }
-    lines.push(`| \`.revkit/diffs/latest.patch\` | Full target diff (${diffs.length} file(s)) |`);
-    lines.push('| `.revkit/diffs/files.json` | File index with hunk boundaries and view paths |');
-    lines.push('| `.revkit/diffs/line-map.ndjson` | Per-line machine-readable map (NDJSON) |');
-    lines.push('| `.revkit/diffs/change-blocks.json` | Grouped insert/delete/replace blocks |');
-    lines.push('| `.revkit/diffs/views/all.annotated.diff.md` | Annotated diff with old/new line coords |');
+    lines.push('| `.revkit/diffs/latest.patch` | Canonical full unified diff for the whole MR/PR |');
+    lines.push('| `.revkit/diffs/patches/by-file/` | Canonical per-file unified diffs in standard patch format |');
+    lines.push('| `.revkit/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and diff artifact paths |');
+    lines.push('| `.revkit/diffs/line-map.ndjson` | Canonical per-line map for valid positional review anchors |');
+    lines.push('| `.revkit/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |');
+    lines.push('| `.revkit/diffs/views/all.annotated.diff.md` | Optional annotated readability view for the full diff |');
     lines.push('| `.revkit/diffs/views/by-file/` | Per-file annotated diff views |');
     if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
       lines.push('| `.revkit/diffs/incremental.patch` | Code changes since last review checkpoint |');
@@ -709,6 +714,7 @@ export class WorkspaceManager {
    * - diffs/change-blocks.json (grouped change blocks)
    * - diffs/views/all.annotated.diff.md (combined annotated diff)
    * - diffs/views/by-file/FXXX-Name.diff.md (per-file annotated diffs)
+   * - diffs/patches/by-file/FXXX-Name.patch (per-file unified diffs)
    */
   private async writeDiffBundle(): Promise<void> {
     const patchPath = path.join(this.baseDir, 'diffs', 'latest.patch');
@@ -733,6 +739,10 @@ export class WorkspaceManager {
     await this.ensureDir(viewsDir);
     await this.ensureDir(byFileDir);
 
+    // Create patches/by-file directory
+    const patchesByFileDir = path.join(this.baseDir, 'diffs', 'patches', 'by-file');
+    await this.ensureDir(patchesByFileDir);
+
     // 1. Write files.json
     await this.writeFilesJson(filesWithIds);
 
@@ -744,6 +754,10 @@ export class WorkspaceManager {
 
     // 4. Write annotated diff views
     await this.writeAnnotatedDiffViews(filesWithIds, byFileDir, viewsDir);
+
+    // 5. Write per-file patch files
+    const patchSections = WorkspaceManager.splitPatchByFile(patchContent);
+    await this.writePerFilePatchFiles(filesWithIds, patchSections, patchesByFileDir);
   }
 
   private async writeFilesJson(files: (PatchFileEntry & { fileId: string })[]): Promise<void> {
@@ -776,6 +790,7 @@ export class WorkspaceManager {
             newEnd: h.newEnd,
           })),
           viewFile: `views/by-file/${f.fileId}-${safeName}.diff.md`,
+          patchFile: `patches/by-file/${f.fileId}-${safeName}.patch`,
         };
       }),
     };
@@ -941,6 +956,50 @@ export class WorkspaceManager {
     }
 
     return lines;
+  }
+
+  /**
+   * Split a multi-file unified diff string into one section per file.
+   * Each section begins with the `diff --git` header for that file.
+   */
+  static splitPatchByFile(patch: string): string[] {
+    const sections: string[] = [];
+    const lines = patch.split('\n');
+    let start = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('diff --git ')) {
+        if (start !== -1) {
+          sections.push(lines.slice(start, i).join('\n'));
+        }
+        start = i;
+      }
+    }
+
+    if (start !== -1) {
+      sections.push(lines.slice(start).join('\n'));
+    }
+
+    return sections;
+  }
+
+  private async writePerFilePatchFiles(
+    files: (PatchFileEntry & { fileId: string })[],
+    patchSections: string[],
+    patchesByFileDir: string,
+  ): Promise<void> {
+    for (let idx = 0; idx < files.length; idx++) {
+      const file = files[idx];
+      const shortName =
+        file.newPath
+          .split('/')
+          .pop()
+          ?.replace(/\.[^.]+$/, '') ?? file.fileId;
+      const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+      const fileName = `${file.fileId}-${safeName}.patch`;
+      const content = patchSections[idx] ?? '';
+      await fs.writeFile(path.join(patchesByFileDir, fileName), content.trimEnd() + '\n', 'utf-8');
+    }
   }
 
   /**

@@ -36,8 +36,15 @@ Start with:
 1. `.revkit/CONTEXT.md`
 2. `.revkit/INSTRUCTIONS.md`
 3. `REVIEW.md`, if present
-4. `.revkit/diffs/views/all.annotated.diff.md`
-5. `.revkit/diffs/files.json`
+4. `.revkit/diffs/files.json`
+5. `.revkit/diffs/latest.patch`
+
+Then use:
+
+- `.revkit/diffs/patches/by-file/` for focused per-file review
+- `.revkit/diffs/line-map.ndjson` for positional review anchors
+- `.revkit/diffs/change-blocks.json` for larger insert/delete/replace relationships
+- `.revkit/diffs/views/` only as optional readability aids
 
 Use checked-out source files to understand the current MR/PR state when the diff alone is not enough.
 
@@ -199,28 +206,50 @@ For non-renamed files, `oldPath` and `newPath` are usually identical.
 
 ## Diff navigation
 
-The workspace contains only the new branch state. Deleted lines do not exist in the workspace.
+The workspace contains only the new branch state. Deleted lines do not exist in the workspace, so do not infer old-side line numbers from checked-out files.
 
-Use these files when reviewing changes:
+Use the diff artifacts by purpose:
 
-1. `diffs/views/all.annotated.diff.md`
-   - Preferred view for understanding changed lines.
-   - Removed lines are shown with `- old:<line>`.
-   - Added lines are shown with `+ new:<line>`.
-   - Context lines show both `old:<line>` and `new:<line>`.
+1. `diffs/files.json`
+   - Changed-file index with file status, added/removed counts, binary flag, hunk ranges, and per-file patch paths.
+   - Use this first for navigation, file selection, and deciding which per-file patches to inspect.
+   - Do not use this as the source of truth for review anchors.
 
 2. `diffs/latest.patch`
-   - Canonical raw patch fallback.
+   - The canonical full unified diff for the whole MR/PR.
+   - Use this for understanding the overall MR, cross-file relationships, renames, broad patterns, and change intent.
+   - Prefer focused per-file patches when reviewing one specific file.
 
-3. `diffs/line-map.ndjson`
-   - Exact machine-readable per-line map.
+3. `diffs/patches/by-file/`
+   - Canonical per-file unified diffs in standard patch format.
+   - Prefer these for detailed review of individual files.
+   - Use these as the primary source for understanding added, removed, and changed code in that file.
+
+4. `diffs/line-map.ndjson`
+   - Canonical per-line map for valid positional review anchors.
+   - Every review finding must anchor to a line present here.
+   - `kind: "added"` means use `newLine`.
+   - `kind: "removed"` means use `oldLine`.
+   - `kind: "context"` means use both `oldLine` and `newLine`.
    - `oldLine: null` means the line does not exist in the old version.
    - `newLine: null` means the line does not exist in the new workspace.
 
-4. `diffs/change-blocks.json`
-   - Grouped insert/delete/replace blocks with preferred comment targets.
+5. `diffs/change-blocks.json`
+   - Grouped insert/delete/replace blocks.
+   - Use this to understand larger edits, harmful deletions, and replacement relationships.
+   - `preferredCommentTarget` gives a good default anchor for block-level findings.
 
-Do not infer deleted line numbers from the current workspace file. Use the annotated diff or line map.
+6. `diffs/views/`
+   - Optional annotated convenience views, if present.
+   - Use these only as a readability aid when helpful.
+   - Do not treat them as canonical if they disagree with the patch files or `line-map.ndjson`.
+
+Important rules:
+
+- Use patch files to understand the code change.
+- Use `line-map.ndjson` to validate and choose review anchors.
+- Do not calculate old or new line numbers manually from the patch or current workspace.
+- Do not infer deleted-code anchors from checked-out files, because deleted lines are not present in the workspace.
 
 ## Positional anchors
 
