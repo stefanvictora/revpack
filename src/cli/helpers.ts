@@ -21,10 +21,10 @@ async function getRemoteUrls(cwd: string): Promise<string[]> {
  * Create an orchestrator from config. Shared setup for all CLI commands.
  * Resolves the active profile from git remote URLs in the current directory.
  */
-export async function createOrchestrator(): Promise<ReviewOrchestrator> {
+export async function createOrchestrator(hintUrls?: string[]): Promise<ReviewOrchestrator> {
   const cwd = process.cwd();
   const remoteUrls = await getRemoteUrls(cwd);
-  const config = await loadRuntimeConfig(remoteUrls);
+  const config = await loadRuntimeConfig([...remoteUrls, ...(hintUrls ?? [])]);
   const provider = createProvider(config);
   return new ReviewOrchestrator({
     provider,

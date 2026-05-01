@@ -16,7 +16,10 @@ export function registerCheckoutCommand(program: Command): void {
     .option('--repo <repo>', 'Repository slug (group/project)')
     .action(async (ref: string, opts: { prepare?: boolean; repo?: string }) => {
       try {
-        let orchestrator = await createOrchestrator();
+        // When ref is a full URL, pass it as a hint so profile resolution can
+        // match by the URL's host even outside a git repo.
+        const hintUrls = /^https?:\/\//i.test(ref) ? [ref] : undefined;
+        let orchestrator = await createOrchestrator(hintUrls);
         const defaultRepo = opts.repo ?? (await getRepoFromGit());
 
         // Switch branch (or clone if no git repo)
