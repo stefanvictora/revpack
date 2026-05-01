@@ -55,6 +55,29 @@ export class GitHelper {
     return stdout.trim();
   }
 
+  /**
+   * List URLs of all configured remotes.
+   * Returns an empty array if not inside a git repo or if no remotes are configured.
+   */
+  async listRemoteUrls(): Promise<string[]> {
+    try {
+      const { stdout } = await exec('git', ['remote'], { cwd: this.cwd });
+      const remoteNames = stdout.trim().split('\n').filter(Boolean);
+      const urls: string[] = [];
+      for (const name of remoteNames) {
+        try {
+          const { stdout: url } = await exec('git', ['remote', 'get-url', name], { cwd: this.cwd });
+          if (url.trim()) urls.push(url.trim());
+        } catch {
+          // skip unreachable remotes
+        }
+      }
+      return urls;
+    } catch {
+      return [];
+    }
+  }
+
   /** Derive repo slug (group/project) from a GitLab remote URL. */
   async deriveRepoSlug(remote = 'origin'): Promise<string> {
     const url = await this.remoteUrl(remote);

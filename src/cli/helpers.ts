@@ -1,18 +1,34 @@
 import chalk from 'chalk';
-import { loadConfig } from '../config/index.js';
+import { loadRuntimeConfig } from '../config/index.js';
 import { createProvider } from '../providers/factory.js';
 import { ReviewOrchestrator } from '../orchestration/orchestrator.js';
+import { GitHelper } from '../workspace/git-helper.js';
 import { ReviewAssistError } from '../core/errors.js';
 
 /**
+ * Collect git remote URLs from the working directory (best-effort).
+ */
+async function getRemoteUrls(cwd: string): Promise<string[]> {
+  try {
+    const git = new GitHelper(cwd);
+    return await git.listRemoteUrls();
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Create an orchestrator from config. Shared setup for all CLI commands.
+ * Resolves the active profile from git remote URLs in the current directory.
  */
 export async function createOrchestrator(): Promise<ReviewOrchestrator> {
-  const config = await loadConfig();
+  const cwd = process.cwd();
+  const remoteUrls = await getRemoteUrls(cwd);
+  const config = await loadRuntimeConfig(remoteUrls);
   const provider = createProvider(config);
   return new ReviewOrchestrator({
     provider,
-    workingDir: process.cwd(),
+    workingDir: cwd,
     runtimeConfig: config,
   });
 }
@@ -21,7 +37,8 @@ export async function createOrchestrator(): Promise<ReviewOrchestrator> {
  * Create an orchestrator targeting a specific directory (e.g. after clone).
  */
 export async function createOrchestratorAt(workingDir: string): Promise<ReviewOrchestrator> {
-  const config = await loadConfig();
+  const remoteUrls = await getRemoteUrls(workingDir);
+  const config = await loadRuntimeConfig(remoteUrls);
   const provider = createProvider(config);
   return new ReviewOrchestrator({
     provider,
@@ -34,7 +51,9 @@ export async function createOrchestratorAt(workingDir: string): Promise<ReviewOr
  * Get default repository from config or git.
  */
 export async function getDefaultRepo(): Promise<string | undefined> {
-  const config = await loadConfig();
+  const cwd = process.cwd();
+  const remoteUrls = await getRemoteUrls(cwd);
+  const config = await loadRuntimeConfig(remoteUrls);
   return config.defaultRepository;
 }
 

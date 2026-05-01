@@ -185,14 +185,6 @@ async function buildDisplayTokenInfo(
 }
 
 /**
- * Legacy loadConfig for backwards compatibility during migration.
- * Uses loadRuntimeConfig internally.
- */
-export async function loadConfig(remoteUrls: string[] = []): Promise<ResolvedAppConfig> {
-  return loadRuntimeConfig(remoteUrls);
-}
-
-/**
  * Save config to disk.
  */
 export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
