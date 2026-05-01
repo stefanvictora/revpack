@@ -880,7 +880,7 @@ describe('ReviewOrchestrator', () => {
       const result = await orchestrator.prepare('!42', 'group/project');
 
       expect(result.bundleState.threads.digest).toBeTruthy();
-      expect(result.bundleState.threads.digestVersion).toBe(1);
+      expect(result.bundleState.threads.digestVersion).toBe(2);
     });
   });
 

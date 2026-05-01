@@ -487,6 +487,62 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('added');
     });
 
+    it('includes resolved changed threads from the full checkpoint comparison set', async () => {
+      const activeThread = makeThread();
+      const resolvedThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'thread-resolved',
+        resolved: true,
+        comments: [
+          {
+            id: 'resolved-note',
+            body: 'This was fixed in the latest push',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const allThreads = [activeThread, resolvedThread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
+      await manager.createBundle(makeTarget(), [activeThread], [], [], threadIndex);
+
+      const contextPath = await manager.writeContext(makeTarget(), [activeThread], [], threadIndex, {
+        changedThreadIds: new Set(['thread-resolved']),
+        allThreads,
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Changed Threads Since Last Checkpoint');
+      expect(content).toContain('| T-002 | resolved |');
+      expect(content).toContain('This was fixed in the latest push');
+    });
+
+    it('escapes markdown table separators in thread snippets', async () => {
+      const threadWithPipe: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'note-with-pipe',
+            body: 'Use foo | bar handling here',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [threadWithPipe]);
+
+      const contextPath = await manager.writeContext(makeTarget(), [threadWithPipe], [], threadIndex);
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('Use foo \\| bar handling here');
+    });
+
     it('shows review checkpoint summary with checkpoint and code changes', async () => {
       const threads = [makeThread()];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads);
@@ -622,6 +678,66 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('SELF');
       // T-001 should NOT be tagged SELF
       expect(content).not.toMatch(/T-001.*SELF/);
+    });
+
+    it('derives SELF and REPLIED from chronological comments, not provider order', async () => {
+      const selfThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'self-thread',
+        comments: [
+          {
+            id: 'later-human',
+            body: 'Follow-up question',
+            author: 'reviewer',
+            createdAt: '2026-01-01T01:00:00Z',
+            updatedAt: '2026-01-01T01:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+          {
+            id: 'first-bot',
+            body: '<!-- revkit -->\nOriginal finding',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const repliedThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'replied-thread',
+        comments: [
+          {
+            id: 'later-bot',
+            body: '<!-- revkit -->\nFixed now',
+            author: 'bot',
+            createdAt: '2026-01-01T01:00:00Z',
+            updatedAt: '2026-01-01T01:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+          {
+            id: 'first-human',
+            body: 'Please fix',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const threads = [selfThread, repliedThread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(threads);
+      await manager.createBundle(makeTarget(), threads, [], [], threadIndex);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toMatch(/T-001 \| SELF/);
+      expect(content).toMatch(/T-002 \| REPLIED/);
     });
 
     it('tags REPLIED on threads that have a bot reply', async () => {

@@ -19,8 +19,8 @@ export interface CheckpointState {
     providerVersionId?: string;
     threadsDigest: string | null;
     descriptionDigest?: string | null;
-    /** Per-thread digests at checkpoint time, keyed by provider thread ID. Present in all new checkpoints. */
-    threadDigests?: Record<string, string>;
+    /** Per-thread digests at checkpoint time, keyed by provider thread ID. */
+    threadDigests: Record<string, string>;
   };
 }
 
@@ -78,6 +78,7 @@ export function parseCheckpointMarker(noteBody: string): { state: CheckpointStat
   // Validate minimum required fields
   if (!state || typeof state !== 'object') return null;
   if (!state.checkpoint || typeof state.checkpoint.headSha !== 'string') return null;
+  state.checkpoint.threadDigests ??= {};
 
   // Extract visible content (everything outside the marker block)
   const markerBlock = noteBody.slice(startIdx, endIdx + CHECKPOINT_MARKER_END.length);
@@ -118,7 +119,7 @@ export function buildCheckpointState(
       providerVersionId,
       threadsDigest,
       descriptionDigest: descriptionDigest ?? null,
-      threadDigests,
+      threadDigests: threadDigests ?? {},
     },
   };
 }

@@ -19,6 +19,13 @@ import { WorkspaceError } from '../core/errors.js';
 import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
 import type { GitHelper } from './git-helper.js';
 import { computeContentHash, computeThreadDigest, DIGEST_VERSION } from './thread-digest.js';
+import {
+  canonicalThreadComments,
+  firstNonSystemComment,
+  isSystemOnlyThread,
+  latestNonSystemComment,
+  nonSystemThreadComments,
+} from './thread-utils.js';
 
 /**
  * Map from thread SHA → stable T-NNN short ID.
@@ -148,12 +155,10 @@ export class WorkspaceManager {
 
     // Build thread items with digests
     const threadItems: BundleThreadItem[] = bundledThreads
-      .filter((t) => !t.comments.every((c) => c.system))
+      .filter((t) => !isSystemOnlyThread(t))
       .map((t) => {
         const shortId = threadIndex.get(t.threadId) ?? '?';
-        const latestComment = t.comments
-          .filter((c) => !c.system)
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+        const latestComment = latestNonSystemComment(t);
         return {
           shortId,
           providerThreadId: t.threadId,
@@ -368,9 +373,9 @@ export class WorkspaceManager {
       reverseIndex.set(shortId, sha);
     }
     const kept = entries.filter((e) => {
-      const normalized = e.threadId.toUpperCase();
+      const normalized = e.threadId.trim().toUpperCase();
       // Resolve T-NNN → SHA using the reverse index, fall back to raw ID
-      const sha = reverseIndex.get(normalized) ?? e.threadId;
+      const sha = reverseIndex.get(normalized) ?? e.threadId.trim();
       return activeThreadIds.has(sha);
     });
 
@@ -437,22 +442,25 @@ export class WorkspaceManager {
       prepareSummary?: PrepareSummary;
       publishedActions?: BundlePublishedAction[];
       changedThreadIds?: Set<string>;
+      allThreads?: ReviewThread[];
     },
   ): Promise<string> {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
-    const generalComments = threads.filter((t) => !t.resolvable && !t.comments.every((c) => c.system));
+    const generalComments = threads.filter((t) => !t.resolvable && !isSystemOnlyThread(t));
+
+    const tableCell = (value: string): string => value.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
 
     // Format a thread's file position as a markdown-friendly location string.
     const threadLocation = (t: ReviewThread): string => {
       if (!t.position?.filePath) return 'general';
       const lineNum = t.position.newLine ?? t.position.oldLine;
-      return `\`${t.position.filePath}\`${lineNum ? `:${lineNum}` : ''}`;
+      return `\`${tableCell(t.position.filePath)}\`${lineNum ? `:${lineNum}` : ''}`;
     };
 
     // Strip the bot-published marker and find the first meaningful line of a comment body.
     // For revkit findings, skip the severity/category metadata line (e.g. "_🔴 High_ | _security_").
     const cleanSnippet = (body: string, maxLen: number): string => {
-      const lines = body.replace(/^<!-- revkit -->\n?/, '').split('\n');
+      const lines = body.replace(/^\s*<!-- revkit -->\s*\n?/, '').split('\n');
       const meaningful = lines.find((l) => {
         const trimmed = l.trim();
         if (!trimmed) return false;
@@ -460,14 +468,14 @@ export class WorkspaceManager {
         if (/^_[^_]+_(\s*\|\s*_[^_]+_)*\s*$/.test(trimmed)) return false;
         return true;
       });
-      return meaningful?.slice(0, maxLen) ?? '';
+      return tableCell(meaningful?.trim().slice(0, maxLen) ?? '');
     };
 
     // Derive SELF/REPLIED from comment origins (marker-based)
     const selfThreadIds = new Set<string>();
     const repliedThreadIds = new Set<string>();
     for (const t of threads) {
-      const nonSystem = t.comments.filter((c) => !c.system);
+      const nonSystem = nonSystemThreadComments(t);
       if (nonSystem.length > 0 && nonSystem[0].origin === 'bot') {
         selfThreadIds.add(t.threadId);
       } else if (nonSystem.some((c) => c.origin === 'bot')) {
@@ -486,12 +494,12 @@ export class WorkspaceManager {
     lines.push('| Field | Value |');
     lines.push('|---|---|');
     lines.push(`| Type | ${target.provider === 'gitlab' ? 'GitLab merge request' : 'GitHub pull request'} |`);
-    lines.push(`| ${mrType} | !${target.targetId} — ${target.title} |`);
-    lines.push(`| Repository | \`${target.repository}\` |`);
-    lines.push(`| Author | @${target.author} |`);
-    lines.push(`| Source branch | \`${target.sourceBranch}\` |`);
-    lines.push(`| Target branch | \`${target.targetBranch}\` |`);
-    lines.push(`| State | ${target.state} |`);
+    lines.push(`| ${mrType} | !${target.targetId} — ${tableCell(target.title)} |`);
+    lines.push(`| Repository | \`${tableCell(target.repository)}\` |`);
+    lines.push(`| Author | @${tableCell(target.author)} |`);
+    lines.push(`| Source branch | \`${tableCell(target.sourceBranch)}\` |`);
+    lines.push(`| Target branch | \`${tableCell(target.targetBranch)}\` |`);
+    lines.push(`| State | ${tableCell(target.state)} |`);
     if (target.webUrl) lines.push(`| URL | ${target.webUrl} |`);
     lines.push('');
     lines.push('Read `.revkit/INSTRUCTIONS.md` for the review workflow, output formats, and quality guidelines.');
@@ -602,15 +610,16 @@ export class WorkspaceManager {
     lines.push('|---|---|');
     for (const d of diffs) {
       const tag = d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
-      lines.push(`| \`${d.newPath || d.oldPath}\` | ${tag} |`);
+      lines.push(`| \`${tableCell(d.newPath || d.oldPath)}\` | ${tag} |`);
     }
     lines.push('');
 
     // ─── Changed Threads Since Checkpoint ────────────────
     const changedThreadIds = options?.changedThreadIds;
     if (changedThreadIds && changedThreadIds.size > 0) {
-      const changedUnresolved = unresolvedThreads.filter((t) => changedThreadIds.has(t.threadId));
-      const changedResolved = threads.filter((t) => changedThreadIds.has(t.threadId) && t.resolved);
+      const changedThreads = (options?.allThreads ?? threads).filter((t) => changedThreadIds.has(t.threadId));
+      const changedUnresolved = changedThreads.filter((t) => !t.resolved);
+      const changedResolved = changedThreads.filter((t) => t.resolved);
 
       if (changedUnresolved.length > 0 || changedResolved.length > 0) {
         lines.push('## Changed Threads Since Last Checkpoint');
@@ -623,7 +632,7 @@ export class WorkspaceManager {
           const prefix = threadIndex.get(t.threadId) ?? '?';
           const status = t.resolved ? 'resolved' : 'unresolved';
           const file = threadLocation(t);
-          const firstComment = t.comments.find((c) => !c.system);
+          const firstComment = firstNonSystemComment(t);
           const snippet = cleanSnippet(firstComment?.body ?? '', 80);
           lines.push(`| ${prefix} | ${status} | ${file} | ${snippet} |`);
         }
@@ -646,11 +655,11 @@ export class WorkspaceManager {
         if (isReplied) badges.push('REPLIED');
         const flagStr = badges.length > 0 ? badges.join(', ') : '';
 
-        const firstComment = t.comments.find((c) => !c.system);
+        const firstComment = firstNonSystemComment(t);
         const author = firstComment?.author ?? '?';
         const file = threadLocation(t);
         const snippet = cleanSnippet(firstComment?.body ?? '', 80);
-        lines.push(`| ${prefix} | ${flagStr} | @${author} | ${file} | ${snippet} |`);
+        lines.push(`| ${prefix} | ${flagStr} | @${tableCell(author)} | ${file} | ${snippet} |`);
       }
       lines.push('');
     }
@@ -661,9 +670,9 @@ export class WorkspaceManager {
       lines.push('');
       for (const t of generalComments) {
         const prefix = threadIndex.get(t.threadId) ?? '?';
-        const firstComment = t.comments.find((c) => !c.system);
+        const firstComment = firstNonSystemComment(t);
         const snippet = cleanSnippet(firstComment?.body ?? '', 120);
-        lines.push(`- **${prefix}** (@${firstComment?.author ?? '?'}): ${snippet}`);
+        lines.push(`- **${prefix}** (@${tableCell(firstComment?.author ?? '?')}): ${snippet}`);
       }
       lines.push('');
     }
@@ -679,9 +688,11 @@ export class WorkspaceManager {
       for (const a of options.publishedActions) {
         const actionLabel = a.type === 'reply' ? 'Reply' : a.type === 'finding' ? 'Finding' : 'Resolve';
         const loc = a.location
-          ? `\`${a.location.newPath || a.location.oldPath}\`:${a.location.newLine ?? a.location.oldLine ?? '?'}`
-          : (a.providerThreadId ?? '');
-        lines.push(`| ${actionLabel} | ${loc} | ${a.severity ?? ''} | ${a.category ?? ''} | ${a.title ?? ''} |`);
+          ? `\`${tableCell(a.location.newPath || a.location.oldPath || '')}\`:${a.location.newLine ?? a.location.oldLine ?? '?'}`
+          : tableCell(a.providerThreadId ?? '');
+        lines.push(
+          `| ${actionLabel} | ${loc} | ${tableCell(a.severity ?? '')} | ${tableCell(a.category ?? '')} | ${tableCell(a.title ?? '')} |`,
+        );
       }
       lines.push('');
     }
@@ -979,7 +990,7 @@ export class WorkspaceManager {
     const threadsDir = path.join(this.baseDir, 'threads');
     try {
       const files = await fs.readdir(threadsDir);
-      await Promise.all(files.map((f) => fs.unlink(path.join(threadsDir, f))));
+      await Promise.all(files.map((f) => fs.rm(path.join(threadsDir, f), { recursive: true, force: true })));
     } catch {
       // Directory may not exist yet
     }
@@ -1029,7 +1040,10 @@ export class WorkspaceManager {
     const lineMap = parsePatch(patchContent);
 
     for (const thread of threads) {
-      const prefix = threadIndex.get(thread.threadId) ?? `T-${String(threads.indexOf(thread) + 1).padStart(3, '0')}`;
+      const prefix = threadIndex.get(thread.threadId);
+      if (!prefix) {
+        throw new WorkspaceError(`Thread index is missing provider thread ID "${thread.threadId}"`);
+      }
 
       // JSON version
       await this.writeJson(path.join(this.baseDir, 'threads', `${prefix}.json`), thread);
@@ -1118,7 +1132,7 @@ export class WorkspaceManager {
 
     lines.push('## Comments');
     lines.push('');
-    for (const comment of thread.comments) {
+    for (const comment of canonicalThreadComments(thread)) {
       if (comment.system) {
         // System events (e.g. "changed this line in version 5", "added commits")
         // These often indicate the MR author pushed changes that may address feedback.

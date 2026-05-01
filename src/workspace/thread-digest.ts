@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { ReviewThread } from '../core/types.js';
+import { canonicalThreadComments } from './thread-utils.js';
 
-const DIGEST_VERSION = 1;
+const DIGEST_VERSION = 2;
 
 /**
  * Compute a SHA-256 hash of a string.
@@ -14,7 +15,11 @@ function sha256(input: string): string {
  * Normalize line endings to \n.
  */
 function normalizeLineEndings(text: string): string {
-  return text.replace(/\r\n/g, '\n');
+  return text.replace(/\r\n?/g, '\n');
+}
+
+function nullable<T>(value: T | undefined): T | null {
+  return value ?? null;
 }
 
 /**
@@ -22,18 +27,25 @@ function normalizeLineEndings(text: string): string {
  */
 function threadProjection(thread: ReviewThread): object {
   return {
+    digestVersion: DIGEST_VERSION,
     providerThreadId: thread.threadId,
     resolved: thread.resolved,
     resolvable: thread.resolvable,
+    resolvedBy: nullable(thread.resolvedBy),
+    resolvedAt: nullable(thread.resolvedAt),
     position: thread.position
       ? {
-          oldPath: thread.position.oldPath ?? null,
-          newPath: thread.position.newPath ?? null,
-          oldLine: thread.position.oldLine ?? null,
-          newLine: thread.position.newLine ?? null,
+          filePath: nullable(thread.position.filePath),
+          oldPath: nullable(thread.position.oldPath),
+          newPath: nullable(thread.position.newPath),
+          oldLine: nullable(thread.position.oldLine),
+          newLine: nullable(thread.position.newLine),
+          baseSha: nullable(thread.position.baseSha),
+          headSha: nullable(thread.position.headSha),
+          startSha: nullable(thread.position.startSha),
         }
       : null,
-    comments: thread.comments.map((c) => ({
+    comments: canonicalThreadComments(thread).map((c) => ({
       id: c.id,
       bodyHash: sha256(normalizeLineEndings(c.body)),
       author: c.author,

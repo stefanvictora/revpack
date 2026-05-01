@@ -66,6 +66,7 @@ ${CHECKPOINT_MARKER_END}`;
 
     expect(result).not.toBeNull();
     expect(result!.state.checkpoint.headSha).toBe('abc123');
+    expect(result!.state.checkpoint.threadDigests).toEqual({});
     expect(result!.visibleContent).toContain('Visible content here');
   });
 

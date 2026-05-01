@@ -13,7 +13,13 @@ import type {
 import type { ResolvedAppConfig } from '../config/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
-import { computeAggregateThreadsDigest, computeContentHash, computeThreadDigest, computeThreadDigestMap } from '../workspace/thread-digest.js';
+import {
+  computeAggregateThreadsDigest,
+  computeContentHash,
+  computeThreadDigest,
+  computeThreadDigestMap,
+} from '../workspace/thread-digest.js';
+import { activeReviewThreads, filterReviewThreads } from '../workspace/thread-utils.js';
 import { extractMarkedSummary } from '../workspace/description-summary.js';
 import {
   parseCheckpointMarker,
@@ -212,17 +218,13 @@ export class ReviewOrchestrator {
 
     // Filter out system-only threads and the managed review note thread
     const reviewNoteCommentId = checkpointNoteId;
-    const allThreads = rawThreads.filter(
-      (t) =>
-        !t.comments.every((c) => c.system) &&
-        !(reviewNoteCommentId && t.comments.some((c) => c.id === reviewNoteCommentId)),
-    );
+    const allThreads = filterReviewThreads(rawThreads, reviewNoteCommentId);
 
     // Build position-based thread index
     const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
 
     // Only non-resolved threads go into the bundle
-    const activeThreads = allThreads.filter((t) => !t.resolved);
+    const activeThreads = activeReviewThreads(allThreads);
 
     // Create the bundle
     const bundle = await this.workspace.createBundle(target, activeThreads, diffs, versions, threadIndex);
@@ -317,14 +319,13 @@ export class ReviewOrchestrator {
     let changedThreadIds: Set<string> | undefined;
 
     // Resolve checkpoint baseline: carried-forward local > remote checkpoint > fresh snapshot
-    const checkpointChanged = previousBundle && remoteCheckpoint
-      && previousBundle.prepare.checkpoint?.headSha !== remoteCheckpoint.headSha;
+    const checkpointChanged =
+      previousBundle && remoteCheckpoint && previousBundle.prepare.checkpoint?.headSha !== remoteCheckpoint.headSha;
 
     const checkpointDigests: Record<string, string> =
-      (previousBundle && !checkpointChanged)
+      previousBundle && !checkpointChanged
         ? previousBundle.threads.checkpointDigests
-        : remoteCheckpoint?.threadDigests
-          ?? computeThreadDigestMap(allThreads);
+        : (remoteCheckpoint?.threadDigests ?? computeThreadDigestMap(allThreads));
 
     if (threadsChanged) {
       changedThreadIds = new Set<string>();
@@ -342,6 +343,7 @@ export class ReviewOrchestrator {
       prepareSummary,
       publishedActions: previousActions,
       changedThreadIds,
+      allThreads,
     });
 
     // Build and save bundle.json
@@ -527,9 +529,7 @@ export class ReviewOrchestrator {
     // Exclude system-only threads AND the review note's own thread
     // (must match the filtering in prepare() to produce consistent digests)
     const reviewNoteId = existingNote?.id ?? null;
-    const allThreads = rawThreads.filter(
-      (t) => !t.comments.every((c) => c.system) && !(reviewNoteId && t.comments.some((c) => c.id === reviewNoteId)),
-    );
+    const allThreads = filterReviewThreads(rawThreads, reviewNoteId);
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
     const currentDescriptionDigest = computeContentHash(target.description ?? '');
     const threadDigests = computeThreadDigestMap(allThreads);

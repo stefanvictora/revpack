@@ -75,7 +75,7 @@ Do not reply to:
 - general notes that do not require an answer
 - threads where your only response would be “acknowledged”, “no action needed”, “nothing to do”, or “no code change suggested”
 - threads where a human already confirmed the issue was fixed/addressed and the current code agrees
-    - Human comments such as “fixed”, “done”, “removed”, “addressed”, “changed”, “resolved”, or equivalent wording count as human confirmation.
+  - Human comments such as “fixed”, “done”, “removed”, “addressed”, “changed”, “resolved”, or equivalent wording count as human confirmation.
 
 For those cases, omit the thread from `outputs/replies.json`.
 
