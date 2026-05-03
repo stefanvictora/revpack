@@ -173,7 +173,9 @@ export class GitHubProvider implements ReviewProvider {
   }
 
   async getLatestDiff(ref: ReviewTargetRef): Promise<ReviewDiff[]> {
-    const files = await this.requestPaginated<GitHubPullFile>(`${this.repoPath(ref.repository)}/pulls/${ref.targetId}/files`);
+    const files = await this.requestPaginated<GitHubPullFile>(
+      `${this.repoPath(ref.repository)}/pulls/${ref.targetId}/files`,
+    );
     return files.map((file) => this.mapFileDiff(file));
   }
 
@@ -256,10 +258,13 @@ export class GitHubProvider implements ReviewProvider {
   }
 
   async createNote(ref: ReviewTargetRef, body: string, _options?: { internal?: boolean }): Promise<string> {
-    const note = await this.request<GitHubIssueComment>(`${this.repoPath(ref.repository)}/issues/${ref.targetId}/comments`, {
-      method: 'POST',
-      body: { body },
-    });
+    const note = await this.request<GitHubIssueComment>(
+      `${this.repoPath(ref.repository)}/issues/${ref.targetId}/comments`,
+      {
+        method: 'POST',
+        body: { body },
+      },
+    );
     return String(note.id);
   }
 
@@ -501,11 +506,7 @@ export class GitHubProvider implements ReviewProvider {
     return pr.node_id;
   }
 
-  private buildThreadInput(
-    pullRequestId: string,
-    body: string,
-    position: NewThreadPosition,
-  ): GitHubCreateThreadInput {
+  private buildThreadInput(pullRequestId: string, body: string, position: NewThreadPosition): GitHubCreateThreadInput {
     const isLeftSide = position.oldLine != null && position.newLine == null;
     return {
       pullRequestId,
@@ -514,6 +515,34 @@ export class GitHubProvider implements ReviewProvider {
       line: isLeftSide ? position.oldLine : position.newLine,
       side: isLeftSide ? 'LEFT' : 'RIGHT',
     };
+  }
+
+  /**
+   * Submit a GitHub PR review batch with inline comments and an optional body.
+   * Uses the REST API: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+   */
+  async submitReview(
+    ref: ReviewTargetRef,
+    comments: Array<{ body: string; path: string; line?: number; side?: 'LEFT' | 'RIGHT' }>,
+    body: string,
+    event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
+  ): Promise<void> {
+    const payload: Record<string, unknown> = {
+      event,
+      comments: comments.map((c) => ({
+        body: c.body,
+        path: c.path,
+        ...(c.line != null ? { line: c.line } : {}),
+        ...(c.side ? { side: c.side } : {}),
+      })),
+    };
+    if (body) {
+      payload.body = body;
+    }
+    await this.request(`${this.repoPath(ref.repository)}/pulls/${ref.targetId}/reviews`, {
+      method: 'POST',
+      body: payload,
+    });
   }
 }
 

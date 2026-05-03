@@ -47,6 +47,7 @@ export function registerConfigCommand(program: Command): void {
         // Derive suggested values from git remotes
         let suggestedUrl = '';
         let suggestedName = '';
+        let detectedProvider: 'github' | 'gitlab' | null = null;
         if (remoteUrls.length > 0) {
           const firstRemote = remoteUrls[0];
           try {
@@ -63,7 +64,21 @@ export function registerConfigCommand(program: Command): void {
           } catch {
             // ignore parse errors
           }
+          // Detect provider from URL
+          if (firstRemote.includes('github.com')) {
+            detectedProvider = 'github';
+          } else if (firstRemote.includes('gitlab.')) {
+            detectedProvider = 'gitlab';
+          }
         }
+
+        const defaultProvider = detectedProvider ?? 'gitlab';
+        const defaultTokenEnv = defaultProvider === 'github' ? 'REVKIT_GITHUB_TOKEN' : 'REVKIT_GITLAB_TOKEN';
+        // github.com and gitlab.com are managed cloud services — skip enterprise-only TLS/CA prompts
+        const isCloudProvider =
+          suggestedUrl === 'https://github.com' ||
+          suggestedUrl === 'https://gitlab.com' ||
+          detectedProvider === 'github';
 
         // Use readline for interactive prompts
         const { createInterface } = await import('node:readline');
@@ -75,9 +90,9 @@ export function registerConfigCommand(program: Command): void {
 
         const name =
           (await ask(`Profile name${suggestedName ? ` [${suggestedName}]` : ''}: `)) || suggestedName || 'default';
-        const providerInput = (await ask(`Provider (gitlab/github) [gitlab]: `)) || 'gitlab';
+        const providerInput = (await ask(`Provider (gitlab/github) [${defaultProvider}]: `)) || defaultProvider;
         const url = (await ask(`Provider URL${suggestedUrl ? ` [${suggestedUrl}]` : ''}: `)) || suggestedUrl;
-        const tokenEnv = (await ask(`Token environment variable [REVKIT_GITLAB_TOKEN]: `)) || 'REVKIT_GITLAB_TOKEN';
+        const tokenEnv = (await ask(`Token environment variable [${defaultTokenEnv}]: `)) || defaultTokenEnv;
 
         // Derive host from URL for matching info
         let derivedHost = '';
@@ -93,8 +108,12 @@ export function registerConfigCommand(program: Command): void {
           : `Remote match pattern: `;
         const extraPattern = await ask(extraPatternPrompt);
 
-        const caFileInput = await ask(`Custom CA file (optional): `);
-        const tlsInput = (await ask(`Verify TLS certificates [yes]: `)) || 'yes';
+        let caFileInput = '';
+        let tlsInput = 'yes';
+        if (!isCloudProvider) {
+          caFileInput = await ask(`Custom CA file (optional): `);
+          tlsInput = (await ask(`Verify TLS certificates [yes]: `)) || 'yes';
+        }
 
         rl.close();
 
@@ -138,7 +157,9 @@ export function registerConfigCommand(program: Command): void {
           console.log(`  ${chalk.dim('Extra patterns:')}   ${profile.remotePatterns.join(', ')}`);
         }
         if (profile.caFile) console.log(`  ${chalk.dim('CA file:')}          ${profile.caFile}`);
-        console.log(`  ${chalk.dim('TLS verify:')}       ${profile.tlsVerify === false ? 'false' : 'true'}`);
+        if (!isCloudProvider) {
+          console.log(`  ${chalk.dim('TLS verify:')}       ${profile.tlsVerify === false ? 'false' : 'true'}`);
+        }
         console.log('');
         console.log(chalk.bold('Next:'));
         if (profile.tokenEnv) {

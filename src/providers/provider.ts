@@ -74,4 +74,15 @@ export interface ReviewProvider {
 
   /** Get the HTTPS clone URL for a repository. */
   getCloneUrl(repo: string): string;
+
+  /**
+   * Submit a pull request review batch with inline comments and optional body.
+   * Only supported by GitHub. GitLab providers should not implement this.
+   */
+  submitReview?(
+    ref: ReviewTargetRef,
+    comments: Array<{ body: string; path: string; line?: number; side?: 'LEFT' | 'RIGHT' }>,
+    body: string,
+    event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
+  ): Promise<void>;
 }

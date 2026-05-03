@@ -238,9 +238,9 @@ export interface PrepareSummary {
   comparison: BundleComparison;
 }
 
-/** Remote checkpoint parsed from the managed review note. */
+/** Remote checkpoint parsed from the MR/PR description body. */
 export interface RemoteCheckpoint {
-  source: 'managed_review_note';
+  source: 'description_body';
   providerNoteId: string;
   headSha: string;
   baseSha: string;

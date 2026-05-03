@@ -550,7 +550,7 @@ describe('WorkspaceManager', () => {
         prepareSummary: {
           mode: 'refresh',
           checkpoint: {
-            source: 'managed_review_note',
+            source: 'description_body',
             providerNoteId: 'note-1',
             headSha: 'aaa',
             baseSha: 'xxx',

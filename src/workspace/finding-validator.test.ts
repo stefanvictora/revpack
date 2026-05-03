@@ -18,6 +18,9 @@ const makeLineMap = (): LineMap => ({
         { type: 'added', newLine: 11, text: '    audit.log(user);' },
         { type: 'context', oldLine: 11, newLine: 12, text: '    notify(user);' },
       ],
+      binary: false,
+      oldExists: true,
+      newExists: true,
     },
   ],
 });

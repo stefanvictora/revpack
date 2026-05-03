@@ -22,12 +22,12 @@ import {
 import { activeReviewThreads, filterReviewThreads } from '../workspace/thread-utils.js';
 import { extractMarkedSummary } from '../workspace/description-summary.js';
 import {
-  parseCheckpointMarker,
   buildCheckpointState,
-  buildReviewNoteBody,
-  updateReviewNoteBody,
+  parseDescriptionState,
+  patchDescriptionWithState,
+  sanitizeDescriptionForAgent,
   REVIEW_NOTE_MARKER,
-  stripReviewNoteFooter,
+  REVIEW_NOTE_FOOTER,
 } from '../workspace/checkpoint.js';
 
 export interface OrchestratorOptions {
@@ -119,40 +119,43 @@ export class ReviewOrchestrator {
       this.provider.getDiffVersions(targetRef),
     ]);
 
-    // ─── Fetch remote checkpoint from managed review note ──
+    // ─── Fetch remote checkpoint from MR/PR description body ──
     let remoteCheckpoint: RemoteCheckpoint | null = null;
-    let checkpointNoteId: string | null = null;
-    let reviewNoteVisibleContent: string | null = null;
 
+    try {
+      const descState = parseDescriptionState(target.description ?? '');
+      if (descState) {
+        remoteCheckpoint = {
+          source: 'description_body',
+          providerNoteId: '',
+          headSha: descState.checkpoint.headSha,
+          baseSha: descState.checkpoint.baseSha,
+          startSha: descState.checkpoint.startSha,
+          providerVersionId: descState.checkpoint.providerVersionId,
+          threadsDigest: descState.checkpoint.threadsDigest,
+          descriptionDigest: descState.checkpoint.descriptionDigest ?? null,
+          threadDigests: descState.checkpoint.threadDigests ?? {},
+          createdAt: descState.checkpoint.createdAt,
+        };
+      }
+    } catch (err) {
+      // parseDescriptionState throws on duplicate blocks — surface to user
+      if (err instanceof Error && err.message.includes('multiple revkit state blocks')) {
+        throw err;
+      }
+      // Malformed state — treat as no checkpoint
+    }
+
+    // Identify body-only revkit review notes for exclusion from bundle context
+    let reviewNoteCommentId: string | null = null;
     let reviewNote: { id: string; body: string } | null = null;
     try {
       reviewNote = await this.provider.findNoteByMarker(targetRef, REVIEW_NOTE_MARKER);
     } catch {
-      // Provider lookup failed — treat as no checkpoint
+      // Provider lookup failed
     }
-
     if (reviewNote) {
-      checkpointNoteId = reviewNote.id;
-      try {
-        const parsed = parseCheckpointMarker(reviewNote.body);
-        if (parsed) {
-          reviewNoteVisibleContent = parsed.visibleContent || null;
-          remoteCheckpoint = {
-            source: 'managed_review_note',
-            providerNoteId: checkpointNoteId,
-            headSha: parsed.state.checkpoint.headSha,
-            baseSha: parsed.state.checkpoint.baseSha,
-            startSha: parsed.state.checkpoint.startSha,
-            providerVersionId: parsed.state.checkpoint.providerVersionId,
-            threadsDigest: parsed.state.checkpoint.threadsDigest,
-            descriptionDigest: parsed.state.checkpoint.descriptionDigest ?? null,
-            threadDigests: parsed.state.checkpoint.threadDigests ?? {},
-            createdAt: parsed.state.checkpoint.createdAt,
-          };
-        }
-      } catch {
-        // Malformed checkpoint — treat as no checkpoint
-      }
+      reviewNoteCommentId = reviewNote.id;
     }
 
     // ─── Source consistency check ─────────────────────────
@@ -217,7 +220,6 @@ export class ReviewOrchestrator {
     // ─── Source consistency verified — proceed with writes ─
 
     // Filter out system-only threads and the managed review note thread
-    const reviewNoteCommentId = checkpointNoteId;
     const allThreads = filterReviewThreads(rawThreads, reviewNoteCommentId);
 
     // Build position-based thread index
@@ -232,7 +234,7 @@ export class ReviewOrchestrator {
     // Compute prepare summary — compare against remote checkpoint
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
-    const currentDescriptionDigest = computeContentHash(target.description ?? '');
+    const currentDescriptionDigest = computeContentHash(sanitizeDescriptionForAgent(target.description ?? ''));
 
     // Compare against checkpoint (not previous local prepare)
     const targetCodeChanged = remoteCheckpoint ? remoteCheckpoint.headSha !== mrHeadSha : null;
@@ -362,9 +364,7 @@ export class ReviewOrchestrator {
     if (publishedSummary) {
       await this.workspace.prefillOutputIfEmpty('summary.md', publishedSummary);
     }
-    if (reviewNoteVisibleContent && remoteCheckpoint) {
-      await this.workspace.prefillOutputIfEmpty('review.md', stripReviewNoteFooter(reviewNoteVisibleContent));
-    }
+    // review.md is never prefilled — it is the current publish body only
 
     return {
       bundle,
@@ -498,40 +498,88 @@ export class ReviewOrchestrator {
     return this.workspace.resolveThreadRef(ref);
   }
 
-  /** Review note marker for finding/updating the managed review note. */
-  static readonly REVIEW_COMMENT_MARKER = REVIEW_NOTE_MARKER;
-
   /**
-   * Publish review: create or update the managed review note and advance the checkpoint.
+   * Publish review: advance the checkpoint via the description state block,
+   * and optionally publish review.md as a visible comment/note.
    *
-   * - If visibleContent is non-empty, uses it as the visible note body.
-   * - If visibleContent is empty and a managed note exists, preserves existing visible content.
-   * - If visibleContent is empty and no managed note exists, creates a minimal visible note.
-   * - Always updates the hidden checkpoint marker.
+   * - Hidden state is always written to the MR/PR description/body.
+   * - If visibleContent is non-empty, publishes it as a new normal comment/note.
+   * - If visibleContent is empty, no visible review artifact is created.
    */
   async publishReview(visibleContent: string, defaultRepo?: string): Promise<{ created: boolean; noteId?: string }> {
-    const targetRef = await this.resolveRef(undefined, defaultRepo);
-    const marker = REVIEW_NOTE_MARKER;
+    await this.advanceCheckpoint(defaultRepo);
 
-    // Fetch current state for the checkpoint (include existing note lookup for consistent filtering)
-    const [target, rawThreads, existingNote] = await Promise.all([
+    // Publish visible review body if non-empty
+    if (visibleContent.trim()) {
+      const targetRef = await this.resolveRef(undefined, defaultRepo);
+      const markedBody = `${REVIEW_NOTE_MARKER}\n${visibleContent.trim()}${REVIEW_NOTE_FOOTER}`;
+      const noteId = await this.provider.createNote(targetRef, markedBody);
+      return { created: true, noteId };
+    }
+
+    return { created: false };
+  }
+
+  /**
+   * Publish review as part of a GitHub PR review batch (with findings as inline comments).
+   * Advances the checkpoint via the description state block.
+   */
+  async publishReviewBatch(
+    findings: NewFinding[],
+    reviewBody: string,
+    defaultRepo?: string,
+  ): Promise<{ created: boolean; noteId?: string }> {
+    // Build provider comment objects — marker + footer added here, same as publishFinding
+    const comments = findings.map((f) => {
+      const side: 'LEFT' | 'RIGHT' = f.oldLine != null && f.newLine == null ? 'LEFT' : 'RIGHT';
+      return {
+        body: `${ReviewOrchestrator.COMMENT_MARKER}\n${f.body}${ReviewOrchestrator.AI_FOOTER}`,
+        path: side === 'LEFT' ? f.oldPath : f.newPath,
+        line: side === 'LEFT' ? f.oldLine : f.newLine,
+        side,
+      };
+    });
+
+    // Submit the PR review batch
+    if (this.provider.submitReview) {
+      const targetRef = await this.resolveRef(undefined, defaultRepo);
+      const body = reviewBody.trim() ? `${reviewBody.trim()}${REVIEW_NOTE_FOOTER}` : '';
+      await this.provider.submitReview(targetRef, comments, body, 'COMMENT');
+    }
+
+    await this.advanceCheckpoint(defaultRepo);
+
+    return { created: findings.length > 0 || !!reviewBody.trim() };
+  }
+
+  /**
+   * Snapshot current MR/PR state and write the checkpoint into the description body.
+   */
+  private async advanceCheckpoint(defaultRepo?: string): Promise<void> {
+    const targetRef = await this.resolveRef(undefined, defaultRepo);
+
+    const [target, rawThreads] = await Promise.all([
       this.provider.getTargetSnapshot(targetRef),
       this.provider.listAllThreads(targetRef),
-      this.provider.findNoteByMarker(targetRef, marker).catch(() => null),
     ]);
 
-    // Exclude system-only threads AND the review note's own thread
-    // (must match the filtering in prepare() to produce consistent digests)
-    const reviewNoteId = existingNote?.id ?? null;
+    // Identify existing review note for thread filtering
+    let reviewNoteId: string | null = null;
+    try {
+      const existingNote = await this.provider.findNoteByMarker(targetRef, REVIEW_NOTE_MARKER);
+      if (existingNote) reviewNoteId = existingNote.id;
+    } catch {
+      // Provider lookup failed
+    }
+
     const allThreads = filterReviewThreads(rawThreads, reviewNoteId);
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
-    const currentDescriptionDigest = computeContentHash(target.description ?? '');
+    const currentDescriptionDigest = computeContentHash(sanitizeDescriptionForAgent(target.description ?? ''));
     const threadDigests = computeThreadDigestMap(allThreads);
 
     const versions = await this.provider.getDiffVersions(targetRef);
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
 
-    // Build the new checkpoint state
     const checkpointState = buildCheckpointState(
       targetRef,
       target.diffRefs.headSha,
@@ -543,25 +591,8 @@ export class ReviewOrchestrator {
       threadDigests,
     );
 
-    if (existingNote) {
-      // Update existing managed note
-      let fullBody: string;
-
-      if (visibleContent.trim()) {
-        fullBody = buildReviewNoteBody(visibleContent, checkpointState);
-      } else {
-        fullBody = updateReviewNoteBody(existingNote.body, checkpointState);
-      }
-
-      await this.provider.updateNote(targetRef, existingNote.id, fullBody);
-      return { created: false, noteId: existingNote.id };
-    } else {
-      // Create new managed note
-      const content = visibleContent.trim() ? visibleContent : 'Reviewed current changes. No additional review notes.';
-      const fullBody = buildReviewNoteBody(content, checkpointState);
-      const noteId = await this.provider.createNote(targetRef, fullBody, { internal: true });
-      return { created: true, noteId };
-    }
+    const patchedDescription = patchDescriptionWithState(target.description ?? '', checkpointState);
+    await this.provider.updateDescription(targetRef, patchedDescription);
   }
 
   // ─── Helpers ────────────────────────────────────────────

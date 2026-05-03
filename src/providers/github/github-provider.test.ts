@@ -515,7 +515,10 @@ describe('GitHubProvider writes', () => {
     installFetch((url, init) => {
       requests.push({ url, method: init?.method, body: init?.body ? requestBodyJson(init) : undefined });
       if (url === 'https://api.github.com/repos/octo/repo/issues/42/comments' && !init?.method) {
-        return jsonResponse([{ id: 1, body: 'hello' }, { id: 2, body: '<!-- revkit:review -->\nstate' }]);
+        return jsonResponse([
+          { id: 1, body: 'hello' },
+          { id: 2, body: '<!-- revkit:review -->\nstate' },
+        ]);
       }
       if (url === 'https://api.github.com/repos/octo/repo/issues/42/comments' && init?.method === 'POST') {
         return jsonResponse({ id: 3, body: 'created' });

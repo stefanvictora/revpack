@@ -23,9 +23,9 @@ Required files:
 | `.revkit/outputs/replies.json`      | Replies to existing MR/PR threads                                              |
 | `.revkit/outputs/new-findings.json` | New positional review findings to post as threads                              |
 | `.revkit/outputs/summary.md`        | **Changelog-style description of what the MR/PR changes** — not what you found |
-| `.revkit/outputs/review.md`         | Public review note with broad observations, risks, or follow-up questions      |
+| `.revkit/outputs/review.md`         | Optional public review body for the current publish operation; may be empty    |
 
-If there are no review notes worth publishing, write an empty file or a short neutral note, depending on the existing tool convention.
+If there are no review notes worth publishing, leave the file empty. Do not write filler such as "No new findings", "Nothing to report", or "Reviewed without comments".
 
 Do not omit output files.
 
@@ -504,40 +504,25 @@ Use `new-findings.json` only for concrete, actionable issues tied to a visible d
 
 ## `outputs/review.md`
 
-This is a public note visible to other MR/PR participants.
+This file is the optional public review body for the current publish operation.
+
+Write only content that is useful for this publish operation.
+
+Use it for review information that is useful to publish but does not belong in a positional finding or thread reply, such as:
+
+- what areas of the diff you reviewed
+- notable findings that were created separately, without duplicating their full text
+- broad concerns or follow-up questions
+- areas that may deserve human attention
+- lower-confidence concerns that are useful for human attention, but not proven enough for a positional finding
 
 Do not reference internal bundle files such as `.revkit/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `line-map.ndjson`.
 
 Write as if addressing other developers looking at the MR/PR.
 
-A useful review note may include:
-
-- what areas of the diff you reviewed
-- notable findings that were created separately
-- broad concerns or follow-up questions
-- areas that may deserve human attention
+If there is no useful review body for the current publish operation, leave the file empty. Do not write filler such as "No new findings", "Nothing to report", or "Reviewed without comments".
 
 Keep it concise.
-
-### Updating an existing review note
-
-If `outputs/review.md` already exists and is non-empty, update it instead of replacing it from scratch.
-
-Treat the existing file as the current published review note. Preserve any content that is still accurate, useful, and not duplicated elsewhere.
-
-Before writing the updated note:
-
-1. Identify existing observations, concerns, and follow-up questions.
-2. Keep items that are still relevant.
-3. Update items whose status or wording changed.
-4. Remove items that are stale, resolved, duplicated, or no longer useful.
-5. Add new observations only when they add value.
-
-Do not discard still-relevant content just because the current run produced new findings.
-
-Do not append repetitive status updates.
-
-The result should be a single coherent MR/PR review note, not a chronological log of review runs.
 
 ---
 

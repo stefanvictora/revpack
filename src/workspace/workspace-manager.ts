@@ -26,6 +26,7 @@ import {
   latestNonSystemComment,
   nonSystemThreadComments,
 } from './thread-utils.js';
+import { sanitizeDescriptionForAgent } from './checkpoint.js';
 
 /**
  * Map from thread SHA → stable T-NNN short ID.
@@ -330,11 +331,13 @@ export class WorkspaceManager {
   }
 
   /**
-   * Write the raw MR/PR description to description.md.
+   * Write the sanitized MR/PR description to description.md.
+   * Strips the hidden revkit state block so agents never see it.
    */
   async writeDescription(description: string): Promise<void> {
+    const sanitized = sanitizeDescriptionForAgent(description ?? '');
     const descPath = path.join(this.baseDir, 'description.md');
-    await fs.writeFile(descPath, description ?? '', 'utf-8');
+    await fs.writeFile(descPath, sanitized, 'utf-8');
   }
 
   /**
@@ -559,14 +562,20 @@ export class WorkspaceManager {
     lines.push('2. Read `.revkit/INSTRUCTIONS.md` for the review workflow, diff navigation rules, and output format.');
     lines.push('3. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
     lines.push('4. Read relevant unresolved thread files in `.revkit/threads/`.');
-    lines.push('5. Use `.revkit/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.');
+    lines.push(
+      '5. Use `.revkit/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
+    );
     lines.push('6. Use `.revkit/diffs/latest.patch` for the overall change and cross-file context.');
     lines.push('7. Use `.revkit/diffs/patches/by-file/` for focused review of individual changed files.');
-    lines.push('8. Use `.revkit/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.');
-    lines.push('9. Use `.revkit/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.');
+    lines.push(
+      '8. Use `.revkit/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
+    );
+    lines.push(
+      '9. Use `.revkit/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
+    );
     lines.push('10. Inspect checked-out source files when needed to understand the new branch state.');
     lines.push('11. Use `.revkit/diffs/views/` only as optional readability aids.');
-    lines.push('12. Read existing `.revkit/outputs/review.md` and `.revkit/outputs/summary.md`, if present, before updating them.');
+    lines.push('12. Read existing `.revkit/outputs/summary.md`, if present, before updating it.');
     lines.push('');
 
     // ─── MR/PR Description ────────────────────────────────
@@ -582,7 +591,9 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('| Path | Description |');
     lines.push('|---|---|');
-    lines.push('| `.revkit/INSTRUCTIONS.md` | Stable review workflow, diff navigation rules, and output format rules |');
+    lines.push(
+      '| `.revkit/INSTRUCTIONS.md` | Stable review workflow, diff navigation rules, and output format rules |',
+    );
     lines.push('| `.revkit/bundle.json` | Machine-readable bundle metadata and local state |');
     lines.push('| `.revkit/description.md` | Raw MR/PR description |');
     const threadFileCount = unresolvedThreads.length + generalComments.length;
@@ -591,10 +602,16 @@ export class WorkspaceManager {
     }
     lines.push('| `.revkit/diffs/latest.patch` | Canonical full unified diff for the whole MR/PR |');
     lines.push('| `.revkit/diffs/patches/by-file/` | Canonical per-file unified diffs in standard patch format |');
-    lines.push('| `.revkit/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and diff artifact paths |');
+    lines.push(
+      '| `.revkit/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and diff artifact paths |',
+    );
     lines.push('| `.revkit/diffs/line-map.ndjson` | Canonical per-line map for valid positional review anchors |');
-    lines.push('| `.revkit/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |');
-    lines.push('| `.revkit/diffs/views/all.annotated.diff.md` | Optional annotated readability view for the full diff |');
+    lines.push(
+      '| `.revkit/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |',
+    );
+    lines.push(
+      '| `.revkit/diffs/views/all.annotated.diff.md` | Optional annotated readability view for the full diff |',
+    );
     lines.push('| `.revkit/diffs/views/by-file/` | Per-file annotated diff views |');
     if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
       lines.push('| `.revkit/diffs/incremental.patch` | Code changes since last review checkpoint |');

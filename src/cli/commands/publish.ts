@@ -217,13 +217,11 @@ async function publishReplies(opts: {
   return posted;
 }
 
-async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
-  const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
-  const resolvedFilePath = workspacePath(filePath);
-  const rawFindings = await loadNewFindings(resolvedFilePath);
-  if (rawFindings.length === 0) return 0;
+async function loadAndValidateFindings(filePath: string): Promise<{ findings: NewFinding[]; resolvedPath: string }> {
+  const resolvedPath = workspacePath(filePath);
+  const rawFindings = await loadNewFindings(resolvedPath);
+  if (rawFindings.length === 0) return { findings: [], resolvedPath };
 
-  // Load line map for validation
   const patchPath = workspacePath(DEFAULT_LATEST_PATCH_FILE);
   let patchContent: string;
   try {
@@ -241,12 +239,41 @@ async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefres
   if (errors.length > 0) {
     console.error(chalk.red(`\n${errors.length} finding(s) failed validation:\n`));
     console.error(formatValidationErrors(errors));
-    console.error('');
     throw new Error(
       `${errors.length} invalid finding(s) in ${filePath}. Fix the positions and retry.\n` +
         `The output file has not been modified.`,
     );
   }
+
+  return { findings, resolvedPath };
+}
+
+function annotateFindingBodies(findings: NewFinding[]): NewFinding[] {
+  return findings.map((f) => ({
+    ...f,
+    body: buildFindingHeader(f.severity, f.category) + f.body,
+  }));
+}
+
+async function trackFindingActions(ws: WorkspaceManager, findings: NewFinding[], threadIds?: string[]): Promise<void> {
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
+    await ws.appendPublishedAction({
+      type: 'finding',
+      providerThreadId: threadIds?.[i],
+      location: { oldPath: f.oldPath, newPath: f.newPath, oldLine: f.oldLine, newLine: f.newLine },
+      severity: f.severity,
+      category: f.category,
+      title: f.body.split('\n')[0].slice(0, 80),
+      publishedAt: new Date().toISOString(),
+    });
+  }
+}
+
+async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
+  const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
+  const { findings, resolvedPath } = await loadAndValidateFindings(filePath);
+  if (findings.length === 0) return 0;
 
   if (opts.dryRun) {
     console.log(chalk.bold(`${findings.length} finding(s) would be published:\n`));
@@ -266,25 +293,12 @@ async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefres
   const remaining: NewFinding[] = [];
   for (const finding of findings) {
     try {
-      const body = buildFindingHeader(finding.severity, finding.category) + finding.body;
-      const createdThreadId = await orchestrator.publishFinding({ ...finding, body }, defaultRepo);
+      const annotated = { ...finding, body: buildFindingHeader(finding.severity, finding.category) + finding.body };
+      const createdThreadId = await orchestrator.publishFinding(annotated, defaultRepo);
       const displayPath = finding.newPath || finding.oldPath;
       console.log(chalk.green(`  \u2713 ${displayPath}:${finding.newLine ?? finding.oldLine} (${finding.severity})`));
       published++;
-      await ws.appendPublishedAction({
-        type: 'finding',
-        providerThreadId: createdThreadId,
-        location: {
-          oldPath: finding.oldPath,
-          newPath: finding.newPath,
-          oldLine: finding.oldLine,
-          newLine: finding.newLine,
-        },
-        severity: finding.severity,
-        category: finding.category,
-        title: finding.body.split('\n')[0].slice(0, 80),
-        publishedAt: new Date().toISOString(),
-      });
+      await trackFindingActions(ws, [annotated], [createdThreadId]);
     } catch (err) {
       const displayPath = finding.newPath || finding.oldPath;
       console.error(
@@ -295,7 +309,7 @@ async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefres
       remaining.push(finding);
     }
   }
-  await saveFindings(resolvedFilePath, remaining);
+  await saveFindings(resolvedPath, remaining);
   if (published > 0) console.log(chalk.green(`${published}/${findings.length} findings published`));
   return published;
 }
@@ -350,6 +364,41 @@ async function publishDescription(opts: {
   return 1;
 }
 
+/**
+ * GitHub-specific: load, validate, and submit findings + review.md as a single PR review batch.
+ * Advances the checkpoint. Returns the number of findings published.
+ */
+async function publishFindingsAndReviewBatch(reviewContent: string): Promise<number> {
+  const { findings, resolvedPath } = await loadAndValidateFindings(DEFAULT_FINDINGS_FILE);
+  if (findings.length === 0) return 0;
+
+  const annotated = annotateFindingBodies(findings);
+
+  const orchestrator = await createOrchestrator();
+  const defaultRepo = await getRepoFromGit();
+  await orchestrator.publishReviewBatch(annotated, reviewContent, defaultRepo);
+
+  console.log(chalk.green(`  ✓ ${findings.length} finding(s) published as PR review`));
+  if (reviewContent.trim()) {
+    console.log(chalk.green('  ✓ Review body included in PR review'));
+  }
+
+  await saveFindings(resolvedPath, []);
+
+  const ws = new WorkspaceManager(process.cwd());
+  await trackFindingActions(ws, annotated);
+
+  if (reviewContent.trim()) {
+    const bundleState = await ws.loadBundleState();
+    if (bundleState) {
+      const hash = computeContentHash(reviewContent);
+      await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha);
+    }
+  }
+
+  return findings.length;
+}
+
 async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise<number> {
   const filePath = opts.from ?? DEFAULT_REVIEW_FILE;
   let content: string;
@@ -364,20 +413,33 @@ async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise
 
   const result = await orchestrator.publishReview(content, defaultRepo);
   if (result.created) {
-    console.log(chalk.green('✓ Review note created on the MR (checkpoint advanced)'));
+    console.log(chalk.green('✓ Review published and checkpoint advanced'));
   } else {
-    console.log(chalk.green('✓ Review note updated on the MR (checkpoint advanced)'));
+    console.log(chalk.green('✓ Checkpoint advanced (no review body to publish)'));
   }
 
   // Store publish hash for review tracking
-  const ws = new WorkspaceManager(process.cwd());
-  const bundleState = await ws.loadBundleState();
-  if (bundleState) {
-    const hash = computeContentHash(content);
-    await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha, result.noteId);
+  if (content.trim()) {
+    const ws = new WorkspaceManager(process.cwd());
+    const bundleState = await ws.loadBundleState();
+    if (bundleState) {
+      const hash = computeContentHash(content);
+      await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha, result.noteId);
+    }
   }
 
   return 1;
+}
+
+function warnPartialSuccess(occurred: boolean): void {
+  if (!occurred) return;
+  console.error(
+    chalk.yellow(
+      'Publishing failed after one or more provider actions may already have succeeded.\n' +
+        'The checkpoint was not advanced and pending output files were not cleared.\n' +
+        'Review the PR/MR before retrying to avoid duplicate comments.',
+    ),
+  );
 }
 
 export const __testing = {
@@ -416,7 +478,7 @@ export function registerPublishCommand(program: Command): void {
     console.log('  revkit publish findings      Publish findings only');
     console.log('  revkit publish replies       Publish replies only');
     console.log('  revkit publish description   Update MR description');
-    console.log('  revkit publish review        Publish/update review note and advance checkpoint');
+    console.log('  revkit publish review        Publish review.md if non-empty and advance checkpoint');
     process.exit(1);
   });
 
@@ -428,39 +490,77 @@ export function registerPublishCommand(program: Command): void {
       try {
         const parentOpts = cmd.parent?.opts();
         let total = 0;
+        let partialSuccess = false;
 
-        // ── Replies ──────────────────────────────────────
+        // Determine provider for flow branching
+        const ws = new WorkspaceManager(process.cwd());
+        const bundleState = await ws.loadBundleState();
+        const isGitHub = bundleState?.target.provider === 'github';
+
+        // ── 1. Replies ───────────────────────────────────────
         console.log(chalk.bold('─── Replies ───'));
         const replyCount = await publishReplies({ noRefresh: true });
         if (replyCount === 0) console.log(chalk.dim('  (none pending)'));
         total += replyCount;
+        if (replyCount > 0) partialSuccess = true;
 
-        // ── Findings ─────────────────────────────────────
+        // ── 2. Findings ──────────────────────────────────────
         console.log('');
         console.log(chalk.bold('─── Findings ───'));
-        const findingCount = await publishFindings({ noRefresh: true });
-        if (findingCount === 0) console.log(chalk.dim('  (none pending)'));
-        total += findingCount;
+        let batchCount = 0;
+        if (isGitHub) {
+          // GitHub: findings + review.md submitted as a single atomic PR review batch
+          let reviewContent = '';
+          try {
+            reviewContent = await fs.readFile(workspacePath(DEFAULT_REVIEW_FILE), 'utf-8');
+          } catch {
+            /* review.md absent is fine */
+          }
+          try {
+            batchCount = await publishFindingsAndReviewBatch(reviewContent);
+            if (batchCount === 0) console.log(chalk.dim('  (none pending)'));
+            total += batchCount;
+            if (batchCount > 0) partialSuccess = true;
+          } catch (err) {
+            warnPartialSuccess(partialSuccess);
+            throw err;
+          }
+        } else {
+          // GitLab (or unknown): findings posted as individual discussions
+          const findingCount = await publishFindings({ noRefresh: true });
+          if (findingCount === 0) console.log(chalk.dim('  (none pending)'));
+          total += findingCount;
+          if (findingCount > 0) partialSuccess = true;
+        }
 
-        // ── Description ──────────────────────────────────
+        // ── 3. Description ───────────────────────────────────
         console.log('');
         console.log(chalk.bold('─── Description ───'));
         try {
           total += await publishDescription({ fromSummary: true });
+          partialSuccess = true;
         } catch {
           console.log(chalk.dim('  (no summary to publish)'));
         }
 
-        // ── Review note & checkpoint ─────────────────────
+        // ── 4. Review / Checkpoint ────────────────────────────
+        // GitHub batch already advanced the checkpoint when findings were submitted.
+        // For all other cases (GitLab, or GitHub with no findings), run the normal flow.
         console.log('');
-        console.log(chalk.bold('─── Review Note ───'));
-        try {
-          total += await publishReviewCmd({});
-        } catch {
-          console.log(chalk.dim('  (no review to publish)'));
+        console.log(chalk.bold('─── Review & Checkpoint ───'));
+        if (batchCount > 0) {
+          console.log(chalk.green('✓ Checkpoint advanced (state in description)'));
+          total += 1;
+        } else {
+          try {
+            total += await publishReviewCmd({});
+          } catch (err) {
+            warnPartialSuccess(partialSuccess);
+            throw err;
+          }
         }
 
-        // ── Summary ──────────────────────────────────────
+        // ── Summary ──────────────────────────────────────────
         console.log('');
         if (total === 0) {
           console.log(chalk.dim('Nothing to publish.'));
@@ -538,7 +638,7 @@ export function registerPublishCommand(program: Command): void {
   // ── publish review ──────────────────────────────────────────
   publish
     .command('review')
-    .description('Publish/update the managed review note and advance the review checkpoint')
+    .description('Publish review.md if non-empty and advance checkpoint')
     .option('--from <file>', `Review file (default: ${DEFAULT_REVIEW_FILE})`)
     .option('--repo <repo>', 'Repository slug')
     .action(async (opts: { from?: string; repo?: string }, cmd: Command) => {

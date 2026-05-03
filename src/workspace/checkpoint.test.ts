@@ -5,6 +5,10 @@ import {
   encodeCheckpointState,
   buildReviewNoteBody,
   updateReviewNoteBody,
+  parseDescriptionState,
+  buildDescriptionStateBlock,
+  patchDescriptionWithState,
+  sanitizeDescriptionForAgent,
   CHECKPOINT_MARKER_START,
   CHECKPOINT_MARKER_END,
   REVIEW_NOTE_MARKER,
@@ -214,5 +218,148 @@ describe('updateReviewNoteBody', () => {
     expect(parsed!.state.checkpoint.headSha).toBe('new-head');
     expect(parsed!.visibleContent).toContain('New visible text.');
     expect(parsed!.visibleContent).not.toContain('Old text.');
+  });
+});
+
+// ─── Description-body state block tests ──────────────────
+
+describe('parseDescriptionState', () => {
+  it('parses state block from description', () => {
+    const state = buildCheckpointState(targetRef, 'abc123', 'def456', 'def456', 'sha256:threads');
+    const description = `# My MR
+
+Some description text.
+
+${buildDescriptionStateBlock(state)}`;
+
+    const parsed = parseDescriptionState(description);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.checkpoint.headSha).toBe('abc123');
+    expect(parsed!.checkpoint.threadsDigest).toBe('sha256:threads');
+    expect(parsed!.target.id).toBe('902');
+  });
+
+  it('returns null when no state block exists', () => {
+    const description = '# My MR\n\nJust a normal description.';
+    expect(parseDescriptionState(description)).toBeNull();
+  });
+
+  it('throws on multiple state blocks', () => {
+    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
+    const block = buildDescriptionStateBlock(state);
+    const description = `# My MR\n\n${block}\n\nSome text\n\n${block}`;
+
+    expect(() => parseDescriptionState(description)).toThrow('multiple revkit state blocks');
+  });
+
+  it('handles malformed state block gracefully', () => {
+    const description = `# My MR\n\n<!-- revkit:state\nnot-valid-data\n-->`;
+    expect(parseDescriptionState(description)).toBeNull();
+  });
+});
+
+describe('patchDescriptionWithState', () => {
+  it('appends state block to description without existing state', () => {
+    const state = buildCheckpointState(targetRef, 'head1', 'base1', 'start1', null);
+    const result = patchDescriptionWithState('# My MR\n\nDescription text.', state);
+
+    expect(result).toContain('# My MR');
+    expect(result).toContain('Description text.');
+    expect(result).toContain('<!-- revkit:state');
+
+    // Verify roundtrip
+    const parsed = parseDescriptionState(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.checkpoint.headSha).toBe('head1');
+  });
+
+  it('replaces existing state block in place', () => {
+    const oldState = buildCheckpointState(targetRef, 'old-head', 'base', 'start', null);
+    const existing = patchDescriptionWithState('# My MR\n\nOriginal text.', oldState);
+
+    const newState = buildCheckpointState(targetRef, 'new-head', 'base', 'start', 'sha256:threads');
+    const updated = patchDescriptionWithState(existing, newState);
+
+    // Should only have one state block
+    const matches = [...updated.matchAll(/<!-- revkit:state/g)];
+    expect(matches).toHaveLength(1);
+
+    // Should preserve original text
+    expect(updated).toContain('# My MR');
+    expect(updated).toContain('Original text.');
+
+    // Should have new state
+    const parsed = parseDescriptionState(updated);
+    expect(parsed!.checkpoint.headSha).toBe('new-head');
+    expect(parsed!.checkpoint.threadsDigest).toBe('sha256:threads');
+  });
+
+  it('throws on multiple state blocks', () => {
+    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
+    const block = buildDescriptionStateBlock(state);
+    const description = `# My MR\n\n${block}\n\nText\n\n${block}`;
+
+    expect(() => patchDescriptionWithState(description, state)).toThrow('multiple revkit state blocks');
+  });
+
+  it('preserves unrelated description content', () => {
+    const state = buildCheckpointState(targetRef, 'head', 'base', 'start', null);
+    const description = `# Feature: Login
+
+## Summary
+Implements OAuth login flow.
+
+<!-- revkit:start -->
+## Changed
+- Added OAuth support.
+<!-- revkit:end -->
+
+## Notes
+Some extra notes.`;
+
+    const result = patchDescriptionWithState(description, state);
+    expect(result).toContain('# Feature: Login');
+    expect(result).toContain('## Summary');
+    expect(result).toContain('Implements OAuth login flow.');
+    expect(result).toContain('<!-- revkit:start -->');
+    expect(result).toContain('<!-- revkit:end -->');
+    expect(result).toContain('## Notes');
+    expect(result).toContain('Some extra notes.');
+  });
+});
+
+describe('sanitizeDescriptionForAgent', () => {
+  it('removes state block from description', () => {
+    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
+    const description = patchDescriptionWithState('# My MR\n\nSome text here.', state);
+
+    const sanitized = sanitizeDescriptionForAgent(description);
+    expect(sanitized).toContain('# My MR');
+    expect(sanitized).toContain('Some text here.');
+    expect(sanitized).not.toContain('<!-- revkit:state');
+  });
+
+  it('preserves visible summary marker block', () => {
+    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
+    const description = `# My MR
+
+<!-- revkit:start -->
+## Changed
+- Updated login flow.
+<!-- revkit:end -->
+
+${buildDescriptionStateBlock(state)}`;
+
+    const sanitized = sanitizeDescriptionForAgent(description);
+    expect(sanitized).toContain('<!-- revkit:start -->');
+    expect(sanitized).toContain('## Changed');
+    expect(sanitized).toContain('<!-- revkit:end -->');
+    expect(sanitized).not.toContain('<!-- revkit:state');
+  });
+
+  it('returns description unchanged when no state block', () => {
+    const description = '# My MR\n\nJust a normal description.';
+    const sanitized = sanitizeDescriptionForAgent(description);
+    expect(sanitized).toBe(description);
   });
 });
