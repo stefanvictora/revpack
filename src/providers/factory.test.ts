@@ -33,11 +33,32 @@ describe('createProvider', () => {
     expect(() => createProvider(config)).toThrow(ConfigError);
   });
 
-  it('throws on github (not implemented)', () => {
+  it('creates a GitHub provider', () => {
+    const config: ResolvedAppConfig = {
+      provider: 'github',
+      url: 'https://github.com',
+      token: 'ghp-xxx',
+      tlsVerify: true,
+    };
+    const provider = createProvider(config);
+    expect(provider.providerType).toBe('github');
+  });
+
+  it('creates a GitHub provider with the default GitHub URL', () => {
+    const config: ResolvedAppConfig = {
+      provider: 'github',
+      token: 'ghp-xxx',
+      tlsVerify: true,
+    };
+    const provider = createProvider(config);
+    expect(provider.providerType).toBe('github');
+  });
+
+  it('throws on missing github token', () => {
     const config: ResolvedAppConfig = {
       provider: 'github',
       tlsVerify: true,
     };
-    expect(() => createProvider(config)).toThrow('not yet implemented');
+    expect(() => createProvider(config)).toThrow('token is required for GitHub provider');
   });
 });

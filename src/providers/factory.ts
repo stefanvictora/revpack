@@ -1,5 +1,6 @@
 import type { ReviewProvider } from './provider.js';
 import { GitLabProvider } from './gitlab/gitlab-provider.js';
+import { GitHubProvider } from './github/github-provider.js';
 import type { ResolvedAppConfig } from '../config/types.js';
 import { ConfigError } from '../core/errors.js';
 
@@ -13,8 +14,13 @@ export function createProvider(config: ResolvedAppConfig): ReviewProvider {
         tlsVerify: config.tlsVerify,
       });
     }
-    case 'github':
-      throw new ConfigError('GitHub provider is not yet implemented');
+    case 'github': {
+      if (!config.token) throw new ConfigError('token is required for GitHub provider (set the configured tokenEnv)');
+      return new GitHubProvider(config.url, config.token, {
+        caFile: config.caFile,
+        tlsVerify: config.tlsVerify,
+      });
+    }
     default:
       throw new ConfigError(`Unknown provider: ${config.provider as string}`);
   }

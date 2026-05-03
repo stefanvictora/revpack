@@ -1006,7 +1006,7 @@ describe('WorkspaceManager', () => {
           targetId: '42',
           // Extra fields that must NOT appear in the written JSON
           ...({ title: 'Should not be here', author: 'alice', state: 'opened' } as object),
-        } as ReviewThread['targetRef'],
+        },
       };
 
       await createBundle(manager, makeTarget(), [threadWithFullTargetRef]);
