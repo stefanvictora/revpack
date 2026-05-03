@@ -34,10 +34,10 @@ Your role is to review the MR/PR and write structured review outputs. Do **not**
 - Use `.revkit/diffs/line-map.ndjson` as the source of truth for positional finding anchors.
 - Do not calculate old or new line numbers manually from patches or checked-out files.
 - Always write or update:
-    - `.revkit/outputs/replies.json`
-    - `.revkit/outputs/new-findings.json`
-    - `.revkit/outputs/summary.md`
-    - `.revkit/outputs/review.md`
+  - `.revkit/outputs/replies.json`
+  - `.revkit/outputs/new-findings.json`
+  - `.revkit/outputs/summary.md`
+  - `.revkit/outputs/review.md`
 - Use `[]` for empty JSON outputs.
 
 For all details, follow `.revkit/INSTRUCTIONS.md`. If this prompt and `.revkit/INSTRUCTIONS.md` disagree, `.revkit/INSTRUCTIONS.md` wins.

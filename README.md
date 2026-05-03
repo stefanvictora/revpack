@@ -11,24 +11,30 @@ npm run build
 
 ### Configuration
 
-Set environment variables or use `revkit config set`:
+revkit uses a **profiles** system. Each profile targets one provider instance (GitLab self-hosted, GitHub, etc.) and is matched automatically from the current git remote.
+
+The quickest way to create a profile is the interactive setup wizard:
 
 ```bash
-# Required for GitLab
-export REVKIT_PROVIDER=gitlab
-export REVKIT_GITLAB_URL=https://gitlab.example.com
-export REVKIT_GITLAB_TOKEN=glpat-xxxxxxxxxxxx
-# or use GITLAB_TOKEN as fallback
-
-# Optional
-export REVKIT_REPO=group/project
+revkit config setup
 ```
 
-Or configure via file (`~/.config/revkit/config.json`):
+This detects your git remote, pre-fills the provider URL and suggested defaults, and writes a named profile to `~/.config/revkit/config.json`.
+
+After setup, set the token environment variable it configured:
 
 ```bash
-npx revkit config set gitlabUrl https://gitlab.example.com
-npx revkit config set gitlabToken glpat-xxxxxxxxxxxx
+# GitLab
+export REVKIT_GITLAB_TOKEN=glpat-xxxxxxxxxxxx
+
+# GitHub
+export REVKIT_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+```
+
+Then verify:
+
+```bash
+revkit config doctor
 ```
 
 ## Quick Start
@@ -185,7 +191,7 @@ revkit publish findings --dry-run               # preview without posting
 revkit publish description --from-summary       # update MR description
 revkit publish description --from custom.md     # use any file
 revkit publish description --from-summary --replace  # replace entire description
-revkit publish review                           # publish/update review note and advance checkpoint
+revkit publish review                           # publish review.md if non-empty and advance checkpoint
 ```
 
 ### `clean` — Remove local revkit state
@@ -208,18 +214,44 @@ revkit setup --dry-run   # preview without writing
 
 ### `config` — Manage configuration
 
+Configuration is stored in `~/.config/revkit/config.json` as named profiles. Each profile holds a provider type, base URL, token env var, and remote match patterns used to auto-select the right profile per repository.
+
 ```bash
+# Interactive setup — detects git remote, pre-fills suggested values
+revkit config setup
+
+# Show resolved config for the current directory
 revkit config show
+revkit config show --profile myprofile
+revkit config show --sources          # show where each value comes from
+
+# Get / set / unset individual keys on a profile
+revkit config get <key>
 revkit config set <key> <value>
-revkit config init
+revkit config unset <key>
+# --profile <name>  target a specific profile
+# --current         resolve profile from current git remote
+
+# Profile management
+revkit config profile list
+revkit config profile show <name>
+revkit config profile create <name>
+revkit config profile delete <name>
+revkit config profile rename <old> <new>
+
+# Health check
+revkit config doctor
+revkit config doctor --profile myprofile
 ```
+
+Configurable keys: `provider`, `url`, `tokenEnv`, `remotePatterns`, `caFile`, `tlsVerify`.
 
 ## Architecture
 
 Five layers:
 
 1. **Core domain** (`src/core/`) — Provider-neutral types, schemas, errors
-2. **Provider adapters** (`src/providers/`) — GitLab (now), GitHub (future)
+2. **Provider adapters** (`src/providers/`) — GitLab and GitHub
 3. **Workspace** (`src/workspace/`) — Git operations, bundle creation
 4. **Orchestration** (`src/orchestration/`) — Workflow coordination
 5. **CLI** (`src/cli/`) — Commander-based commands with `--json` support
@@ -258,4 +290,4 @@ npm run dev -- prepare !42    # run CLI with tsx (no build needed)
 - **Phase 2.8** ✅ Workflow redesign — `prepare`/`setup`/`clean`, `bundle.json`, structured context
 - **Phase 3** 🔜 Patch assistance — Generate/apply patches, run checks
 - **Phase 4** 🔜 Learnings & automation — Durable learnings, CI integration
-- **Phase 5** 🔜 Provider expansion & MCP — GitHub adapter, MCP server
+- **Phase 5** 🔜 MCP server & automation — MCP server, CI integration
