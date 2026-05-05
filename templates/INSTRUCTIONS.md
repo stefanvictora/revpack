@@ -8,7 +8,11 @@ These instructions are the stable contract for how an agent should review the pr
 
 Review the MR/PR changes and write structured review outputs.
 
-Do not modify source files directly. Your role is to produce comments, findings, summaries, and review notes. The developer decides what to apply or publish.
+Do not modify source files directly. Only write files under `.revkit/outputs/`.
+
+If you accidentally modify any other file, stop and report the accidental modification in your final response. Do not attempt broad cleanup commands.
+
+Your role is to produce comments, findings, summaries, and review notes. The developer decides what to apply or publish.
 
 ## Execution model: read-only review, no local validation commands
 
@@ -46,6 +50,12 @@ Required files:
 If there are no review notes worth publishing, leave the file empty. Do not write filler such as "No new findings", "Nothing to report", or "Reviewed without comments".
 
 Do not omit output files.
+
+## Output validation
+
+revkit may mechanically validate required files, JSON syntax, output schemas, and positional anchors before publishing.
+
+Your job is to write the required output files correctly. Do not spend extra tool calls re-validating conditions that revkit can check deterministically.
 
 ## Input files to read
 
@@ -686,23 +696,28 @@ Do not invent intent that is not visible from the diff or MR/PR context.
 
 ---
 
-# Final checks
+# Final self-check
 
-Before finishing, check that:
+Before finishing, perform a lightweight self-check.
+
+Do not run additional shell commands solely for final verification unless you have a concrete reason to suspect that an output file is malformed or missing.
+
+Check from your current work that:
 
 - all required output files were written
-- JSON output files are syntactically valid JSON arrays
+- JSON output files are valid JSON arrays
 - every finding has `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one line field
 - every finding is anchored to a line in `.revkit/diffs/line-map.ndjson`
 - there are no duplicate findings from existing threads or Previous Actions
-- source files were not modified
-- no build, test, lint, format, package-manager, migration, Docker, application-startup, or Git-hook commands were run
-- no claim was made that tests pass unless that status was explicitly present in the MR/PR context
 - findings are concise, concrete, and actionable
 - `summary.md` describes MR/PR changes, not review findings
 - `review.md` does not reference internal revkit files
 
-Do not run publishing commands unless the developer explicitly asks.
+Do not run build, test, lint, format, package-manager, migration, Docker, application-startup, Git-hook, publishing, or repository-audit commands.
+
+Do not run `git status`, `git diff`, or similar commands just to prove that source files were not modified.
+
+If you accidentally modified files outside `.revkit/outputs/`, report that explicitly instead of trying to hide or repair it.
 
 ---
 
