@@ -18,12 +18,33 @@
 - Missing or broken tests for new behavior.
 - Breaking changes to public APIs without migration path.
 
+## Repository conventions and local patterns
+
+When reviewing changed code, compare it with nearby existing code and established repository patterns.
+
+Consider whether the change follows existing conventions for:
+
+- package/module boundaries and layering
+- naming of classes, methods, DTOs, services, tests, and exceptions
+- validation, authorization, error handling, logging, and auditing
+- transaction boundaries, persistence patterns, and external-service calls
+- test structure, fixture setup, assertions, and naming
+- API response shapes, error messages, serialization, and compatibility behavior
+
+Prefer existing repository conventions unless they are clearly harmful or conflict with explicit project standards.
+
+Flag convention deviations only when they create a concrete readability, maintainability, correctness, compatibility, or onboarding risk.
+
+Do not flag purely mechanical style issues that are already handled by formatter, linter, or CI.
+
 ## What NOT to flag
 
 - Style issues already covered by linter/formatter.
 - "I would have done it differently" without a concrete problem.
 - Missing docs on internal/private code.
 - Theoretical performance issues without evidence of impact.
+- Deviations from existing style that are purely mechanical and already covered by formatter, linter, or CI.
+- Cleaner local improvements that differ from old code but do not create inconsistency, risk, or confusion.
 
 ## Reply tone
 
