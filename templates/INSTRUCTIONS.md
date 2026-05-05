@@ -10,6 +10,24 @@ Review the MR/PR changes and write structured review outputs.
 
 Do not modify source files directly. Your role is to produce comments, findings, summaries, and review notes. The developer decides what to apply or publish.
 
+## Execution model: read-only review, no local validation commands
+
+This workspace is for code review and output generation, not for local validation.
+
+Do not run commands that execute, build, test, lint, format, package, migrate, start, or otherwise validate the project locally.
+
+Do not run commands such as:
+
+- `mvn test`, `mvn verify`, `gradle test`, `npm test`, `npm run build`, `yarn test`
+- linters, formatters, type checkers, package managers, database migrations, Docker Compose, application startup commands, or Git hooks
+- dependency installation or update commands
+
+The project pipeline is responsible for compile, test, lint, format, packaging, security scans, and other mechanical validation. If the pipeline is red, developers can see that in the MR/PR.
+
+Review tests by reading the diff and existing test files. You may flag missing, weak, or misleading tests when there is a concrete risk, but do not execute tests yourself and do not claim that tests pass unless that information is explicitly present in the MR/PR context.
+
+Allowed local activity is limited to reading and searching files needed for review, such as inspecting source files, diff artifacts, thread files, and existing documentation.
+
 ## Required output files
 
 Always write all expected output files under `.revkit/outputs/`.
@@ -678,6 +696,8 @@ Before finishing, check that:
 - every finding is anchored to a line in `.revkit/diffs/line-map.ndjson`
 - there are no duplicate findings from existing threads or Previous Actions
 - source files were not modified
+- no build, test, lint, format, package-manager, migration, Docker, application-startup, or Git-hook commands were run
+- no claim was made that tests pass unless that status was explicitly present in the MR/PR context
 - findings are concise, concrete, and actionable
 - `summary.md` describes MR/PR changes, not review findings
 - `review.md` does not reference internal revkit files
