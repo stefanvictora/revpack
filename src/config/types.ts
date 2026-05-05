@@ -14,6 +14,7 @@ export interface RevkitProfile {
   remotePatterns?: string[];
   caFile?: string;
   tlsVerify?: boolean;
+  sshClone?: boolean;
 }
 
 // ─── File Config ─────────────────────────────────────────
@@ -30,6 +31,7 @@ export interface ResolvedAppConfig {
   token?: string;
   caFile?: string;
   tlsVerify: boolean;
+  sshClone?: boolean;
 }
 
 // ─── Profile Resolution Result ───────────────────────────
@@ -55,6 +57,7 @@ export interface DisplayAppConfig {
   tokenResolved: boolean;
   caFile?: string;
   tlsVerify: boolean;
+  sshClone: boolean;
 }
 
 // ─── Doctor Result ───────────────────────────────────────

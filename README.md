@@ -163,7 +163,10 @@ Does **not** prepare by default. Use `--prepare` to combine checkout and prepare
 revkit checkout !42                        # fetch + switch
 revkit checkout !42 --prepare              # fetch + switch + prepare
 revkit checkout !42 --repo group/project   # clone when not in a git repo
+revkit checkout !42 --profile myprofile    # use a specific profile
 ```
+
+By default, `checkout` clones over HTTPS. If your server requires SSH, set `sshClone: true` in the profile (`revkit config setup` will ask, or `revkit config set sshClone true`). SSH agent key loading is handled by Git as normal — if your key needs a passphrase and no agent is running, Git will prompt you in the terminal.
 
 ### `status [ref]` — View MR/PR status
 
@@ -244,7 +247,7 @@ revkit config doctor
 revkit config doctor --profile myprofile
 ```
 
-Configurable keys: `provider`, `url`, `tokenEnv`, `remotePatterns`, `caFile`, `tlsVerify`.
+Configurable keys: `provider`, `url`, `tokenEnv`, `remotePatterns`, `caFile`, `tlsVerify`, `sshClone`.
 
 ## Architecture
 

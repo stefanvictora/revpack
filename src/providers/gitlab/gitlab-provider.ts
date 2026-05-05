@@ -23,6 +23,7 @@ interface GitLabRequestOptions {
 interface GitLabProviderOptions {
   caFile?: string;
   tlsVerify?: boolean;
+  sshClone?: boolean;
 }
 
 export class GitLabProvider implements ReviewProvider {
@@ -30,11 +31,13 @@ export class GitLabProvider implements ReviewProvider {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly fetchDispatcher: object | undefined;
+  private readonly sshClone: boolean;
 
   constructor(gitlabUrl: string, token: string, opts: GitLabProviderOptions = {}) {
     this.baseUrl = gitlabUrl.replace(/\/+$/, '');
     this.token = token;
     this.fetchDispatcher = buildDispatcher(opts);
+    this.sshClone = opts.sshClone ?? false;
   }
 
   // ─── Target resolution ──────────────────────────────────
@@ -275,6 +278,10 @@ export class GitLabProvider implements ReviewProvider {
   }
 
   getCloneUrl(repo: string): string {
+    if (this.sshClone) {
+      const host = new URL(this.baseUrl).hostname;
+      return `git@${host}:${repo}.git`;
+    }
     return `${this.baseUrl}/${repo}.git`;
   }
 

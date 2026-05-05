@@ -90,6 +90,7 @@ export async function loadRuntimeConfig(
     url: profile.url,
     caFile: profile.caFile,
     tlsVerify: profile.tlsVerify ?? true,
+    sshClone: profile.sshClone,
   };
 
   // Resolve token from configured env var
@@ -131,6 +132,7 @@ export async function loadDisplayConfig(remoteUrls: string[], explicitProfile?: 
     tokenResolved,
     caFile: profile.caFile,
     tlsVerify: profile.tlsVerify ?? true,
+    sshClone: profile.sshClone ?? false,
   };
 }
 

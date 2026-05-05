@@ -14,12 +14,13 @@ export function registerCheckoutCommand(program: Command): void {
     )
     .option('--prepare', 'Also run `prepare` after checkout')
     .option('--repo <repo>', 'Repository slug (group/project)')
-    .action(async (ref: string, opts: { prepare?: boolean; repo?: string }) => {
+    .option('--profile <name>', 'Profile to use (overrides auto-detection)')
+    .action(async (ref: string, opts: { prepare?: boolean; repo?: string; profile?: string }) => {
       try {
         // When ref is a full URL, pass it as a hint so profile resolution can
         // match by the URL's host even outside a git repo.
         const hintUrls = /^https?:\/\//i.test(ref) ? [ref] : undefined;
-        let orchestrator = await createOrchestrator(hintUrls);
+        let orchestrator = await createOrchestrator(hintUrls, opts.profile);
         const defaultRepo = opts.repo ?? (await getRepoFromGit());
 
         // Switch branch (or clone if no git repo)

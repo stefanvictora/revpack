@@ -110,9 +110,11 @@ export function registerConfigCommand(program: Command): void {
 
         let caFileInput = '';
         let tlsInput = 'yes';
+        let sshCloneInput = 'no';
         if (!isCloudProvider) {
           caFileInput = await ask(`Custom CA file (optional): `);
           tlsInput = (await ask(`Verify TLS certificates [yes]: `)) || 'yes';
+          sshCloneInput = (await ask(`Use SSH for git clone (revkit checkout) [no]: `)) || 'no';
         }
 
         rl.close();
@@ -137,6 +139,9 @@ export function registerConfigCommand(program: Command): void {
         if (tlsInput.trim().toLowerCase() === 'no' || tlsInput.trim().toLowerCase() === 'false') {
           profile.tlsVerify = false;
         }
+        if (['yes', 'true', '1', 'on'].includes(sshCloneInput.trim().toLowerCase())) {
+          profile.sshClone = true;
+        }
 
         // Write
         const config = await loadFileConfig();
@@ -159,6 +164,7 @@ export function registerConfigCommand(program: Command): void {
         if (profile.caFile) console.log(`  ${chalk.dim('CA file:')}          ${profile.caFile}`);
         if (!isCloudProvider) {
           console.log(`  ${chalk.dim('TLS verify:')}       ${profile.tlsVerify === false ? 'false' : 'true'}`);
+          if (profile.sshClone) console.log(`  ${chalk.dim('SSH clone:')}        true`);
         }
         console.log('');
         console.log(chalk.bold('Next:'));
@@ -381,6 +387,7 @@ export function registerConfigCommand(program: Command): void {
     )
     .option('--ca-file <path>', 'Path to CA certificate file')
     .option('--no-tls-verify', 'Disable TLS verification')
+    .option('--ssh-clone', 'Use SSH instead of HTTPS for git clone')
     .action(
       async (
         name: string,
@@ -391,6 +398,7 @@ export function registerConfigCommand(program: Command): void {
           match: string[];
           caFile?: string;
           tlsVerify?: boolean;
+          sshClone?: boolean;
         },
       ) => {
         try {
@@ -404,6 +412,7 @@ export function registerConfigCommand(program: Command): void {
           }
           if (opts.caFile) profile.caFile = opts.caFile;
           if (opts.tlsVerify === false) profile.tlsVerify = false;
+          if (opts.sshClone) profile.sshClone = true;
 
           const config = await loadFileConfig();
           config.profiles ??= {};
@@ -494,6 +503,9 @@ async function showAction(opts: { profile?: string; json?: boolean; sources?: bo
       );
     }
     console.log(`  ${chalk.dim('TLS verify:')}   ${display.tlsVerify}${src(opts.sources, 'default')}`);
+    if (display.sshClone) {
+      console.log(`  ${chalk.dim('SSH clone:')}    true${src(opts.sources, 'profile:' + display.profileName)}`);
+    }
     console.log('');
     console.log(chalk.dim(`Config file: ${CONFIG_FILE}`));
   } catch (err) {
@@ -558,6 +570,7 @@ function printProfileDetails(profile: RevkitProfile, sources?: boolean): void {
   }
   if (profile.caFile) console.log(`  ${chalk.dim('CA file:')}     ${profile.caFile}`);
   console.log(`  ${chalk.dim('TLS verify:')}  ${profile.tlsVerify === false ? 'false' : 'true'}`);
+  if (profile.sshClone) console.log(`  ${chalk.dim('SSH clone:')}   true`);
   console.log('');
   // Remote matching section
   console.log(`  ${chalk.dim('Remote matching:')}`);

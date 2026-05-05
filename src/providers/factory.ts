@@ -12,6 +12,7 @@ export function createProvider(config: ResolvedAppConfig): ReviewProvider {
       return new GitLabProvider(config.url, config.token, {
         caFile: config.caFile,
         tlsVerify: config.tlsVerify,
+        sshClone: config.sshClone,
       });
     }
     case 'github': {
@@ -19,6 +20,7 @@ export function createProvider(config: ResolvedAppConfig): ReviewProvider {
       return new GitHubProvider(config.url, config.token, {
         caFile: config.caFile,
         tlsVerify: config.tlsVerify,
+        sshClone: config.sshClone,
       });
     }
     default:

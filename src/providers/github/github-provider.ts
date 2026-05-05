@@ -23,6 +23,7 @@ interface GitHubRequestOptions {
 interface GitHubProviderOptions {
   caFile?: string;
   tlsVerify?: boolean;
+  sshClone?: boolean;
 }
 
 interface GitHubEndpoints {
@@ -38,6 +39,7 @@ export class GitHubProvider implements ReviewProvider {
   private readonly graphqlUrl: string;
   private readonly token: string;
   private readonly fetchDispatcher: object | undefined;
+  private readonly sshClone: boolean;
 
   constructor(githubUrl: string | undefined, token: string, opts: GitHubProviderOptions = {}) {
     const endpoints = normalizeGitHubEndpoints(githubUrl);
@@ -46,6 +48,7 @@ export class GitHubProvider implements ReviewProvider {
     this.graphqlUrl = endpoints.graphqlUrl;
     this.token = token;
     this.fetchDispatcher = buildDispatcher(opts);
+    this.sshClone = opts.sshClone ?? false;
   }
 
   // ─── Target resolution ──────────────────────────────────
@@ -276,6 +279,10 @@ export class GitHubProvider implements ReviewProvider {
   }
 
   getCloneUrl(repo: string): string {
+    if (this.sshClone) {
+      const host = new URL(this.webBaseUrl).hostname;
+      return `git@${host}:${repo}.git`;
+    }
     return `${this.webBaseUrl}/${repo}.git`;
   }
 

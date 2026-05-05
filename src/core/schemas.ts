@@ -60,6 +60,7 @@ export const profileSchema = z.object({
   remotePatterns: z.array(z.string().min(1)).optional(),
   caFile: z.string().min(1).optional(),
   tlsVerify: z.boolean().optional(),
+  sshClone: z.boolean().optional(),
 });
 
 // ─── Config Schema (profile-only) ────────────────────────

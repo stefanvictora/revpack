@@ -76,6 +76,10 @@ export const CONFIG_KEYS: Record<string, ConfigKeyDef> = {
     description: 'Whether to verify TLS certificates (true/false)',
     parse: parseBoolean,
   },
+  sshClone: {
+    description: 'Use SSH instead of HTTPS for git clone (true/false)',
+    parse: parseBoolean,
+  },
 };
 
 export const VALID_CONFIG_KEYS = Object.keys(CONFIG_KEYS);

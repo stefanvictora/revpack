@@ -27,11 +27,12 @@ export class GitHelper {
 
     const args = ['clone', '--depth', '1', '--branch', branch, '--progress', cloneUrl, resolvedName];
 
-    // Use spawn with inherited stdio so clone progress is shown in terminal
+    // Use spawn with inherited stdio so clone progress is shown in terminal,
+    // and stdin is inherited so SSH passphrase prompts can be answered interactively.
     await new Promise<void>((resolve, reject) => {
       const child = nodeSpawn('git', args, {
         cwd: parentDir,
-        stdio: ['ignore', 'inherit', 'inherit'],
+        stdio: 'inherit',
       });
       child.on('close', (code) => {
         if (code === 0) resolve();
