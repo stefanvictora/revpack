@@ -59,6 +59,8 @@ Your job is to write the required output files correctly. Do not spend extra too
 
 ## Input files to read
 
+Use this as the default reading order for fresh reviews and refreshes with code changes. For narrowed refresh tasks, follow the task mode from `CONTEXT.md` and read only the relevant files.
+
 Start with:
 
 1. `.revkit/CONTEXT.md`
@@ -384,9 +386,11 @@ Do not invent additional severity or category values.
 
 # Suggestions and agent handover prompts
 
-## GitLab suggestion blocks
+## Suggestion blocks
 
-Prefer including a GitLab suggestion block when the core fix is a small, directly applicable change to lines visible in the diff.
+Prefer including a Markdown suggestion block when the core fix is a small, directly applicable change to lines visible in the diff and the target provider supports applying suggestions from review comments.
+
+If provider support is unknown or the suggestion syntax would not be applied correctly, use a plain suggested fix instead.
 
 Use a suggestion block when all of these are true:
 
@@ -400,7 +404,7 @@ A fix may still need tests, imports, or follow-up changes elsewhere. That does n
 
 If the main code fix is local but additional work is needed, include both:
 
-1. a GitLab suggestion block for the directly applicable local code change
+1. a suggestion block for the directly applicable local code change
 2. an agent handover prompt describing the remaining work, such as tests or related updates
 
 Do not use suggestion blocks for:
@@ -424,7 +428,7 @@ Use wider ranges only when the replacement really needs neighboring lines.
 
 ## Positional anchor vs suggestion range
 
-Do not confuse the finding anchor with the GitLab suggestion block range.
+Do not confuse the finding anchor with the suggestion block range.
 
 The finding anchor chooses where the GitLab thread appears:
 
@@ -446,7 +450,7 @@ The suggestion offsets are relative to the anchored line.
 
 ## Agent handover prompts
 
-Agent handover prompts are complementary to GitLab suggestion blocks.
+Agent handover prompts are complementary to suggestion blocks.
 
 Include an agent handover prompt when the fix is clear and a developer may want an AI coding agent to implement the full change.
 
@@ -704,6 +708,7 @@ Do not run additional shell commands solely for final verification unless you ha
 
 Check from your current work that:
 
+- the task mode from `CONTEXT.md` was followed
 - all required output files were written
 - JSON output files are valid JSON arrays
 - every finding has `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one line field
