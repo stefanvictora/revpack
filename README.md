@@ -143,12 +143,12 @@ Creates `.revkit/`:
   diffs/
     latest.patch           ← full MR diff
     incremental.patch      ← changes since last review checkpoint (auto on refresh)
-    line-map.json          ← valid positional anchors
+    line-map.ndjson        ← valid positional anchors
   outputs/
     replies.json          ← agent drafts (T-NNN references)
     new-findings.json     ← agent-created issues for proactive review
     summary.md            ← changelog for MR description
-    review.md            ← review note synced to MR comment (checkpoint)
+    review.md             ← review note synced to MR comment (checkpoint)
 ```
 
 ### `checkout <ref>` — Switch to MR branch
@@ -263,7 +263,7 @@ Five layers:
 
 - **Threads, not comments** — Core model is thread-oriented for cross-provider portability
 - **Position-based thread IDs** — T-NNN IDs derived from position in the provider's all-threads list (creation order), no separate mapping file needed
-- **Canonical finding schema** — Structured JSON output with severity, confidence, status, disposition
+- **Canonical finding schema** — Structured JSON output with severity, status, disposition
 - **Agent-ready bundles** — Context packaged for LLM consumption, not raw API dumps
 - **Prepare, not review** — `prepare` generates/refreshes the bundle; the agent performs the review; `publish` writes results back
 - **Read-first, write-guarded** — No auto-push/auto-post; write operations require explicit commands
