@@ -152,7 +152,7 @@ describe('WorkspaceManager', () => {
     expect(patch).toContain('src/app.ts');
   });
 
-  it('writes structured diff artifacts and annotated views', async () => {
+  it('writes structured diff artifacts', async () => {
     await createBundle(manager, makeTarget(), [], [makeStructuredDiff()]);
 
     const diffDir = path.join(tmpDir, '.revkit', 'diffs');
@@ -165,7 +165,7 @@ describe('WorkspaceManager', () => {
       newPath: 'src/service.ts',
       added: 2,
       removed: 1,
-      viewFile: 'views/by-file/F001-service.diff.md',
+      patchFile: 'patches/by-file/F001-service.patch',
     });
     expect(filesJson.files[0].hunks[0]).toMatchObject({
       hunkId: 'F001-H001',
@@ -257,16 +257,6 @@ describe('WorkspaceManager', () => {
         preferredCommentTarget: { side: 'new', path: 'src/service.ts', line: 13 },
       },
     ]);
-
-    const annotated = await fs.readFile(path.join(diffDir, 'views', 'all.annotated.diff.md'), 'utf-8');
-    expect(annotated).toContain('FILE F001');
-    expect(annotated).toContain('@@ F001-H001 old:10-12 new:10-13 @@ function run()');
-    expect(annotated).toContain('- old:    11            | oldCall(value);');
-    expect(annotated).toContain('+            new:    11 | newCall(value);');
-    expect(annotated).toContain('+            new:    13 | audit(value);');
-
-    const perFile = await fs.readFile(path.join(diffDir, 'views', 'by-file', 'F001-service.diff.md'), 'utf-8');
-    expect(annotated).toContain(perFile.trimEnd());
   });
 
   it('writes output files', async () => {

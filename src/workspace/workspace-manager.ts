@@ -217,7 +217,6 @@ export class WorkspaceManager {
         filesJson: '.revkit/diffs/files.json',
         lineMapNdjson: '.revkit/diffs/line-map.ndjson',
         changeBlocks: '.revkit/diffs/change-blocks.json',
-        annotatedDiff: '.revkit/diffs/views/all.annotated.diff.md',
         outputs: '.revkit/outputs',
       },
     };
@@ -574,8 +573,7 @@ export class WorkspaceManager {
       '9. Use `.revkit/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
     );
     lines.push('10. Inspect checked-out source files when needed to understand the new branch state.');
-    lines.push('11. Use `.revkit/diffs/views/` only as optional readability aids.');
-    lines.push('12. Read existing `.revkit/outputs/summary.md`, if present, before updating it.');
+    lines.push('11. Read existing `.revkit/outputs/summary.md`, if present, before updating it.');
     lines.push('');
 
     // ─── MR/PR Description ────────────────────────────────
@@ -609,10 +607,6 @@ export class WorkspaceManager {
     lines.push(
       '| `.revkit/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |',
     );
-    lines.push(
-      '| `.revkit/diffs/views/all.annotated.diff.md` | Optional annotated readability view for the full diff |',
-    );
-    lines.push('| `.revkit/diffs/views/by-file/` | Per-file annotated diff views |');
     if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
       lines.push('| `.revkit/diffs/incremental.patch` | Code changes since last review checkpoint |');
     }
@@ -730,8 +724,6 @@ export class WorkspaceManager {
    * - diffs/files.json (file index)
    * - diffs/line-map.ndjson (per-line map with explicit nulls)
    * - diffs/change-blocks.json (grouped change blocks)
-   * - diffs/views/all.annotated.diff.md (combined annotated diff)
-   * - diffs/views/by-file/FXXX-Name.diff.md (per-file annotated diffs)
    * - diffs/patches/by-file/FXXX-Name.patch (per-file unified diffs)
    */
   private async writeDiffBundle(): Promise<void> {
@@ -751,12 +743,6 @@ export class WorkspaceManager {
       fileId: `F${String(idx + 1).padStart(3, '0')}`,
     }));
 
-    // Create views directories
-    const viewsDir = path.join(this.baseDir, 'diffs', 'views');
-    const byFileDir = path.join(viewsDir, 'by-file');
-    await this.ensureDir(viewsDir);
-    await this.ensureDir(byFileDir);
-
     // Create patches/by-file directory
     const patchesByFileDir = path.join(this.baseDir, 'diffs', 'patches', 'by-file');
     await this.ensureDir(patchesByFileDir);
@@ -770,10 +756,7 @@ export class WorkspaceManager {
     // 3. Write change-blocks.json
     await this.writeChangeBlocks(filesWithIds);
 
-    // 4. Write annotated diff views
-    await this.writeAnnotatedDiffViews(filesWithIds, byFileDir, viewsDir);
-
-    // 5. Write per-file patch files
+    // 4. Write per-file patch files
     const patchSections = WorkspaceManager.splitPatchByFile(patchContent);
     await this.writePerFilePatchFiles(filesWithIds, patchSections, patchesByFileDir);
   }
@@ -807,7 +790,6 @@ export class WorkspaceManager {
             newStart: h.newStart,
             newEnd: h.newEnd,
           })),
-          viewFile: `views/by-file/${f.fileId}-${safeName}.diff.md`,
           patchFile: `patches/by-file/${f.fileId}-${safeName}.patch`,
         };
       }),
@@ -915,65 +897,6 @@ export class WorkspaceManager {
       schemaVersion: 1,
       blocks,
     });
-  }
-
-  private async writeAnnotatedDiffViews(
-    files: (PatchFileEntry & { fileId: string })[],
-    byFileDir: string,
-    viewsDir: string,
-  ): Promise<void> {
-    const allLines: string[] = [];
-
-    for (const file of files) {
-      const fileLines = this.buildAnnotatedFileView(file);
-      allLines.push(...fileLines);
-      allLines.push('');
-
-      // Write per-file view
-      const shortName =
-        file.newPath
-          .split('/')
-          .pop()
-          ?.replace(/\.[^.]+$/, '') ?? file.fileId;
-      const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
-      const fileName = `${file.fileId}-${safeName}.diff.md`;
-      await fs.writeFile(path.join(byFileDir, fileName), fileLines.join('\n') + '\n', 'utf-8');
-    }
-
-    // Write combined view
-    await fs.writeFile(path.join(viewsDir, 'all.annotated.diff.md'), allLines.join('\n') + '\n', 'utf-8');
-  }
-
-  private buildAnnotatedFileView(file: PatchFileEntry & { fileId: string }): string[] {
-    const lines: string[] = [];
-    lines.push(`FILE ${file.fileId}`);
-    lines.push(`oldPath: ${file.oldPath}`);
-    lines.push(`newPath: ${file.newPath}`);
-    lines.push(`status: ${file.status}`);
-    lines.push('');
-
-    for (const hunk of file.hunks) {
-      lines.push(
-        `@@ ${hunk.hunkId} old:${hunk.oldStart}-${hunk.oldEnd} new:${hunk.newStart}-${hunk.newEnd} @@ ${hunk.header}`,
-      );
-      lines.push('');
-      for (const entry of hunk.lines) {
-        if (entry.type === 'context') {
-          const old = String(entry.oldLine).padStart(6);
-          const nw = String(entry.newLine).padStart(6);
-          lines.push(`  old:${old} new:${nw} | ${entry.text}`);
-        } else if (entry.type === 'added') {
-          const nw = String(entry.newLine).padStart(6);
-          lines.push(`+            new:${nw} | ${entry.text}`);
-        } else {
-          const old = String(entry.oldLine).padStart(6);
-          lines.push(`- old:${old}            | ${entry.text}`);
-        }
-      }
-      lines.push('');
-    }
-
-    return lines;
   }
 
   /**

@@ -322,7 +322,6 @@ export interface BundlePaths {
   filesJson: string;
   lineMapNdjson: string;
   changeBlocks: string;
-  annotatedDiff: string;
   outputs: string;
 }
 

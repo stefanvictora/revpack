@@ -74,7 +74,6 @@ Then use:
 - `.revkit/diffs/patches/by-file/` for focused per-file review
 - `.revkit/diffs/line-map.ndjson` for positional review anchors
 - `.revkit/diffs/change-blocks.json` for larger insert/delete/replace relationships
-- `.revkit/diffs/views/` only as optional readability aids
 
 Use checked-out source files to understand the current MR/PR state when the diff alone is not enough.
 
@@ -273,11 +272,6 @@ Use the diff artifacts by purpose:
    - Use this to understand larger edits, harmful deletions, and replacement relationships.
    - `preferredCommentTarget` gives a good default anchor for block-level findings.
 
-6. `diffs/views/`
-   - Optional annotated convenience views, if present.
-   - Use these only as a readability aid when helpful.
-   - Do not treat them as canonical if they disagree with the patch files or `line-map.ndjson`.
-
 Important rules:
 
 - Use patch files to understand the code change.
@@ -289,7 +283,7 @@ Important rules:
 
 Use `.revkit/diffs/line-map.ndjson` as the source of truth for valid positional anchors.
 
-Do not calculate `oldLine` or `newLine` manually from the patch. Use the annotated diff to understand changes, not to derive line numbers.
+Do not calculate `oldLine` or `newLine` manually from the patch. Use the patches to understand changes, not to derive line numbers.
 
 Each finding location must exactly match one line-map entry:
 
