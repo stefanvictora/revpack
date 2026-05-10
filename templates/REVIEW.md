@@ -147,7 +147,7 @@ Acknowledge good patterns when they are relevant. Reviews are not only for criti
 ## Severity definitions
 
 | Severity | Meaning                                                                                                                          | Blocks merge? |
-|----------|----------------------------------------------------------------------------------------------------------------------------------|---------------|
+| -------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | blocker  | Must fix. Breaks core functionality, causes data loss, or creates a serious security issue.                                      | Yes           |
 | high     | Should fix. Likely production bug, security issue, broken API contract, or serious regression.                                   | Usually       |
 | medium   | Consider fixing. Realistic edge case, missing coverage for risky behavior, or maintainability issue likely to cause future bugs. | No            |

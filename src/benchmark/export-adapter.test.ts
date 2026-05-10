@@ -18,7 +18,7 @@ import {
   type BenchmarkPrEntry,
   type BenchmarkReview,
   type PreparedWorkspace,
-  BenchmarkReviewComment,
+  type BenchmarkReviewComment,
 } from './export-adapter.js';
 import { renderPublishFindingBody } from '../workspace/finding-formatter.js';
 
