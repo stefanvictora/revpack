@@ -16,7 +16,8 @@
     "lint:fix": "eslint src --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "eval:export-code-review-benchmark": "tsx scripts/export-code-review-benchmark.ts"
   },
   "files": [
     "dist",

@@ -9,6 +9,7 @@ import { validateFindings, formatValidationErrors } from '../../workspace/findin
 import { createOrchestrator, getRepoFromGit, handleError } from '../helpers.js';
 import { computeContentHash } from '../../workspace/thread-digest.js';
 import { mergeWithMarkers, MARKER_START, MARKER_END } from '../../workspace/description-summary.js';
+import { buildFindingHeader } from '../../workspace/finding-formatter.js';
 
 export { mergeWithMarkers, MARKER_START, MARKER_END };
 
@@ -86,23 +87,6 @@ async function loadNewFindings(filePath: string): Promise<unknown[]> {
 
 async function saveFindings(filePath: string, entries: NewFinding[]): Promise<void> {
   await fs.writeFile(filePath, JSON.stringify(entries, null, 2), 'utf-8');
-}
-
-// ─── Severity → emoji mapping ────────────────────────────
-
-const SEVERITY_ICON: Record<string, string> = {
-  blocker: '🔴',
-  high: '🔴',
-  medium: '🟡',
-  low: '🟢',
-  info: '🟢',
-  nit: '🟢',
-};
-
-function buildFindingHeader(severity: string, category: string): string {
-  const icon = SEVERITY_ICON[severity] ?? '🟡';
-  const sevLabel = severity.charAt(0).toUpperCase() + severity.slice(1);
-  return `_${icon} ${sevLabel}_ | _${category}_\n\n`;
 }
 
 // ─── Shared publish logic (reusable by subcommands & parent) ────

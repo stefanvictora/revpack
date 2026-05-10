@@ -263,6 +263,96 @@ revkit config doctor --profile myprofile
 
 Configurable keys: `provider`, `url`, `tokenEnv`, `remotePatterns`, `caFile`, `tlsVerify`, `sshClone`.
 
+## Benchmark Export
+
+The `eval:export-code-review-benchmark` script exports locally produced revkit findings into a [Martian code-review-benchmark](https://github.com/MartianLabs/code-review-benchmark) compatible `benchmark_data.json` file.
+
+The script is an **exporter only** — it does not checkout PRs, run `revkit prepare`, invoke a review agent, or publish comments.
+
+### Intended workflow
+
+```text
+1. Checkout and prepare benchmark PRs locally with revkit.
+2. Run your review agent manually for each prepared workspace.
+3. Export all reviewed workspaces into a slim benchmark data file.
+4. Run the Martian benchmark scripts separately with --tool <tool>.
+```
+
+### Prerequisites
+
+Each workspace must be a prepared revkit workspace with:
+
+```
+<workspace>/.revkit/bundle.json
+<workspace>/.revkit/outputs/new-findings.json
+```
+
+### Usage
+
+```bash
+npm run eval:export-code-review-benchmark -- \
+  --benchmark-data <path> \
+  (--workspace <repo-root> | --workspace-root <parent-dir>) \
+  [--tool <name>]
+```
+
+**Required:**
+
+- `--benchmark-data <path>` — Path to the Martian benchmark data JSON file.
+- Exactly one of:
+  - `--workspace <repo-root>` — Export a single prepared revkit workspace.
+  - `--workspace-root <parent-dir>` — Batch export all immediate child directories that are prepared revkit workspaces.
+
+**Optional:**
+
+- `--tool <name>` — Tool identity written into the benchmark output. Default: `revkit`.
+
+### Examples
+
+Export a single workspace:
+
+```bash
+npm run eval:export-code-review-benchmark -- \
+  --benchmark-data ../code-review-benchmark/offline/results/benchmark_data.json \
+  --workspace ../revkit-benchmark-workspaces/cal.com-pr-10600
+```
+
+Batch export all workspaces under a parent directory:
+
+```bash
+npm run eval:export-code-review-benchmark -- \
+  --benchmark-data ../code-review-benchmark/offline/results/benchmark_data.json \
+  --workspace-root ../revkit-benchmark-workspaces
+```
+
+Export under a custom tool name for variant comparison:
+
+```bash
+npm run eval:export-code-review-benchmark -- \
+  --benchmark-data ../code-review-benchmark/offline/results/benchmark_data.json \
+  --workspace-root ../revkit-benchmark-workspaces \
+  --tool revkit-gpt-5.5
+```
+
+### Output
+
+The output file is written to the same directory as `--benchmark-data`, named after the tool slug:
+
+```
+benchmark_data.revkit.json
+benchmark_data.revkit-gpt-5-5.json
+```
+
+The output contains only the benchmark PR entries for which revkit produced a review. Each exported entry preserves all original PR-level metadata and contains exactly one `reviews` entry for the selected tool.
+
+Workspaces are skipped (with a warning in the summary) when:
+
+- The bundle target is not a GitHub pull request.
+- The bundle's PR URL does not match any entry in the benchmark data.
+- `.revkit/outputs/new-findings.json` is missing.
+
+The script fails without writing output when arguments are invalid, benchmark data is malformed, zero reviews would be exported, or any matched workspace has corrupt findings.
+
 ## Architecture
 
 Five layers:
