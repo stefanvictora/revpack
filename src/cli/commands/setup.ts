@@ -42,81 +42,84 @@ export function registerSetupCommand(program: Command): void {
     .option('--prompts', 'Also install Copilot Chat prompt files (.github/prompts/)')
     .option('--dry-run', 'Show what would be created without writing files')
     .action(async (opts: { prompts?: boolean; dryRun?: boolean }) => {
-      const cwd = process.cwd();
-      const files = [...REVIEW_CONFIG_FILES];
-      if (opts.prompts) {
-        files.push(...PROMPT_FILES);
-      }
-
-      const templatesDir = resolveTemplatesDir();
-      const created: string[] = [];
-      const skipped: string[] = [];
-
-      for (const file of files) {
-        const targetPath = path.join(cwd, file.target);
-        const exists = await fileExists(targetPath);
-
-        if (exists) {
-          skipped.push(file.target);
-          continue;
-        }
-
-        if (opts.dryRun) {
-          created.push(file.target);
-          continue;
-        }
-
-        await fs.mkdir(path.dirname(targetPath), { recursive: true });
-
-        if (file.inline) {
-          await fs.writeFile(targetPath, file.inline, 'utf-8');
-        } else if (file.source) {
-          const sourcePath = path.join(templatesDir, file.source);
-          const content = await fs.readFile(sourcePath, 'utf-8');
-          await fs.writeFile(targetPath, content, 'utf-8');
-        }
-
-        created.push(file.target);
-      }
-
-      // Output summary
-      if (opts.dryRun) {
-        console.log(chalk.dim('Dry run — no files written.\n'));
-      }
-
-      if (created.length > 0) {
-        console.log(chalk.green(`${opts.dryRun ? 'Would create' : 'Created'}:`));
-        for (const f of created) {
-          const label = files.find((x) => x.target === f)?.label ?? '';
-          console.log(`  ${chalk.green('+')} ${f}  ${chalk.dim(label)}`);
-        }
-      }
-
-      if (skipped.length > 0) {
-        if (created.length > 0) console.log('');
-        console.log(chalk.dim('Skipped (already exist):'));
-        for (const f of skipped) {
-          console.log(`  ${chalk.dim('·')} ${f}`);
-        }
-      }
-
-      if (created.length === 0 && skipped.length > 0) {
-        console.log('');
-        console.log(chalk.dim('Nothing to do — project already set up.'));
-      }
-
-      if (!opts.dryRun && created.length > 0) {
-        console.log('');
-        console.log(chalk.dim('Next steps:'));
-        if (created.includes('REVIEW.md')) {
-          console.log(chalk.dim('  1. Edit REVIEW.md — tailor review priorities to your project'));
-        }
-        if (!opts.prompts) {
-          console.log(chalk.dim('  Tip: run with --prompts to also install Copilot Chat prompt files'));
-        }
-        console.log(chalk.dim('  Then run `revkit prepare` to prepare a review bundle.'));
-      }
+      await runSetup({ cwd: process.cwd(), prompts: opts.prompts, dryRun: opts.dryRun });
     });
+}
+
+export async function runSetup(opts: { cwd: string; prompts?: boolean; dryRun?: boolean }): Promise<void> {
+  const files = [...REVIEW_CONFIG_FILES];
+  if (opts.prompts) {
+    files.push(...PROMPT_FILES);
+  }
+
+  const templatesDir = resolveTemplatesDir();
+  const created: string[] = [];
+  const skipped: string[] = [];
+
+  for (const file of files) {
+    const targetPath = path.join(opts.cwd, file.target);
+    const exists = await fileExists(targetPath);
+
+    if (exists) {
+      skipped.push(file.target);
+      continue;
+    }
+
+    if (opts.dryRun) {
+      created.push(file.target);
+      continue;
+    }
+
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+
+    if (file.inline) {
+      await fs.writeFile(targetPath, file.inline, 'utf-8');
+    } else if (file.source) {
+      const sourcePath = path.join(templatesDir, file.source);
+      const content = await fs.readFile(sourcePath, 'utf-8');
+      await fs.writeFile(targetPath, content, 'utf-8');
+    }
+
+    created.push(file.target);
+  }
+
+  // Output summary
+  if (opts.dryRun) {
+    console.log(chalk.dim('Dry run — no files written.\n'));
+  }
+
+  if (created.length > 0) {
+    console.log(chalk.green(`${opts.dryRun ? 'Would create' : 'Created'}:`));
+    for (const f of created) {
+      const label = files.find((x) => x.target === f)?.label ?? '';
+      console.log(`  ${chalk.green('+')} ${f}  ${chalk.dim(label)}`);
+    }
+  }
+
+  if (skipped.length > 0) {
+    if (created.length > 0) console.log('');
+    console.log(chalk.dim('Skipped (already exist):'));
+    for (const f of skipped) {
+      console.log(`  ${chalk.dim('·')} ${f}`);
+    }
+  }
+
+  if (created.length === 0 && skipped.length > 0) {
+    console.log('');
+    console.log(chalk.dim('Nothing to do — project already set up.'));
+  }
+
+  if (!opts.dryRun && created.length > 0) {
+    console.log('');
+    console.log(chalk.dim('Next steps:'));
+    if (created.includes('REVIEW.md')) {
+      console.log(chalk.dim('  1. Edit REVIEW.md — tailor review priorities to your project'));
+    }
+    if (!opts.prompts) {
+      console.log(chalk.dim('  Tip: run with --prompts to also install Copilot Chat prompt files'));
+    }
+    console.log(chalk.dim('  Then run `revkit prepare` to prepare a review bundle.'));
+  }
 }
 
 function resolveTemplatesDir(): string {

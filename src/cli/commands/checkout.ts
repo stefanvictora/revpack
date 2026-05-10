@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import chalk from 'chalk';
 import { createOrchestrator, createOrchestratorAt, getRepoFromGit, handleError } from '../helpers.js';
+import { runSetup } from './setup.js';
 
 export function registerCheckoutCommand(program: Command): void {
   program
@@ -13,9 +14,10 @@ export function registerCheckoutCommand(program: Command): void {
       ].join('\n'),
     )
     .option('--prepare', 'Also run `prepare` after checkout')
+    .option('--setup', 'Also run `setup --prompts` after checkout (implies --prepare)')
     .option('--repo <repo>', 'Repository slug (group/project)')
     .option('--profile <name>', 'Profile to use (overrides auto-detection)')
-    .action(async (ref: string, opts: { prepare?: boolean; repo?: string; profile?: string }) => {
+    .action(async (ref: string, opts: { prepare?: boolean; setup?: boolean; repo?: string; profile?: string }) => {
       try {
         // When ref is a full URL, pass it as a hint so profile resolution can
         // match by the URL's host even outside a git repo.
@@ -43,8 +45,8 @@ export function registerCheckoutCommand(program: Command): void {
           console.log('');
         }
 
-        // Auto-prepare if --prepare
-        if (opts.prepare) {
+        // Auto-prepare if --prepare (or --setup, which implies prepare)
+        if (opts.prepare || opts.setup) {
           console.log(chalk.dim('Running prepare...'));
           console.log('');
 
@@ -56,6 +58,16 @@ export function registerCheckoutCommand(program: Command): void {
           console.log(`  ${chalk.dim('Files:')}    ${bundle.diffs.length} changed`);
           console.log(`  ${chalk.dim('Context:')}  ${prepareResult.contextPath}`);
           console.log('');
+
+          // Run setup --prompts if --setup was requested
+          if (opts.setup) {
+            const setupCwd = clonedTo ?? process.cwd();
+            console.log(chalk.dim('Running setup...'));
+            console.log('');
+            await runSetup({ cwd: setupCwd, prompts: true });
+            console.log('');
+          }
+
           console.log(chalk.dim('Next: open .revkit/CONTEXT.md and point your agent at it'));
           if (clonedTo) {
             console.log(chalk.dim(`      cd ${clonedTo}`));

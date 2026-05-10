@@ -49,8 +49,8 @@ export class GitHelper {
 
     const clonedPath = (await import('node:path')).resolve(parentDir, resolvedName);
 
-    // Step 2: fetch the PR/MR refspec into a local branch
-    await exec('git', ['fetch', 'origin', `${remoteRef}:${localBranch}`], { cwd: clonedPath });
+    // Step 2: fetch the PR/MR refspec into a local branch (shallow to match the clone depth)
+    await exec('git', ['fetch', '--depth', '1', 'origin', `${remoteRef}:${localBranch}`], { cwd: clonedPath });
 
     // Step 3: switch to the local branch
     await exec('git', ['switch', localBranch], { cwd: clonedPath });
@@ -146,10 +146,11 @@ export class GitHelper {
 
   /**
    * Fetch a specific refspec from a remote and create a local branch for it.
+   * Uses --depth 1 to keep the fetch shallow.
    * Example: fetchRef('origin', 'refs/pull/42/head', 'pr-42-head')
    */
   async fetchRef(remote: string, remoteRef: string, localBranch: string): Promise<void> {
-    await exec('git', ['fetch', remote, `${remoteRef}:${localBranch}`], { cwd: this.cwd });
+    await exec('git', ['fetch', '--depth', '1', remote, `${remoteRef}:${localBranch}`], { cwd: this.cwd });
   }
 
   /** Switch to a branch, creating a tracking branch if needed. */
