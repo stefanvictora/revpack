@@ -45,15 +45,18 @@ revkit setup --prompts
 
 # Prepare a review bundle for the MR/PR of the current branch
 revkit prepare
-
-# Or prepare a specific MR/PR
-revkit prepare !42
 ```
 
 Then ask your agent to follow:
 
 ```text
 .revkit/CONTEXT.md
+```
+
+or:
+
+```text
+.copilot/prompts/review.prompt.md
 ```
 
 The agent writes outputs to:
@@ -68,13 +71,19 @@ Check pending outputs:
 revkit status
 ```
 
-Publish selected outputs:
+Publish outputs:
+
+```bash
+revkit publish all
+```
+
+Optional: Publish only selected outputs:
 
 ```bash
 revkit publish findings
 revkit publish replies
-revkit publish review
 revkit publish description --from-summary
+revkit publish review    # also advances the review checkpoint (for incremental reviews). Must be last.
 ```
 
 After new commits or new comments:
@@ -83,7 +92,7 @@ After new commits or new comments:
 revkit prepare
 ```
 
-To discard local revkit state:
+To discard local revkit state (`.revkit` folder):
 
 ```bash
 revkit clean
@@ -92,20 +101,21 @@ revkit clean
 ### Working on an MR/PR not checked out locally
 
 ```bash
-revkit checkout !42 --repo group/project
+revkit checkout https://gitlab.example.com/group/project/-/merge_requests/42
 revkit prepare
 ```
 
 Convenience:
 
 ```bash
-revkit checkout !42 --repo group/project --prepare
+revkit checkout https://gitlab.example.com/group/project/-/merge_requests/42 --prepare
 ```
 
-You can also paste a full GitLab URL instead of `!42`:
+Alternative:
 
 ```bash
-revkit prepare https://gitlab.example.com/group/project/-/merge_requests/42
+revkit checkout !42 --repo group/project --profile myGitlab
+revkit checkout 58 --repo user/project --profile myGithub
 ```
 
 ## Commands
@@ -141,9 +151,11 @@ Creates `.revkit/`:
   threads/
     T-001.md, T-001.json  ← one per unresolved thread (stable IDs)
   diffs/
-    latest.patch           ← full MR diff
-    incremental.patch      ← changes since last review checkpoint (auto on refresh)
-    line-map.ndjson        ← valid positional anchors
+    latest.patch          ← full MR diff
+    incremental.patch     ← changes since last review checkpoint (auto on refresh)
+    line-map.ndjson       ← valid positional anchors
+    files.json            ← list of changed files with git metadata
+    /patches/by-file/     ← file-level patches for easier navigation
   outputs/
     replies.json          ← agent drafts (T-NNN references)
     new-findings.json     ← agent-created issues for proactive review
@@ -162,8 +174,10 @@ Does **not** prepare by default. Use `--prepare` to combine checkout and prepare
 ```bash
 revkit checkout !42                        # fetch + switch
 revkit checkout !42 --prepare              # fetch + switch + prepare
-revkit checkout !42 --repo group/project   # clone when not in a git repo
-revkit checkout !42 --profile myprofile    # use a specific profile
+revkit checkout !42 --setup                # fetch + switch + prepare + setup
+
+revkit checkout !42 --repo group/project --profile myprofile                  # clone when not in a git repo
+revkit checkout https://gitlab.example.com/group/project/-/merge_requests/42  # direct URL, detects profile automatically
 ```
 
 By default, `checkout` clones over HTTPS. If your server requires SSH, set `sshClone: true` in the profile (`revkit config setup` will ask, or `revkit config set sshClone true`). SSH agent key loading is handled by Git as normal — if your key needs a passphrase and no agent is running, Git will prompt you in the terminal.
@@ -271,10 +285,12 @@ Five layers:
 - **Marker-based description updates** — Preserves original MR description; revkit content lives in a marked section
 - **No file copies in bundle** — Instruction files (REVIEW.md) and source code are read directly from the repo, not copied into the bundle
 
-## Tests
+## Tests, linting, formatting
 
 ```bash
 npm test
+npm lint:fix
+npm format
 ```
 
 ## Development
