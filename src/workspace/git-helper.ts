@@ -11,7 +11,54 @@ export class GitHelper {
   }
 
   /**
-   * Shallow-clone a repository into a new directory.
+   * Clone a repository and then check out a specific git refspec into a named local branch.
+   * Use this when the source branch may not exist in the remote (e.g. deleted after PR merge)
+   * but a permanent refspec is available (e.g. GitHub's `refs/pull/<n>/head`).
+   *
+   * Steps:
+   *   1. Shallow-clone the repository with --no-checkout.
+   *   2. Fetch `remoteRef` into `localBranch`.
+   *   3. Switch to `localBranch`.
+   */
+  static async cloneAndCheckoutRef(
+    cloneUrl: string,
+    remoteRef: string,
+    localBranch: string,
+    parentDir: string,
+    dirName?: string,
+  ): Promise<string> {
+    const repoName = cloneUrl
+      .replace(/\.git$/, '')
+      .split('/')
+      .pop()!;
+    const sanitizedBranch = localBranch.replace(/[/\\:*?"<>|]/g, '-');
+    const resolvedName = dirName ?? `${repoName}-${sanitizedBranch}`;
+
+    // Step 1: clone without checking out any branch (avoids downloading default branch content)
+    await new Promise<void>((resolve, reject) => {
+      const child = nodeSpawn('git', ['clone', '--depth', '1', '--no-checkout', '--progress', cloneUrl, resolvedName], {
+        cwd: parentDir,
+        stdio: 'inherit',
+      });
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`git clone exited with code ${code}`));
+      });
+      child.on('error', reject);
+    });
+
+    const clonedPath = (await import('node:path')).resolve(parentDir, resolvedName);
+
+    // Step 2: fetch the PR/MR refspec into a local branch
+    await exec('git', ['fetch', 'origin', `${remoteRef}:${localBranch}`], { cwd: clonedPath });
+
+    // Step 3: switch to the local branch
+    await exec('git', ['switch', localBranch], { cwd: clonedPath });
+
+    return clonedPath;
+  }
+
+  /**
    * Creates `<parentDir>/<dirName>` where dirName defaults to `<repoName>-<branch>`.
    * Streams git output to the terminal for progress visibility.
    * Returns the absolute path of the cloned directory.
@@ -89,6 +136,20 @@ export class GitHelper {
     const httpsMatch = url.match(/\/\/[^/]+\/(.+?)(?:\.git)?$/);
     if (httpsMatch) return httpsMatch[1];
     return url;
+  }
+
+  /** Fetch a branch from a specific remote URL without adding a named remote. */
+  async fetchBranchFromUrl(remoteUrl: string, branch: string): Promise<void> {
+    // git fetch <url> <branch>:<branch> — creates a local tracking ref with the same name.
+    await exec('git', ['fetch', remoteUrl, `${branch}:${branch}`], { cwd: this.cwd });
+  }
+
+  /**
+   * Fetch a specific refspec from a remote and create a local branch for it.
+   * Example: fetchRef('origin', 'refs/pull/42/head', 'pr-42-head')
+   */
+  async fetchRef(remote: string, remoteRef: string, localBranch: string): Promise<void> {
+    await exec('git', ['fetch', remote, `${remoteRef}:${localBranch}`], { cwd: this.cwd });
   }
 
   /** Switch to a branch, creating a tracking branch if needed. */

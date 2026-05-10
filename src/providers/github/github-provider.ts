@@ -286,6 +286,15 @@ export class GitHubProvider implements ReviewProvider {
     return `${this.webBaseUrl}/${repo}.git`;
   }
 
+  /**
+   * GitHub permanently keeps `refs/pull/<number>/head` in the base repository,
+   * even after the source branch is deleted from the contributor's fork.
+   * Using this refspec for checkout is always reliable.
+   */
+  getSourceRefspec(ref: ReviewTargetRef): string {
+    return `refs/pull/${ref.targetId}/head`;
+  }
+
   // ─── HTTP / GraphQL layer ───────────────────────────────
 
   private async request<T>(path: string, options?: GitHubRequestOptions): Promise<T> {
@@ -410,6 +419,10 @@ export class GitHubProvider implements ReviewProvider {
   // ─── Mappers ────────────────────────────────────────────
 
   private mapPullRequest(repo: string, pr: GitHubPullRequest): ReviewTarget {
+    // Detect fork PRs: head.repo differs from the base repository.
+    const headRepoFullName = pr.head.repo?.full_name;
+    const isFork = headRepoFullName != null && headRepoFullName !== repo;
+
     return {
       provider: 'github',
       repository: repo,
@@ -426,6 +439,7 @@ export class GitHubProvider implements ReviewProvider {
       updatedAt: pr.updated_at,
       labels: pr.labels?.map((label) => label.name) ?? [],
       diffRefs: this.mapDiffRefs(pr),
+      ...(isFork ? { headRepository: headRepoFullName } : {}),
     };
   }
 
@@ -567,7 +581,7 @@ interface GitHubPullRequest {
   changed_files?: number;
   labels?: { name: string }[];
   user?: GitHubUser | null;
-  head: { ref: string; sha: string };
+  head: { ref: string; sha: string; repo?: { full_name: string; clone_url: string; ssh_url: string } | null };
   base: { ref: string; sha: string };
 }
 

@@ -421,15 +421,41 @@ export class ReviewOrchestrator {
 
     const inRepo = await this.git.isGitRepo();
 
+    // Some providers (GitHub) expose a permanent refspec for each PR that works even
+    // after the source branch is deleted from the contributor's fork.
+    const sourceRefspec = this.provider.getSourceRefspec?.(targetRef);
+
     if (!inRepo) {
-      // No git repo — shallow clone into a sub-directory, similar to `git clone`
-      const cloneUrl = this.provider.getCloneUrl(targetRef.repository);
-      const clonedDir = await GitHelper.clone(cloneUrl, target.sourceBranch, this.git.cwd);
+      // No git repo — shallow clone into a sub-directory, similar to `git clone`.
+      const baseCloneUrl = this.provider.getCloneUrl(targetRef.repository);
+      let clonedDir: string;
+
+      if (sourceRefspec) {
+        // Refspec-based clone: fetch via the permanent PR ref from the base repo.
+        // Reliable even when the source branch has been deleted from the contributor's fork.
+        clonedDir = await GitHelper.cloneAndCheckoutRef(baseCloneUrl, sourceRefspec, target.sourceBranch, this.git.cwd);
+      } else {
+        // Fallback: clone from fork (if fork PR) or base repo using the branch name.
+        const checkoutRepo = target.headRepository ?? targetRef.repository;
+        const cloneUrl = this.provider.getCloneUrl(checkoutRepo);
+        clonedDir = await GitHelper.clone(cloneUrl, target.sourceBranch, this.git.cwd);
+      }
+
       return { branch: target.sourceBranch, target, clonedTo: clonedDir };
     }
 
-    // Existing repo — fetch the MR source branch first.
-    await this.git.fetchBranch(target.sourceBranch);
+    // Existing repo — fetch the source branch.
+    if (sourceRefspec) {
+      // Fetch the PR ref from origin and create a local branch for it.
+      // This works for both same-repo and fork PRs, even after branch deletion.
+      await this.git.fetchRef('origin', sourceRefspec, target.sourceBranch);
+    } else if (target.headRepository) {
+      // No permanent refspec support — fetch directly from the fork URL.
+      const forkCloneUrl = this.provider.getCloneUrl(target.headRepository);
+      await this.git.fetchBranchFromUrl(forkCloneUrl, target.sourceBranch);
+    } else {
+      await this.git.fetchBranch(target.sourceBranch);
+    }
 
     try {
       // Let Git decide whether switching is safe.

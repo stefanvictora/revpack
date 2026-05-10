@@ -31,10 +31,33 @@ function pr(overrides: Partial<Record<string, unknown>> = {}): Record<string, un
     changed_files: 3,
     labels: [{ name: 'bug' }, { name: 'needs-review' }],
     user: { login: 'alice' },
-    head: { ref: 'feature/test', sha: 'head-sha' },
+    head: {
+      ref: 'feature/test',
+      sha: 'head-sha',
+      repo: {
+        full_name: 'octo/repo',
+        clone_url: 'https://github.com/octo/repo.git',
+        ssh_url: 'git@github.com:octo/repo.git',
+      },
+    },
     base: { ref: 'main', sha: 'base-sha' },
     ...overrides,
   };
+}
+
+function forkPr(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return pr({
+    head: {
+      ref: 'is-37428-fix',
+      sha: 'fork-sha',
+      repo: {
+        full_name: 'contributor/repo',
+        clone_url: 'https://github.com/contributor/repo.git',
+        ssh_url: 'git@github.com:contributor/repo.git',
+      },
+    },
+    ...overrides,
+  });
 }
 
 function installFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>): void {
@@ -122,13 +145,57 @@ describe('GitHubProvider REST reads', () => {
         headSha: 'head-sha',
         startSha: 'base-sha',
       },
+      // Same-repo PR: no headRepository
     });
+  });
+
+  it('sets headRepository for fork PRs and omits it for same-repo PRs', async () => {
+    // Fork PR
+    installFetch(() => jsonResponse(forkPr()));
+    const forkTarget = await provider.getTargetSnapshot(ref);
+    expect(forkTarget.headRepository).toBe('contributor/repo');
+    expect(forkTarget.sourceBranch).toBe('is-37428-fix');
+
+    // Same-repo PR
+    installFetch(() => jsonResponse(pr()));
+    const sameRepoTarget = await provider.getTargetSnapshot(ref);
+    expect(sameRepoTarget.headRepository).toBeUndefined();
+  });
+
+  it('sets headRepository when head.repo is null (deleted fork)', async () => {
+    const deletedForkPr = pr({ head: { ref: 'fix-branch', sha: 'sha', repo: null } });
+    installFetch(() => jsonResponse(deletedForkPr));
+    const target = await provider.getTargetSnapshot(ref);
+    // head.repo is null — treated as same-repo (cannot determine fork status)
+    expect(target.headRepository).toBeUndefined();
   });
 
   it('lists open PRs and filters PRs by source branch', async () => {
     const pulls = [
-      pr({ number: 1, head: { ref: 'feature/test', sha: 'one' } }),
-      pr({ number: 2, head: { ref: 'other', sha: 'two' } }),
+      pr({
+        number: 1,
+        head: {
+          ref: 'feature/test',
+          sha: 'one',
+          repo: {
+            full_name: 'octo/repo',
+            clone_url: 'https://github.com/octo/repo.git',
+            ssh_url: 'git@github.com:octo/repo.git',
+          },
+        },
+      }),
+      pr({
+        number: 2,
+        head: {
+          ref: 'other',
+          sha: 'two',
+          repo: {
+            full_name: 'octo/repo',
+            clone_url: 'https://github.com/octo/repo.git',
+            ssh_url: 'git@github.com:octo/repo.git',
+          },
+        },
+      }),
     ];
     installFetch((url) => {
       expect(url).toBe('https://api.github.com/repos/octo/repo/pulls?state=open&per_page=100');
@@ -589,5 +656,11 @@ describe('GitHubProvider URL handling and errors', () => {
 
     installFetch(() => jsonResponse({ errors: [{ message: 'boom' }] }));
     await expect(provider.resolveThread(ref, 'thread-1')).rejects.toThrow('GitHub GraphQL error: boom');
+  });
+
+  it('returns refs/pull/<number>/head as the source refspec', () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    expect(provider.getSourceRefspec(ref)).toBe('refs/pull/42/head');
+    expect(provider.getSourceRefspec({ ...ref, targetId: '37429' })).toBe('refs/pull/37429/head');
   });
 });

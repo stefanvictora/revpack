@@ -76,6 +76,15 @@ export interface ReviewProvider {
   getCloneUrl(repo: string): string;
 
   /**
+   * Return the git refspec that can be fetched from the base repository to get the
+   * PR/MR head, e.g. `refs/pull/42/head` for GitHub.
+   * When defined, the orchestrator uses this instead of branch-based fetch/clone so
+   * that checkout works even when the source branch has been deleted from the fork.
+   * Providers that do not support permanent PR refspecs may omit this method.
+   */
+  getSourceRefspec?(ref: ReviewTargetRef): string;
+
+  /**
    * Submit a pull request review batch with inline comments and optional body.
    * Only supported by GitHub. GitLab providers should not implement this.
    */
