@@ -115,6 +115,25 @@ describe('WorkspaceManager', () => {
     expect(entries).toContain('outputs');
   });
 
+  it('writeContext writes AGENT_CONTRACT.md, INSTRUCTIONS.md and instructions/', async () => {
+    const threads = [makeThread()];
+    const { threadIndex } = await createBundle(manager, makeTarget(), threads, [makeDiff()]);
+
+    await manager.writeContext(makeTarget(), threads, [makeDiff()], threadIndex);
+
+    const bundleDir = path.join(tmpDir, '.revkit');
+    const entries = await fs.readdir(bundleDir);
+    expect(entries).toContain('AGENT_CONTRACT.md');
+    expect(entries).toContain('INSTRUCTIONS.md');
+    expect(entries).toContain('instructions');
+
+    // Verify instruction sub-files
+    const instrEntries = await fs.readdir(path.join(bundleDir, 'instructions'));
+    expect(instrEntries).toContain('01-review-workflow-and-outputs.md');
+    expect(instrEntries).toContain('02-thread-replies.md');
+    expect(instrEntries).toContain('07-final-checks.md');
+  });
+
   it('writes description.md with MR description', async () => {
     await createBundle(manager, makeTarget(), []);
 
@@ -575,6 +594,30 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('## Suggested Reading Order');
       expect(content).toContain('REVIEW.md');
       expect(content).toContain('INSTRUCTIONS.md');
+    });
+
+    it('includes Required Instructions section skipping thread-replies when no unresolved threads', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
+
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex);
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Required Instructions for This Run');
+      expect(content).toContain('`.revkit/instructions/01-review-workflow-and-outputs.md`');
+      expect(content).toContain('~~`.revkit/instructions/02-thread-replies.md`~~ — skip, no unresolved threads');
+      expect(content).toContain('`.revkit/instructions/03-new-findings-and-anchors.md`');
+    });
+
+    it('includes thread-replies instruction when unresolved threads exist', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Required Instructions for This Run');
+      expect(content).not.toContain('skip, no unresolved threads');
+      expect(content).toContain('`.revkit/instructions/02-thread-replies.md`');
     });
 
     it('shows general comments section for non-resolvable human threads', async () => {

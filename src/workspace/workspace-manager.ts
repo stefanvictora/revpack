@@ -208,7 +208,9 @@ export class WorkspaceManager {
       publishedActions: previousActions ?? [],
       paths: {
         context: '.revkit/CONTEXT.md',
+        contract: '.revkit/AGENT_CONTRACT.md',
         instructions: '.revkit/INSTRUCTIONS.md',
+        instructionsDir: '.revkit/instructions/',
         description: '.revkit/description.md',
         latestPatch: '.revkit/diffs/latest.patch',
         incrementalPatch: prepareSummary.comparison.targetCodeChangedSinceCheckpoint
@@ -497,7 +499,15 @@ export class WorkspaceManager {
     lines.push(`| State | ${tableCell(target.state)} |`);
     if (target.webUrl) lines.push(`| URL | ${target.webUrl} |`);
     lines.push('');
-    lines.push('Read `.revkit/INSTRUCTIONS.md` for the review workflow, output formats, and quality guidelines.');
+    lines.push('Read `.revkit/AGENT_CONTRACT.md` first. It contains the short mandatory review contract.');
+    lines.push('');
+    lines.push(
+      'Then read `.revkit/INSTRUCTIONS.md`. It is an index for task-specific instruction files, not the full review manual.',
+    );
+    lines.push('');
+    lines.push(
+      'For this run, read only the instruction files listed in **Required Instructions for This Run** unless you need additional detail.',
+    );
     lines.push('');
 
     // ─── Review Checkpoint Summary ──────────────────────────
@@ -558,22 +568,43 @@ export class WorkspaceManager {
     lines.push('## Suggested Reading Order');
     lines.push('');
     lines.push('1. Read this context file.');
-    lines.push('2. Read `.revkit/INSTRUCTIONS.md` for the review workflow, diff navigation rules, and output format.');
-    lines.push('3. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
-    lines.push('4. Read relevant unresolved thread files in `.revkit/threads/`.');
+    lines.push('2. Read `.revkit/AGENT_CONTRACT.md`.');
+    lines.push('3. Read `.revkit/INSTRUCTIONS.md` as the instruction index.');
+    lines.push('4. Read the files listed in **Required Instructions for This Run**.');
+    lines.push('5. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
+    lines.push('6. Read relevant unresolved thread files in `.revkit/threads/`.');
     lines.push(
-      '5. Use `.revkit/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
+      '7. Use `.revkit/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
     );
-    lines.push('6. Use `.revkit/diffs/latest.patch` for the overall change and cross-file context.');
-    lines.push('7. Use `.revkit/diffs/patches/by-file/` for focused review of individual changed files.');
+    lines.push('8. Use `.revkit/diffs/latest.patch` for the overall change and cross-file context.');
+    lines.push('9. Use `.revkit/diffs/patches/by-file/` for focused review of individual changed files.');
     lines.push(
-      '8. Use `.revkit/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
+      '10. Use `.revkit/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
     );
     lines.push(
-      '9. Use `.revkit/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
+      '11. Use `.revkit/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
     );
-    lines.push('10. Inspect checked-out source files when needed to understand the new branch state.');
-    lines.push('11. Read existing `.revkit/outputs/summary.md`, if present, before updating it.');
+    lines.push('12. Inspect checked-out source files when needed to understand the new branch state.');
+    lines.push('13. Read existing `.revkit/outputs/summary.md`, if present, before updating it.');
+    lines.push('');
+
+    // ─── Required Instructions for This Run ───────────────
+    const hasUnresolvedThreads = unresolvedThreads.length > 0;
+    lines.push('## Required Instructions for This Run');
+    lines.push('');
+    lines.push('Read these instruction files in order:');
+    lines.push('');
+    lines.push('1. `.revkit/instructions/01-review-workflow-and-outputs.md`');
+    if (hasUnresolvedThreads) {
+      lines.push('2. `.revkit/instructions/02-thread-replies.md`');
+    } else {
+      lines.push('2. ~~`.revkit/instructions/02-thread-replies.md`~~ — skip, no unresolved threads');
+    }
+    lines.push('3. `.revkit/instructions/03-new-findings-and-anchors.md`');
+    lines.push('4. `.revkit/instructions/04-suggestions-and-agent-handover.md`');
+    lines.push('5. `.revkit/instructions/05-review-note.md`');
+    lines.push('6. `.revkit/instructions/06-summary.md`');
+    lines.push('7. `.revkit/instructions/07-final-checks.md`');
     lines.push('');
 
     // ─── MR/PR Description ────────────────────────────────
@@ -589,9 +620,9 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('| Path | Description |');
     lines.push('|---|---|');
-    lines.push(
-      '| `.revkit/INSTRUCTIONS.md` | Stable review workflow, diff navigation rules, and output format rules |',
-    );
+    lines.push('| `.revkit/AGENT_CONTRACT.md` | Short mandatory review contract |');
+    lines.push('| `.revkit/INSTRUCTIONS.md` | Index/router for task-specific instruction files |');
+    lines.push('| `.revkit/instructions/` | Detailed task-specific instruction files |');
     lines.push('| `.revkit/bundle.json` | Machine-readable bundle metadata and local state |');
     lines.push('| `.revkit/description.md` | Raw MR/PR description |');
     const threadFileCount = unresolvedThreads.length + generalComments.length;
@@ -711,7 +742,7 @@ export class WorkspaceManager {
     const contextPath = path.join(this.baseDir, 'CONTEXT.md');
     await fs.writeFile(contextPath, content, 'utf-8');
 
-    // Also write INSTRUCTIONS.md
+    // Also write instruction files (INSTRUCTIONS.md, AGENT_CONTRACT.md, instructions/*.md)
     await this.writeInstructions();
 
     return contextPath;
@@ -995,15 +1026,33 @@ export class WorkspaceManager {
   // ─── Write helpers ──────────────────────────────────────
 
   /**
-   * Write INSTRUCTIONS.md — copied from the package templates directory.
+   * Write INSTRUCTIONS.md, AGENT_CONTRACT.md, and instructions/*.md — copied from the package templates directory.
    */
   async writeInstructions(): Promise<void> {
     const thisFile = fileURLToPath(import.meta.url);
     // dist/workspace/workspace-manager.js -> package root -> templates/
     const templatesDir = path.resolve(path.dirname(thisFile), '..', '..', 'templates');
-    const source = path.join(templatesDir, 'INSTRUCTIONS.md');
-    const dest = path.join(this.baseDir, 'INSTRUCTIONS.md');
-    await fs.copyFile(source, dest);
+
+    // Copy INSTRUCTIONS.md
+    const instructionsSource = path.join(templatesDir, 'INSTRUCTIONS.md');
+    const instructionsDest = path.join(this.baseDir, 'INSTRUCTIONS.md');
+    await fs.copyFile(instructionsSource, instructionsDest);
+
+    // Copy AGENT_CONTRACT.md
+    const contractSource = path.join(templatesDir, 'AGENT_CONTRACT.md');
+    const contractDest = path.join(this.baseDir, 'AGENT_CONTRACT.md');
+    await fs.copyFile(contractSource, contractDest);
+
+    // Copy instructions/*.md
+    const instructionsSrcDir = path.join(templatesDir, 'instructions');
+    const instructionsDestDir = path.join(this.baseDir, 'instructions');
+    await this.ensureDir(instructionsDestDir);
+    const entries = await fs.readdir(instructionsSrcDir);
+    for (const entry of entries) {
+      if (entry.endsWith('.md')) {
+        await fs.copyFile(path.join(instructionsSrcDir, entry), path.join(instructionsDestDir, entry));
+      }
+    }
   }
 
   /**

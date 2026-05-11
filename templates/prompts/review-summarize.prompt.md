@@ -17,14 +17,13 @@ Do not publish anything unless the developer explicitly asks.
 ## Steps
 
 1. Read `.revkit/CONTEXT.md`.
-2. Read `.revkit/INSTRUCTIONS.md`.
-3. Read `REVIEW.md` if present.
-4. Read `.revkit/diffs/latest.patch`.
-5. Use checked-out source files only when the diff alone is not enough to understand the changed behavior.
-6. Write `.revkit/outputs/summary.md`.
-7. Present the generated summary to the developer.
-
-Follow `.revkit/INSTRUCTIONS.md` for the complete `outputs/summary.md` format, allowed categories, examples, and style rules.
+2. Read `.revkit/AGENT_CONTRACT.md`.
+3. Read `.revkit/instructions/06-summary.md`.
+4. Read `REVIEW.md` if present.
+5. Read `.revkit/diffs/latest.patch`.
+6. Use checked-out source files only when the diff alone is not enough to understand the changed behavior.
+7. Write `.revkit/outputs/summary.md`.
+8. Present the generated summary to the developer.
 
 ## Scope
 

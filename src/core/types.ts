@@ -315,7 +315,9 @@ export interface BundlePublishedAction {
 
 export interface BundlePaths {
   context: string;
+  contract: string;
   instructions: string;
+  instructionsDir: string;
   description: string;
   latestPatch: string;
   incrementalPatch: string | null;
