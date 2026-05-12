@@ -29,7 +29,8 @@ Always write all four output files. Use `[]` for empty JSON outputs. Leave `revi
 
 ## Language and encoding
 
-- Match the language of the thread you are replying to. If mixed, prefer the language of the most recent human comment.
+- **Default to English** for new findings, summaries, and the review note. Use a different language only when the MR/PR title, description, and thread comments are predominantly in that language.
+- **Match the thread language** when replying. If a thread is in German, reply in German. If mixed, prefer the language of the most recent human comment.
 - All output is UTF-8. Use proper Unicode (e.g. "Änderung", not "Aenderung").
 
 ## Output validation

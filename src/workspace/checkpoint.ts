@@ -1,4 +1,5 @@
 import type { ReviewTargetRef } from '../core/types.js';
+import { MARKER_START, MARKER_END } from './description-summary.js';
 
 // ─── Checkpoint types ────────────────────────────────────
 
@@ -251,12 +252,26 @@ export function patchDescriptionWithState(description: string, state: Checkpoint
 }
 
 /**
- * Strip the hidden revkit state block from a description, returning agent-facing content.
- * Preserves the visible summary marker block.
+ * Strip the hidden revkit state block and the revkit-generated summary section
+ * from a description, returning only the original human-written content.
  */
 export function sanitizeDescriptionForAgent(description: string): string {
-  return description
-    .replace(CHECKPOINT_STATE_BLOCK_REGEX, '')
-    .replace(/\n{3,}$/g, '\n')
-    .trimEnd();
+  // Strip the hidden state block first.
+  let result = description.replace(CHECKPOINT_STATE_BLOCK_REGEX, '');
+
+  // Strip the revkit-generated summary section (<!-- revkit:start --> ... <!-- revkit:end -->),
+  // including the preceding horizontal-rule separator that mergeWithMarkers adds.
+  const startIdx = result.indexOf(MARKER_START);
+  if (startIdx !== -1) {
+    const endIdx = result.indexOf(MARKER_END, startIdx + MARKER_START.length);
+    if (endIdx !== -1) {
+      const before = result.slice(0, startIdx);
+      const after = result.slice(endIdx + MARKER_END.length);
+      // Remove the "\n\n---\n\n" separator that mergeWithMarkers prepends when appending.
+      const trimmedBefore = before.replace(/\n\n---\n\n$/, '');
+      result = trimmedBefore + after;
+    }
+  }
+
+  return result.replace(/\n{3,}$/g, '\n').trimEnd();
 }

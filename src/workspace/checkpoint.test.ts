@@ -339,7 +339,7 @@ describe('sanitizeDescriptionForAgent', () => {
     expect(sanitized).not.toContain('<!-- revkit:state');
   });
 
-  it('preserves visible summary marker block', () => {
+  it('strips the revkit-generated summary marker block', () => {
     const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
     const description = `# My MR
 
@@ -351,9 +351,10 @@ describe('sanitizeDescriptionForAgent', () => {
 ${buildDescriptionStateBlock(state)}`;
 
     const sanitized = sanitizeDescriptionForAgent(description);
-    expect(sanitized).toContain('<!-- revkit:start -->');
-    expect(sanitized).toContain('## Changed');
-    expect(sanitized).toContain('<!-- revkit:end -->');
+    expect(sanitized).toContain('# My MR');
+    expect(sanitized).not.toContain('<!-- revkit:start -->');
+    expect(sanitized).not.toContain('## Changed');
+    expect(sanitized).not.toContain('<!-- revkit:end -->');
     expect(sanitized).not.toContain('<!-- revkit:state');
   });
 
@@ -361,5 +362,17 @@ ${buildDescriptionStateBlock(state)}`;
     const description = '# My MR\n\nJust a normal description.';
     const sanitized = sanitizeDescriptionForAgent(description);
     expect(sanitized).toBe(description);
+  });
+
+  it('strips the summary block and its separator when appended to existing description', () => {
+    // Simulate the structure mergeWithMarkers produces when appending
+    const description = `# My MR\n\nSome text here.\n\n---\n\n<!-- revkit:start -->\n## Changed\n- Updated login flow.\n<!-- revkit:end -->`;
+
+    const sanitized = sanitizeDescriptionForAgent(description);
+    expect(sanitized).toContain('# My MR');
+    expect(sanitized).toContain('Some text here.');
+    expect(sanitized).not.toContain('---');
+    expect(sanitized).not.toContain('<!-- revkit:start -->');
+    expect(sanitized).not.toContain('<!-- revkit:end -->');
   });
 });

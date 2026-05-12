@@ -576,7 +576,13 @@ export class WorkspaceManager {
     lines.push(
       '7. Use `.revkit/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
     );
-    lines.push('8. Use `.revkit/diffs/latest.patch` for the overall change and cross-file context.');
+    if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
+      lines.push(
+        '8. Read `.revkit/diffs/incremental.patch` first to understand what changed since the last checkpoint, then use `.revkit/diffs/latest.patch` for full MR/PR context.',
+      );
+    } else {
+      lines.push('8. Use `.revkit/diffs/latest.patch` for the overall change and cross-file context.');
+    }
     lines.push('9. Use `.revkit/diffs/patches/by-file/` for focused review of individual changed files.');
     lines.push(
       '10. Use `.revkit/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',

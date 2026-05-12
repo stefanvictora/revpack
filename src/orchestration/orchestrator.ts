@@ -468,9 +468,6 @@ export class ReviewOrchestrator {
         [
           `Could not switch to branch '${target.sourceBranch}'.`,
           '',
-          'Git refused the switch because it would overwrite local changes or otherwise could not safely update the working tree.',
-          'Commit, stash, move, or remove the conflicting files, then try again.',
-          '',
           `Original error: ${error instanceof Error ? error.message : String(error)}`,
         ].join('\n'),
         { cause: error },
