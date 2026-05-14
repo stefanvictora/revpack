@@ -1,255 +1,266 @@
 # revpack
 
+[![build](https://github.com/stefanvictora/revpack/actions/workflows/ci.yml/badge.svg)](https://github.com/stefanvictora/revpack)
+
 AI-ready review bundles for GitHub and GitLab.
 
 `revpack` prepares structured PR/MR context for coding agents and publishes their review outputs back as comments, replies, summaries, and review notes.
 
-## Setup
+It does **not** perform the review itself. It gives your agent a reliable workspace, then helps you publish the agent's output safely.
+
+## What revpack does
+
+- Finds the relevant GitHub PR or GitLab MR from your current branch, a direct URL, or a reference like `!42`.
+- Creates a local `.revpack/` bundle with diffs, thread context, metadata, instructions, and output files.
+- Gives coding agents one clear entry point: `.revpack/CONTEXT.md`.
+- Supports incremental refreshes after new commits or new review comments.
+- Publishes selected agent outputs back to the PR/MR.
+- Works with named configuration profiles, so different GitHub and GitLab instances can coexist.
+
+## Install
 
 ```bash
-npm install
-npm run build
+npm install -g revpack
 ```
 
-### Configuration
+## First-time setup
 
-revpack uses a **profiles** system. Each profile targets one provider instance (GitLab self-hosted, GitHub, etc.) and is matched automatically from the current git remote.
-
-The quickest way to create a profile is the interactive setup wizard:
+Create a provider profile:
 
 ```bash
 revpack config setup
 ```
 
-This detects your git remote, pre-fills the provider URL and suggested defaults, and writes a named profile to `~/.config/revpack/config.json`.
+The setup wizard detects your git remote, pre-fills provider settings, and writes a named profile to:
 
-After setup, set the token environment variable it configured:
+```text
+~/.config/revpack/config.json
+```
+
+Then set the token environment variable configured by the wizard:
 
 ```bash
-# GitLab
+# GitLab example
 export REVPACK_GITLAB_TOKEN=glpat-xxxxxxxxxxxx
 
-# GitHub
+# GitHub example
 export REVPACK_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 ```
 
-Then verify:
+Verify the profile before using it:
 
 ```bash
 revpack config doctor
 ```
 
-## Quick Start
+## Basic workflow
+
+Prepare the current branch's PR/MR:
 
 ```bash
-# Optional: add project-specific review guidance and Copilot prompts
-revpack setup --prompts
-
-# Prepare a review bundle for the MR/PR of the current branch
 revpack prepare
 ```
 
-Then ask your agent to follow:
+Then ask your coding agent to follow the generated context file:
 
 ```text
 .revpack/CONTEXT.md
 ```
 
-or:
-
-```text
-.copilot/prompts/review.prompt.md
-```
-
-The agent writes outputs to:
+The agent writes its output files to:
 
 ```text
 .revpack/outputs/
 ```
 
-Check pending outputs:
+Check what is pending:
 
 ```bash
 revpack status
 ```
 
-Publish outputs:
+Publish everything that is ready:
 
 ```bash
 revpack publish all
 ```
 
-Optional: Publish only selected outputs:
-
-```bash
-revpack publish findings
-revpack publish replies
-revpack publish description --from-summary
-revpack publish review    # also advances the review checkpoint (for incremental reviews). Must be last.
-```
-
-After new commits or new comments:
+After new commits or new comments, refresh the bundle:
 
 ```bash
 revpack prepare
 ```
 
-To discard local revpack state (`.revpack` folder):
+Discard the local revpack bundle when you no longer need it:
 
 ```bash
 revpack clean
 ```
 
-### Working on an MR/PR not checked out locally
+## Optional project setup
+
+Create a `REVIEW.md` file for project-specific review guidance:
 
 ```bash
-revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42
-revpack prepare
+revpack setup
 ```
 
-Convenience:
+Also generate Copilot prompt files:
+
+```bash
+revpack setup --prompts
+```
+
+Use `--dry-run` to preview the files without writing them:
+
+```bash
+revpack setup --dry-run
+```
+
+## Working with a PR/MR that is not checked out locally
+
+Checkout and prepare a PR/MR from a URL:
 
 ```bash
 revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42 --prepare
 ```
 
-Alternative:
+Or use provider references:
 
 ```bash
-revpack checkout !42 --repo group/project --profile myGitlab
-revpack checkout 58 --repo user/project --profile myGithub
+revpack checkout !42 --repo group/project --profile myGitlab --prepare
+revpack checkout 58 --repo user/project --profile myGithub --prepare
 ```
 
-## Commands
+Inside an existing git repository, `checkout` fetches and switches to the source branch. Outside a git repository, it creates a shallow clone in a new directory.
 
-### `prepare [ref]` — Primary workflow
+## Publishing selected outputs
 
-Fetches MR metadata, threads, diffs, and writes the `.revpack/` bundle with a `CONTEXT.md` entry point for agents.
-
-Re-running on the same MR automatically produces a **refresh** (detects code and thread changes since the last prepare). Thread IDs (T-001, T-002, ...) are derived from position in the provider's all-threads list (creation order), so they stay stable as long as existing threads aren't deleted.
-
-**Auto-detection**: When no `ref` is given and no bundle exists, `prepare` looks up the current git branch and finds any open MR sourced from it — no need to pass `!42` manually.
-
-**Branch mismatch safety**: If a bundle exists but the current git branch doesn't match the MR's source branch, `prepare` refuses to proceed and tells you to run `clean` or switch branches.
+`revpack publish all` is the simplest option, but you can publish individual output types when you want more control:
 
 ```bash
-revpack prepare                             # auto-detect from branch (or refresh existing bundle)
-revpack prepare !42                         # first prepare (fresh)
-revpack prepare --fresh                     # discard bundle, start fresh
+revpack publish findings
+revpack publish replies
+revpack publish description --from-summary
+revpack publish review
+```
+
+When publishing outputs individually, publish `review` last. It advances the review checkpoint used for incremental reviews.
+
+Useful variants:
+
+```bash
+revpack publish all --no-refresh
+revpack publish findings --dry-run
+revpack publish replies T-001
+revpack publish replies T-001 --body "Fixed!"
+revpack publish replies T-001 --resolve
+revpack publish description --from custom.md
+revpack publish description --from-summary --replace
+```
+
+## Command reference
+
+### `prepare [ref]`
+
+Creates or refreshes the `.revpack/` bundle for a PR/MR.
+
+```bash
+revpack prepare                             # auto-detect from current branch, or refresh existing bundle
+revpack prepare !42                         # prepare a specific GitLab MR
+revpack prepare --fresh                     # discard the existing bundle and start fresh
 revpack prepare --discard-outputs           # clear output files before preparing
-revpack prepare !42 --json
+revpack prepare !42 --json                  # machine-readable output
 ```
 
-Output shows MR state (opened/merged/closed), prepare mode (fresh/refresh), code/thread change summary, and bundle path.
+Behavior:
 
-Creates `.revpack/`:
+- If no `ref` is given and no bundle exists, `prepare` finds an open PR/MR sourced from the current git branch.
+- If a bundle already exists, `prepare` refreshes it and detects code or thread changes since the last prepare.
+- If the current git branch no longer matches the bundled PR/MR source branch, `prepare` stops and asks you to switch branches or run `clean`.
+- Thread IDs such as `T-001` are derived from the provider's thread creation order. They stay stable unless existing provider threads are deleted.
 
-```
-.revpack/
-  CONTEXT.md              ← agent entry point (start here)
-  INSTRUCTIONS.md         ← stable review workflow and output format rules
-  bundle.json             ← machine-readable bundle metadata and state
-  description.md          ← raw MR/PR description
-  threads/
-    T-001.md, T-001.json  ← one per unresolved thread (stable IDs)
-  diffs/
-    latest.patch          ← full MR diff
-    incremental.patch     ← changes since last review checkpoint (auto on refresh)
-    line-map.ndjson       ← valid positional anchors
-    files.json            ← list of changed files with git metadata
-    /patches/by-file/     ← file-level patches for easier navigation
-  outputs/
-    replies.json          ← agent drafts (T-NNN references)
-    new-findings.json     ← agent-created issues for proactive review
-    summary.md            ← changelog for MR description
-    review.md             ← review note synced to MR comment (checkpoint)
-```
+### `checkout <ref>`
 
-### `checkout <ref>` — Switch to MR branch
-
-In a git repo: fetches the MR source branch from origin and switches to it. Requires a clean working tree.
-
-Outside a git repo: performs a shallow clone into a new directory (named after the project, like `git clone`).
-
-Does **not** prepare by default. Use `--prepare` to combine checkout and prepare in one command.
+Switches to a PR/MR source branch, or clones it when run outside a git repository.
 
 ```bash
-revpack checkout !42                        # fetch + switch
-revpack checkout !42 --prepare              # fetch + switch + prepare
-revpack checkout !42 --setup                # fetch + switch + prepare + setup
-
-revpack checkout !42 --repo group/project --profile myprofile                  # clone when not in a git repo
-revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42  # direct URL, detects profile automatically
+revpack checkout !42
+revpack checkout !42 --prepare
+revpack checkout !42 --setup
+revpack checkout !42 --repo group/project --profile myprofile
+revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42
 ```
 
-By default, `checkout` clones over HTTPS. If your server requires SSH, set `sshClone: true` in the profile (`revpack config setup` will ask, or `revpack config set sshClone true`). SSH agent key loading is handled by Git as normal — if your key needs a passphrase and no agent is running, Git will prompt you in the terminal.
+Notes:
 
-### `status [ref]` — View MR/PR status
+- In an existing repo, `checkout` requires a clean working tree.
+- By default, clones use HTTPS.
+- To clone with SSH, set `sshClone: true` in the profile. Git handles SSH keys and passphrase prompts as usual.
 
-Shows MR state, author, branches, dates, labels, URL, prepare summary (mode, code/thread changes), pending outputs, and published actions. Reads from `bundle.json` when available, falls back to provider API fetch.
+### `status [ref]`
+
+Shows PR/MR state, branches, labels, dates, pending outputs, prepare summary, and published actions.
 
 ```bash
-revpack status                              # show bundle's MR status
+revpack status
 revpack status !42
 revpack status !42 --json
 ```
 
-### `publish` — Publish outputs to the MR/PR
+When a bundle exists, `status` reads from `.revpack/bundle.json`. Otherwise, it fetches from the provider API.
 
-Publishes pending replies, findings, description updates, and review notes. After publishing, automatically refreshes the bundle to pick up the new comments.
+### `publish`
+
+Publishes agent outputs back to the PR/MR.
 
 ```bash
-revpack publish all                              # publish everything pending
-revpack publish all --no-refresh                 # skip auto-refresh after publishing
-revpack publish replies                          # publish all from replies.json
-revpack publish replies T-001                    # publish one thread
-revpack publish replies T-001 --body "Fixed!"    # inline reply
-revpack publish replies T-001 --resolve          # reply and resolve
-revpack publish findings                         # publish new findings
-revpack publish findings --dry-run               # preview without posting
-revpack publish description --from-summary       # update MR description
-revpack publish description --from custom.md     # use any file
-revpack publish description --from-summary --replace  # replace entire description
-revpack publish review                           # publish review.md if non-empty and advance checkpoint
+revpack publish all
+revpack publish replies
+revpack publish findings
+revpack publish description --from-summary
+revpack publish review
 ```
 
-### `clean` — Remove local revpack state
+After publishing, revpack refreshes the bundle by default so the new provider comments are reflected locally.
 
-Deletes the `.revpack/` directory. The directory is disposable local state — run `prepare` to create a fresh bundle.
+### `clean`
+
+Deletes the local `.revpack/` directory.
 
 ```bash
 revpack clean
 ```
 
-### `setup` — Set up a project for revpack
+The bundle is disposable local state. Run `prepare` again to recreate it.
 
-Creates a `REVIEW.md` file in the repository root for project-specific review guidance.
+### `setup`
+
+Creates project-level files that help agents review consistently.
 
 ```bash
-revpack setup             # creates REVIEW.md
-revpack setup --prompts   # also creates .github/prompts/ with Copilot prompts
-revpack setup --dry-run   # preview without writing
+revpack setup
+revpack setup --prompts
+revpack setup --dry-run
 ```
 
-### `config` — Manage configuration
+### `config`
 
-Configuration is stored in `~/.config/revpack/config.json` as named profiles. Each profile holds a provider type, base URL, token env var, and remote match patterns used to auto-select the right profile per repository.
+Manages named provider profiles.
 
 ```bash
-# Interactive setup — detects git remote, pre-fills suggested values
+# Interactive setup
 revpack config setup
 
-# Show resolved config for the current directory
+# Show resolved configuration
 revpack config show
 revpack config show --profile myprofile
-revpack config show --sources          # show where each value comes from
+revpack config show --sources
 
-# Get / set / unset individual keys on a profile
+# Read or change individual keys
 revpack config get <key>
 revpack config set <key> <value>
 revpack config unset <key>
-# --profile <name>  target a specific profile
-# --current         resolve profile from current git remote
 
 # Profile management
 revpack config profile list
@@ -258,20 +269,86 @@ revpack config profile create <name>
 revpack config profile delete <name>
 revpack config profile rename <old> <new>
 
-# Health check
+# Health checks
 revpack config doctor
 revpack config doctor --profile myprofile
 ```
 
-Configurable keys: `provider`, `url`, `tokenEnv`, `remotePatterns`, `caFile`, `tlsVerify`, `sshClone`.
+Use these options when changing profile-specific values:
 
-## Benchmark Export
+```bash
+--profile <name>   # target a specific profile
+--current          # resolve the profile from the current git remote
+```
+
+Configurable keys:
+
+```text
+provider, url, tokenEnv, remotePatterns, caFile, tlsVerify, sshClone
+```
+
+## Generated bundle layout
+
+`prepare` creates the following local workspace:
+
+```text
+.revpack/
+  CONTEXT.md              # agent entry point
+  INSTRUCTIONS.md         # stable review workflow and output rules
+  bundle.json             # machine-readable bundle metadata and state
+  description.md          # raw PR/MR description
+  threads/
+    T-001.md
+    T-001.json            # one pair per unresolved thread
+  diffs/
+    latest.patch          # full PR/MR diff
+    incremental.patch     # changes since the last review checkpoint, on refresh
+    line-map.ndjson       # valid positional anchors
+    files.json            # changed-file index
+    patches/by-file/      # per-file patches for easier navigation
+  outputs/
+    replies.json          # agent replies to existing threads
+    new-findings.json     # agent-created findings
+    summary.md            # summary for PR/MR description updates
+    review.md             # review note and checkpoint marker
+```
+
+The agent should start with `CONTEXT.md`, use the generated diff artifacts for review context, and write only to `.revpack/outputs/`.
+
+## Design principles
+
+- **Prepare, not review** — revpack prepares context; your agent performs the review.
+- **Agent-ready bundles** — context is packaged for LLM consumption, not dumped directly from provider APIs.
+- **Threads, not comments** — the core model is thread-oriented for cross-provider portability.
+- **Structured outputs** — findings, replies, summaries, and review notes have explicit output files.
+- **Read-first, write-guarded** — revpack does not auto-push or auto-post; publishing requires explicit commands.
+- **Incremental by default** — refreshes compare new code and comments against the last prepared or reviewed state.
+- **Provider-neutral core** — GitHub and GitLab details are handled by provider adapters.
+
+## Architecture
+
+The codebase is organized into five layers:
+
+1. **Core domain** (`src/core/`) — provider-neutral types, schemas, and errors
+2. **Provider adapters** (`src/providers/`) — GitLab and GitHub integrations
+3. **Workspace** (`src/workspace/`) — git operations and bundle creation
+4. **Orchestration** (`src/orchestration/`) — workflow coordination
+5. **CLI** (`src/cli/`) — Commander-based commands with `--json` support
+
+Key implementation decisions:
+
+- `bundle.json` is the canonical local state file.
+- Description updates use marker sections so original PR/MR text is preserved.
+- `REVIEW.md` and source files are read from the repository, not copied into the bundle.
+- T-NNN thread IDs are based on provider thread order instead of a separate mapping file.
+
+## Benchmark export
 
 The `eval:export-code-review-benchmark` script exports locally produced revpack findings into a [Martian code-review-benchmark](https://github.com/MartianLabs/code-review-benchmark) compatible `benchmark_data.json` file.
 
-The script is an **exporter only** — it does not checkout PRs, run `revpack prepare`, invoke a review agent, or publish comments.
+The script is an **exporter only**. It does not checkout PRs, run `revpack prepare`, invoke a review agent, or publish comments.
 
-### Intended workflow
+### Workflow
 
 ```text
 1. Checkout and prepare benchmark PRs locally with revpack.
@@ -282,9 +359,9 @@ The script is an **exporter only** — it does not checkout PRs, run `revpack pr
 
 ### Prerequisites
 
-Each workspace must be a prepared revpack workspace with:
+Each workspace must contain:
 
-```
+```text
 <workspace>/.revpack/bundle.json
 <workspace>/.revpack/outputs/new-findings.json
 ```
@@ -298,20 +375,20 @@ npm run eval:export-code-review-benchmark -- \
   [--tool <name>]
 ```
 
-**Required:**
+Required arguments:
 
-- `--benchmark-data <path>` — Path to the Martian benchmark data JSON file.
-- Exactly one of:
-  - `--workspace <repo-root>` — Export a single prepared revpack workspace.
-  - `--workspace-root <parent-dir>` — Batch export all immediate child directories that are prepared revpack workspaces.
+- `--benchmark-data <path>` — path to the Martian benchmark data JSON file
+- exactly one of:
+  - `--workspace <repo-root>` — export one prepared revpack workspace
+  - `--workspace-root <parent-dir>` — export all immediate child directories that are prepared revpack workspaces
 
-**Optional:**
+Optional argument:
 
-- `--tool <name>` — Tool identity written into the benchmark output. Default: `revpack`.
+- `--tool <name>` — tool identity written into the benchmark output. Default: `revpack`
 
 ### Examples
 
-Export a single workspace:
+Export one workspace:
 
 ```bash
 npm run eval:export-code-review-benchmark -- \
@@ -319,7 +396,7 @@ npm run eval:export-code-review-benchmark -- \
   --workspace ../revpack-benchmark-workspaces/cal.com-pr-10600
 ```
 
-Batch export all workspaces under a parent directory:
+Export all prepared workspaces under a parent directory:
 
 ```bash
 npm run eval:export-code-review-benchmark -- \
@@ -327,7 +404,7 @@ npm run eval:export-code-review-benchmark -- \
   --workspace-root ../revpack-benchmark-workspaces
 ```
 
-Export under a custom tool name for variant comparison:
+Export under a custom tool name:
 
 ```bash
 npm run eval:export-code-review-benchmark -- \
@@ -338,46 +415,38 @@ npm run eval:export-code-review-benchmark -- \
 
 ### Output
 
-The output file is written to the same directory as `--benchmark-data`, named after the tool slug:
+The exporter writes a file next to `--benchmark-data`, named after the tool slug:
 
-```
+```text
 benchmark_data.revpack.json
 benchmark_data.revpack-gpt-5-5.json
 ```
 
-The output contains only the benchmark PR entries for which revpack produced a review. Each exported entry preserves all original PR-level metadata and contains exactly one `reviews` entry for the selected tool.
+The output contains only benchmark PR entries for which revpack produced a review. Each exported entry preserves the original PR metadata and contains exactly one `reviews` entry for the selected tool.
 
-Workspaces are skipped (with a warning in the summary) when:
+Workspaces are skipped with a warning when:
 
-- The bundle target is not a GitHub pull request.
-- The bundle's PR URL does not match any entry in the benchmark data.
-- `.revpack/outputs/new-findings.json` is missing.
+- the bundle target is not a GitHub pull request
+- the bundle's PR URL does not match any entry in the benchmark data
+- `.revpack/outputs/new-findings.json` is missing
 
 The script fails without writing output when arguments are invalid, benchmark data is malformed, zero reviews would be exported, or any matched workspace has corrupt findings.
 
-## Architecture
+## Development
 
-Five layers:
+Install dependencies:
 
-1. **Core domain** (`src/core/`) — Provider-neutral types, schemas, errors
-2. **Provider adapters** (`src/providers/`) — GitLab and GitHub
-3. **Workspace** (`src/workspace/`) — Git operations, bundle creation
-4. **Orchestration** (`src/orchestration/`) — Workflow coordination
-5. **CLI** (`src/cli/`) — Commander-based commands with `--json` support
+```bash
+npm install
+```
 
-### Key design decisions
+Run the CLI locally:
 
-- **Threads, not comments** — Core model is thread-oriented for cross-provider portability
-- **Position-based thread IDs** — T-NNN IDs derived from position in the provider's all-threads list (creation order), no separate mapping file needed
-- **Canonical finding schema** — Structured JSON output with severity, status, disposition
-- **Agent-ready bundles** — Context packaged for LLM consumption, not raw API dumps
-- **Prepare, not review** — `prepare` generates/refreshes the bundle; the agent performs the review; `publish` writes results back
-- **Read-first, write-guarded** — No auto-push/auto-post; write operations require explicit commands
-- **bundle.json as canonical state** — Single source of truth for bundle metadata, thread mappings, and published actions
-- **Marker-based description updates** — Preserves original MR description; revpack content lives in a marked section
-- **No file copies in bundle** — Instruction files (REVIEW.md) and source code are read directly from the repo, not copied into the bundle
+```bash
+npm run dev -- prepare !42
+```
 
-## Tests, linting, formatting
+Run checks:
 
 ```bash
 npm test
@@ -385,20 +454,14 @@ npm lint:fix
 npm format
 ```
 
-## Development
-
-```bash
-npm run dev -- prepare !42    # run CLI with tsx (no build needed)
-```
-
 ## Roadmap
 
 - **Phase 0** ✅ Spike — GitLab auth, MR fetch, discussions, workspace bundle
 - **Phase 1** ✅ Read-only assistant — `status`, `prepare`
 - **Phase 2** ✅ Assisted replies — `publish`, `update-description`
-- **Phase 2.5** ✅ Unified workflow — `prepare` command, CONTEXT.md, incremental support
-- **Phase 2.7** ✅ Auto-detect & proactive review — Branch auto-detect, sync status, `publish findings`
-- **Phase 2.8** ✅ Workflow redesign — `prepare`/`setup`/`clean`, `bundle.json`, structured context
-- **Phase 3** 🔜 Patch assistance — Generate/apply patches, run checks
-- **Phase 4** 🔜 Learnings & automation — Durable learnings, CI integration
-- **Phase 5** 🔜 MCP server & automation — MCP server, CI integration
+- **Phase 2.5** ✅ Unified workflow — `prepare` command, `CONTEXT.md`, incremental support
+- **Phase 2.7** ✅ Auto-detect and proactive review — branch auto-detect, sync status, `publish findings`
+- **Phase 2.8** ✅ Workflow redesign — `prepare`, `setup`, `clean`, `bundle.json`, structured context
+- **Phase 3** 🔜 Patch assistance — generate and apply patches, run checks
+- **Phase 4** 🔜 Learnings and automation — durable learnings, CI integration
+- **Phase 5** 🔜 MCP server and automation — MCP server, CI integration
