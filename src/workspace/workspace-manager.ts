@@ -15,6 +15,7 @@ import type {
   ReviewVersion,
   WorkspaceBundle,
 } from '../core/types.js';
+import { formatTargetDisplayId, formatTargetKind } from '../core/display.js';
 import { WorkspaceError } from '../core/errors.js';
 import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
 import type { GitHelper } from './git-helper.js';
@@ -463,8 +464,7 @@ export class WorkspaceManager {
         const trimmed = l.trim();
         if (!trimmed) return false;
         // Skip lines that are only severity/category badges like "_🔴 High_ | _security_"
-        if (/^_[^_]+_(\s*\|\s*_[^_]+_)*\s*$/.test(trimmed)) return false;
-        return true;
+        return !/^_[^_]+_(\s*\|\s*_[^_]+_)*\s*$/.test(trimmed);
       });
       return tableCell(meaningful?.trim().slice(0, maxLen) ?? '');
     };
@@ -483,8 +483,8 @@ export class WorkspaceManager {
 
     const lines: string[] = [];
     const isLocal = target.provider === 'local';
-    const targetKind =
-      target.targetType === 'merge_request' ? 'MR' : target.targetType === 'pull_request' ? 'PR' : 'Local review';
+    const targetKind = formatTargetKind(target);
+    const targetDisplayId = formatTargetDisplayId(target);
     const targetTypeLabel =
       target.provider === 'gitlab'
         ? 'GitLab merge request'
@@ -500,7 +500,7 @@ export class WorkspaceManager {
     lines.push('| Field | Value |');
     lines.push('|---|---|');
     lines.push(`| Type | ${targetTypeLabel} |`);
-    lines.push(`| ${targetKind} | ${isLocal ? '' : '!'}${target.targetId} — ${tableCell(target.title)} |`);
+    lines.push(`| ${targetKind} | ${targetDisplayId} — ${tableCell(target.title)} |`);
     lines.push(`| Repository | \`${tableCell(target.repository)}\` |`);
     lines.push(`| Author | ${isLocal ? tableCell(target.author) : `@${tableCell(target.author)}`} |`);
     lines.push(`| Source branch | \`${tableCell(target.sourceBranch)}\` |`);

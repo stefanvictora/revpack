@@ -11,6 +11,7 @@ import type {
   RemoteCheckpoint,
   BundleComparison,
 } from '../core/types.js';
+import { formatTargetDisplayId, formatTargetKind } from '../core/display.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
 import { parsePatch } from '../workspace/patch-parser.js';
@@ -180,12 +181,14 @@ export class ReviewOrchestrator {
 
     // Check branch matches MR source branch
     if (localBranch !== 'HEAD' && localBranch !== target.sourceBranch) {
+      const targetKind = formatTargetKind(target);
+      const targetDisplayId = formatTargetDisplayId(target);
       throw new Error(
-        `Cannot prepare because the current branch does not match the MR source branch.\n\n` +
-          `MR source branch: ${target.sourceBranch}\n` +
+        `Cannot prepare because the current branch does not match the ${targetKind} source branch.\n\n` +
+          `${targetKind} source branch: ${target.sourceBranch}\n` +
           `Current branch:   ${localBranch}\n\n` +
           `Run:\n\n` +
-          `  revpack checkout !${target.targetId}\n` +
+          `  revpack checkout ${targetDisplayId}\n` +
           `  revpack prepare`,
       );
     }
@@ -196,17 +199,17 @@ export class ReviewOrchestrator {
       if (isAncestor) {
         // Local is ahead of MR head
         throw new Error(
-          `Cannot prepare an agent-ready bundle because the local checkout is ahead of the MR head.\n\n` +
-            `MR head:     ${mrHeadSha}\n` +
+          `Cannot prepare an agent-ready bundle because the local checkout is ahead of the ${formatTargetKind(target)} head.\n\n` +
+            `${formatTargetKind(target)} head:     ${mrHeadSha}\n` +
             `Local HEAD:  ${localHeadSha}\n\n` +
-            `Push your commits or reset/switch to the MR head, then run:\n\n` +
+            `Push your commits or reset/switch to the ${formatTargetKind(target)} head, then run:\n\n` +
             `  revpack prepare`,
         );
       } else {
         // Local is behind MR head
         throw new Error(
-          `Cannot prepare an agent-ready bundle because the local checkout is behind the MR head.\n\n` +
-            `MR head:     ${mrHeadSha}\n` +
+          `Cannot prepare an agent-ready bundle because the local checkout is behind the ${formatTargetKind(target)} head.\n\n` +
+            `${formatTargetKind(target)} head:     ${mrHeadSha}\n` +
             `Local HEAD:  ${localHeadSha}\n\n` +
             `Run:\n\n` +
             `  git pull\n` +
@@ -640,13 +643,19 @@ export class ReviewOrchestrator {
     // 3. Existing bundle.json
     const bundleState = await this.workspace.loadBundleState();
     if (bundleState) {
+      const bundleTargetDisplayId = formatTargetDisplayId({
+        provider: bundleState.target.provider,
+        targetType: bundleState.target.type,
+        targetId: bundleState.target.id,
+      });
+      const bundleTargetKind = formatTargetKind({ targetType: bundleState.target.type });
       // If we can determine the current branch, check it matches
       try {
         const currentBranch = await this.git.currentBranch();
         if (currentBranch && currentBranch !== 'HEAD' && currentBranch !== bundleState.target.sourceBranch) {
           throw new Error(
             `Branch mismatch: current branch "${currentBranch}" does not match ` +
-              `the bundle's MR source branch "${bundleState.target.sourceBranch}" (!${bundleState.target.id}).\n` +
+              `the bundle's ${bundleTargetKind} source branch "${bundleState.target.sourceBranch}" (${bundleTargetDisplayId}).\n` +
               `Run \`revpack clean\` to remove the stale bundle, or switch to "${bundleState.target.sourceBranch}".`,
           );
         }
@@ -679,10 +688,11 @@ export class ReviewOrchestrator {
             return targets[0];
           }
           if (targets.length > 1) {
-            const ids = targets.map((t) => `!${t.targetId}`).join(', ');
+            const ids = targets.map((t) => formatTargetDisplayId(t)).join(', ');
+            const targetKind = formatTargetKind(targets[0]);
             throw new Error(
-              `Multiple open MRs found for branch "${branch}": ${ids}\n` +
-                'Specify one explicitly: `revpack prepare !<id>`',
+              `Multiple open ${targetKind}s found for branch "${branch}": ${ids}\n` +
+                'Specify one explicitly: `revpack prepare <ref>`',
             );
           }
         }
@@ -694,7 +704,7 @@ export class ReviewOrchestrator {
     throw new Error(
       'Could not determine which MR to prepare.\n' +
         'No ref provided, no existing bundle, and no open MR found for the current branch.\n' +
-        'Run `revpack prepare !<id>` to specify one explicitly.',
+        'Run `revpack prepare <ref>` to specify one explicitly.',
     );
   }
 

@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import chalk from 'chalk';
+import { formatTargetDisplayId, formatTargetKind } from '../../core/display.js';
 import { createLocalOrchestrator, createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
 
 export function registerPrepareCommand(program: Command): void {
@@ -50,13 +51,13 @@ export function registerPrepareCommand(program: Command): void {
           const target = bundle.target;
           const stateColor = getStateColor(target.state);
           const isLocal = target.provider === 'local';
-          const targetLabel =
-            target.targetType === 'merge_request' ? 'MR' : target.targetType === 'pull_request' ? 'PR' : 'Local review';
+          const targetLabel = formatTargetKind(target);
+          const targetDisplayId = formatTargetDisplayId(target);
 
           const modeLabel = mode === 'fresh' ? '' : ' (refresh)';
           console.log(chalk.green(`✓ Bundle prepared${modeLabel}`));
           console.log('');
-          console.log(`  ${chalk.bold(isLocal ? target.targetId : `!${target.targetId}`)}: ${target.title}`);
+          console.log(`  ${chalk.bold(targetDisplayId)}: ${target.title}`);
           console.log(`  ${chalk.dim('State:')}       ${stateColor(target.state)}`);
           console.log(`  ${chalk.dim('Author:')}      ${isLocal ? target.author : `@${target.author}`}`);
           console.log(`  ${chalk.dim('Branch:')}      ${target.sourceBranch} → ${target.targetBranch}`);

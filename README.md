@@ -14,7 +14,7 @@ It does **not** perform the review itself. It gives your agent a reliable worksp
 
 ## What revpack does
 
-- Finds the relevant GitHub PR or GitLab MR from your current branch, a direct URL, or a reference like `!42`.
+- Finds the relevant GitHub PR or GitLab MR from your current branch, a direct URL, or a reference like `#42` or `!42`.
 - Creates a local `.revpack/` bundle with diffs, thread context, metadata, instructions, and output files.
 - Gives coding agents one clear entry point: `.revpack/CONTEXT.md`.
 - Supports incremental refreshes after new commits or new review comments.

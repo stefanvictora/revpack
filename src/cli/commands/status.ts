@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
+import { formatTargetDisplayId, formatTargetKind } from '../../core/display.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { GitHelper } from '../../workspace/git-helper.js';
 import { createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
@@ -59,10 +60,15 @@ export function registerStatusCommand(program: Command): void {
         // If we have a bundle, show bundle-first status
         if (bundleState) {
           const t = bundleState.target;
-          const targetKind = t.type === 'merge_request' ? 'MR' : t.type === 'pull_request' ? 'PR' : 'Local review';
+          const targetKind = formatTargetKind({ targetType: t.type });
+          const targetDisplayId = formatTargetDisplayId({
+            provider: t.provider,
+            targetType: t.type,
+            targetId: t.id,
+          });
           const stateColor = getStateColor(t.state);
 
-          console.log(chalk.bold(`${targetKind} ${t.provider === 'local' ? t.id : `!${t.id}`}: ${t.title}`));
+          console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${t.title}`));
           console.log(`  ${chalk.dim('Repository:')} ${t.repository}`);
           console.log(`  ${chalk.dim('Branch:')}     ${t.sourceBranch} → ${t.targetBranch}`);
           console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
@@ -118,7 +124,7 @@ export function registerStatusCommand(program: Command): void {
             console.log('');
             console.log(
               chalk.yellow(
-                `  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but bundle targets "${mismatch.expectedBranch}" (!${mismatch.targetId})`,
+                `  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but bundle targets "${mismatch.expectedBranch}" (${targetDisplayId})`,
               ),
             );
             console.log(
@@ -152,10 +158,11 @@ export function registerStatusCommand(program: Command): void {
         } else {
           // No bundle — fall back to fetching target from provider
           const target = await orchestrator.open(ref, defaultRepo);
-          const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
+          const targetKind = formatTargetKind(target);
+          const targetDisplayId = formatTargetDisplayId(target);
           const stateColor = getStateColor(target.state);
 
-          console.log(chalk.bold(`${mrType} !${target.targetId}: ${target.title}`));
+          console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${target.title}`));
           console.log('');
           console.log(`  ${chalk.dim('State:')}     ${stateColor(target.state)}`);
           console.log(`  ${chalk.dim('Author:')}    @${target.author}`);
