@@ -101,7 +101,8 @@ export class ReviewOrchestrator {
 
     // Determine prepare mode
     let mode: PrepareSummary['mode'] = 'fresh';
-    const previousBundle = options?.fresh ? null : existingBundle;
+    const previousBundle =
+      !options?.fresh && existingBundle?.target.provider === this.provider.providerType ? existingBundle : null;
     if (previousBundle) {
       if (previousBundle.target.id !== targetRef.targetId) {
         mode = 'target_changed';
@@ -627,7 +628,16 @@ export class ReviewOrchestrator {
       return targetRef;
     }
 
-    // 2. Existing bundle.json
+    // 2. Local provider auto-detects the current branch/base without a repository slug.
+    if (this.provider.providerType === 'local') {
+      const branch = await this.git.currentBranch();
+      if (branch && branch !== 'HEAD') {
+        const targets = await this.provider.findTargetByBranch('', branch);
+        if (targets.length === 1) return targets[0];
+      }
+    }
+
+    // 3. Existing bundle.json
     const bundleState = await this.workspace.loadBundleState();
     if (bundleState) {
       // If we can determine the current branch, check it matches
@@ -649,15 +659,6 @@ export class ReviewOrchestrator {
         targetType: bundleState.target.type,
         targetId: bundleState.target.id,
       };
-    }
-
-    // 3. Local provider auto-detects the current branch/base without a repository slug.
-    if (this.provider.providerType === 'local') {
-      const branch = await this.git.currentBranch();
-      if (branch && branch !== 'HEAD') {
-        const targets = await this.provider.findTargetByBranch('', branch);
-        if (targets.length === 1) return targets[0];
-      }
     }
 
     // 4. Auto-detect MR from current git branch
