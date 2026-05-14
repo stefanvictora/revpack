@@ -35,8 +35,8 @@ Required arguments:
 
 - `--benchmark-data <path>` — path to the Martian benchmark data JSON file
 - exactly one of:
-    - `--workspace <repo-root>` — export one prepared revpack workspace
-    - `--workspace-root <parent-dir>` — export all immediate child directories that are prepared revpack workspaces
+  - `--workspace <repo-root>` — export one prepared revpack workspace
+  - `--workspace-root <parent-dir>` — export all immediate child directories that are prepared revpack workspaces
 
 Optional argument:
 
