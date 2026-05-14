@@ -1,7 +1,11 @@
 {
-  "name": "revpack",
+  "name": "@stefanvictora/revpack",
   "version": "0.1.0",
   "description": "CLI for preparing AI-ready PR/MR review bundles and publishing review feedback.",
+  "author": {
+    "name": "Stefan Victora",
+    "url": "https://github.com/stefanvictora"
+  },
   "type": "module",
   "bin": {
     "revpack": "./dist/cli/index.js"
