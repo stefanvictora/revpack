@@ -1,5 +1,5 @@
 import { ConfigError } from '../core/errors.js';
-import type { RevkitConfig, RevkitProfile, ProfileResolutionResult } from './types.js';
+import type { RevpackConfig, RevpackProfile, ProfileResolutionResult } from './types.js';
 
 /**
  * Extract the host from a URL. Returns undefined if parsing fails.
@@ -19,7 +19,7 @@ function tryExtractHost(url: string | undefined): string | undefined {
  * 2. All configured profile.remotePatterns
  */
 export function getProfileRemotePatterns(
-  profile: RevkitProfile,
+  profile: RevpackProfile,
 ): { pattern: string; source: 'url-derived' | 'remote-pattern' }[] {
   const patterns: { pattern: string; source: 'url-derived' | 'remote-pattern' }[] = [];
   const seen = new Set<string>();
@@ -50,7 +50,7 @@ export function getProfileRemotePatterns(
  * 3. Fail with a clear error and next-step hint
  */
 export class ProfileResolver {
-  resolve(config: RevkitConfig, remoteUrls: string[], explicitProfile?: string): ProfileResolutionResult {
+  resolve(config: RevpackConfig, remoteUrls: string[], explicitProfile?: string): ProfileResolutionResult {
     const profiles = config.profiles ?? {};
 
     // 1. Explicit profile selection
@@ -69,7 +69,7 @@ export class ProfileResolver {
     if (remoteUrls.length > 0) {
       const matches: {
         name: string;
-        profile: RevkitProfile;
+        profile: RevpackProfile;
         pattern: string;
         source: 'url-derived' | 'remote-pattern';
       }[] = [];
@@ -105,7 +105,7 @@ export class ProfileResolver {
 
     // 3. Fail
     throw new ConfigError(
-      'No profile matched the current repository.\n\nRun `revkit config setup` to create a profile, or use `--profile <name>` to select one explicitly.',
+      'No profile matched the current repository.\n\nRun `revpack config setup` to create a profile, or use `--profile <name>` to select one explicitly.',
     );
   }
 }

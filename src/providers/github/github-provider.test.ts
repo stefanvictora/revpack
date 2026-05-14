@@ -274,8 +274,8 @@ describe('GitHubProvider GraphQL review threads', () => {
                             {
                               id: 'comment-node-2',
                               databaseId: 1002,
-                              body: '<!-- revkit -->\nDone',
-                              author: { login: 'revkit[bot]' },
+                              body: '<!-- revpack -->\nDone',
+                              author: { login: 'revpack[bot]' },
                               createdAt: '2026-01-01T02:00:00Z',
                               updatedAt: '2026-01-01T02:00:00Z',
                             },
@@ -346,8 +346,8 @@ describe('GitHubProvider GraphQL review threads', () => {
           },
           {
             id: '1002',
-            body: '<!-- revkit -->\nDone',
-            author: 'revkit[bot]',
+            body: '<!-- revpack -->\nDone',
+            author: 'revpack[bot]',
             createdAt: '2026-01-01T02:00:00Z',
             updatedAt: '2026-01-01T02:00:00Z',
             origin: 'bot',
@@ -516,7 +516,7 @@ describe('GitHubProvider writes', () => {
       if (url === 'https://api.github.com/repos/octo/repo/issues/42/comments' && !init?.method) {
         return jsonResponse([
           { id: 1, body: 'hello' },
-          { id: 2, body: '<!-- revkit:review -->\nstate' },
+          { id: 2, body: '<!-- revpack:review -->\nstate' },
         ]);
       }
       if (url === 'https://api.github.com/repos/octo/repo/issues/42/comments' && init?.method === 'POST') {
@@ -528,9 +528,9 @@ describe('GitHubProvider writes', () => {
       throw new Error(`Unexpected request: ${url}`);
     });
 
-    await expect(provider.findNoteByMarker(ref, '<!-- revkit:review -->')).resolves.toEqual({
+    await expect(provider.findNoteByMarker(ref, '<!-- revpack:review -->')).resolves.toEqual({
       id: '2',
-      body: '<!-- revkit:review -->\nstate',
+      body: '<!-- revpack:review -->\nstate',
     });
     await expect(provider.createNote(ref, 'created', { internal: true })).resolves.toBe('3');
     await provider.updateNote(ref, '2', 'updated');

@@ -201,7 +201,7 @@ describe('ReviewOrchestrator', () => {
       expect(hasCommitSpy).toHaveBeenCalledWith('bbb');
       expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
       expect(onProgress).not.toHaveBeenCalled();
-      const latestPatch = await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'latest.patch'), 'utf-8');
+      const latestPatch = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'latest.patch'), 'utf-8');
       expect(latestPatch).toBe(localPatch());
     });
 
@@ -229,7 +229,7 @@ describe('ReviewOrchestrator', () => {
       await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow(
         'could not generate the review patch from local Git',
       );
-      await expect(fs.access(path.join(tmpDir, '.revkit', 'diffs', 'latest.patch'))).rejects.toThrow();
+      await expect(fs.access(path.join(tmpDir, '.revpack', 'diffs', 'latest.patch'))).rejects.toThrow();
     });
 
     it('uses commit-to-commit local diff without requiring a clean working tree', async () => {
@@ -260,7 +260,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      const bundleDir = path.join(tmpDir, '.revkit');
+      const bundleDir = path.join(tmpDir, '.revpack');
       const contextMd = await fs.readFile(path.join(bundleDir, 'CONTEXT.md'), 'utf-8');
 
       expect(contextMd).toContain('Test MR');
@@ -270,7 +270,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      const bundlePath = path.join(tmpDir, '.revkit', 'bundle.json');
+      const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
       const bundleState = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
       expect(bundleState.schemaVersion).toBe(2);
       expect(bundleState.target.id).toBe('42');
@@ -446,7 +446,7 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundle.threads.map((t) => t.threadId)).toEqual(['thread-1', 'general-comment-1']);
 
       // Thread files: T-001 = mockThread (index 0 after filtering), T-002 = generalComment
-      const threadDir = path.join(tmpDir, '.revkit', 'threads');
+      const threadDir = path.join(tmpDir, '.revpack', 'threads');
       const files = (await fs.readdir(threadDir)).filter((f) => f.endsWith('.json')).sort();
       expect(files).toEqual(['T-001.json', 'T-002.json']);
 
@@ -651,7 +651,7 @@ describe('ReviewOrchestrator', () => {
 
       // First successful prepare
       await orchestrator.prepare('!42', 'group/project');
-      const bundlePath = path.join(tmpDir, '.revkit', 'bundle.json');
+      const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
       const originalBundle = await fs.readFile(bundlePath, 'utf-8');
 
       // Now make local HEAD differ
@@ -786,7 +786,7 @@ describe('ReviewOrchestrator', () => {
       await orchestrator.prepare('!42', 'group/project');
 
       // Write some content to summary
-      await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'summary.md'), '# Summary\nThis is a test', 'utf-8');
+      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), '# Summary\nThis is a test', 'utf-8');
 
       const ws = new WorkspaceManager(tmpDir);
       const state = await ws.getOutputState('summary');
@@ -798,7 +798,7 @@ describe('ReviewOrchestrator', () => {
       await orchestrator.prepare('!42', 'group/project');
 
       const content = '# Summary\nThis is a test';
-      await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'summary.md'), content, 'utf-8');
+      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), content, 'utf-8');
 
       // Simulate publish by storing hash
       const ws = new WorkspaceManager(tmpDir);
@@ -813,13 +813,13 @@ describe('ReviewOrchestrator', () => {
       await orchestrator.prepare('!42', 'group/project');
 
       const original = '# Summary\nOriginal';
-      await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'summary.md'), original, 'utf-8');
+      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), original, 'utf-8');
 
       const ws = new WorkspaceManager(tmpDir);
       await ws.updateOutputPublishState('summary', computeContentHash(original), 'bbb');
 
       // Edit the file
-      await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'summary.md'), '# Summary\nEdited', 'utf-8');
+      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), '# Summary\nEdited', 'utf-8');
 
       const state = await ws.getOutputState('summary');
       expect(state).toBe('modified since publish');
@@ -845,7 +845,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      const summaryPath = path.join(tmpDir, '.revkit', 'outputs', 'summary.md');
+      const summaryPath = path.join(tmpDir, '.revpack', 'outputs', 'summary.md');
       await expect(fs.readFile(summaryPath, 'utf-8')).resolves.toBe(summary);
 
       const ws = new WorkspaceManager(tmpDir);
@@ -856,7 +856,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      const summaryPath = path.join(tmpDir, '.revkit', 'outputs', 'summary.md');
+      const summaryPath = path.join(tmpDir, '.revpack', 'outputs', 'summary.md');
       await fs.writeFile(summaryPath, '## Changed\n\n- Local draft.', 'utf-8');
 
       const targetWithPublishedSummary = {
@@ -874,7 +874,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'review.md'), '## Notes\nSome notes', 'utf-8');
+      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), '## Notes\nSome notes', 'utf-8');
 
       const ws = new WorkspaceManager(tmpDir);
       const state = await ws.getOutputState('review');
@@ -886,7 +886,7 @@ describe('ReviewOrchestrator', () => {
       await orchestrator.prepare('!42', 'group/project');
 
       const content = '## Notes\nReview notes';
-      await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'review.md'), content, 'utf-8');
+      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), content, 'utf-8');
 
       const ws = new WorkspaceManager(tmpDir);
       await ws.updateOutputPublishState('review', computeContentHash(content), 'bbb');
@@ -900,12 +900,12 @@ describe('ReviewOrchestrator', () => {
       await orchestrator.prepare('!42', 'group/project');
 
       const original = '## Notes\nOriginal review notes';
-      await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'review.md'), original, 'utf-8');
+      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), original, 'utf-8');
 
       const ws = new WorkspaceManager(tmpDir);
       await ws.updateOutputPublishState('review', computeContentHash(original), 'bbb');
 
-      await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'review.md'), '## Notes\nEdited', 'utf-8');
+      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), '## Notes\nEdited', 'utf-8');
 
       const state = await ws.getOutputState('review');
       expect(state).toBe('modified since publish');
@@ -916,8 +916,8 @@ describe('ReviewOrchestrator', () => {
       const result = await orchestrator.prepare('!42', 'group/project');
 
       expect(result.bundleState.outputs).toBeDefined();
-      expect(result.bundleState.outputs.summary.path).toBe('.revkit/outputs/summary.md');
-      expect(result.bundleState.outputs.review.path).toBe('.revkit/outputs/review.md');
+      expect(result.bundleState.outputs.summary.path).toBe('.revpack/outputs/summary.md');
+      expect(result.bundleState.outputs.review.path).toBe('.revpack/outputs/review.md');
     });
   });
 
@@ -958,9 +958,9 @@ describe('ReviewOrchestrator', () => {
       expect(result.threadsChanged).toBeNull();
       expect(result.descriptionChanged).toBeNull();
 
-      // CONTEXT.md should say "No previous revkit review checkpoint"
-      const contextMd = await fs.readFile(path.join(tmpDir, '.revkit', 'CONTEXT.md'), 'utf-8');
-      expect(contextMd).toContain('No previous revkit review checkpoint');
+      // CONTEXT.md should say "No previous revpack review checkpoint"
+      const contextMd = await fs.readFile(path.join(tmpDir, '.revpack', 'CONTEXT.md'), 'utf-8');
+      expect(contextMd).toContain('No previous revpack review checkpoint');
       expect(contextMd).toContain('Treat this as a fresh review');
     });
 
@@ -990,7 +990,7 @@ describe('ReviewOrchestrator', () => {
       expect(result.threadsChanged).toBe(true); // digests differ
 
       // CONTEXT.md should reference checkpoint
-      const contextMd = await fs.readFile(path.join(tmpDir, '.revkit', 'CONTEXT.md'), 'utf-8');
+      const contextMd = await fs.readFile(path.join(tmpDir, '.revpack', 'CONTEXT.md'), 'utf-8');
       expect(contextMd).toContain('Review Checkpoint Summary');
       expect(contextMd).toContain('Last review checkpoint');
       expect(contextMd).toContain('old-head-sha');
@@ -1080,7 +1080,7 @@ describe('ReviewOrchestrator', () => {
 
       // The visible note should NOT contain hidden checkpoint state
       const noteBody = (mockProvider.createNote as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      expect(noteBody).not.toContain('<!-- revkit:state');
+      expect(noteBody).not.toContain('<!-- revpack:state');
       expect(noteBody).toContain(REVIEW_NOTE_MARKER);
     });
 
@@ -1096,7 +1096,7 @@ describe('ReviewOrchestrator', () => {
       // updateDescription should have been called with the state block
       expect(mockProvider.updateDescription).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
-        expect.stringContaining('<!-- revkit:state'),
+        expect.stringContaining('<!-- revpack:state'),
       );
 
       // Parse the description to verify the state
@@ -1122,7 +1122,7 @@ describe('ReviewOrchestrator', () => {
       // But description state block was advanced
       expect(mockProvider.updateDescription).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
-        expect.stringContaining('<!-- revkit:state'),
+        expect.stringContaining('<!-- revpack:state'),
       );
     });
 
@@ -1136,16 +1136,16 @@ describe('ReviewOrchestrator', () => {
       await orchestrator.publishReview('Some review body text.', 'group/project');
 
       const noteBody = (mockProvider.createNote as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      expect(noteBody).not.toContain('<!-- revkit:state');
+      expect(noteBody).not.toContain('<!-- revpack:state');
       expect(noteBody).toContain('Some review body text.');
-      expect(noteBody).toContain('Generated by revkit');
+      expect(noteBody).toContain('Generated by revpack');
     });
   });
 
   // ─── State recovery tests ─────────────────────────────
 
   describe('state recovery', () => {
-    it('reconstructs checkpoint from description state after deleting .revkit/', async () => {
+    it('reconstructs checkpoint from description state after deleting .revpack/', async () => {
       const checkpointState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', 'sha256:old-threads', 'v1');
       const descriptionWithState = patchDescriptionWithState('Original description.', checkpointState);
 
@@ -1160,8 +1160,8 @@ describe('ReviewOrchestrator', () => {
       expect(first.hasCheckpoint).toBe(true);
       expect(first.targetCodeChanged).toBe(true); // old-head != bbb
 
-      // Delete .revkit/
-      await fs.rm(path.join(tmpDir, '.revkit'), { recursive: true, force: true });
+      // Delete .revpack/
+      await fs.rm(path.join(tmpDir, '.revpack'), { recursive: true, force: true });
 
       // Second prepare — reconstructs state from description
       const second = await orchestrator.prepare('!42', 'group/project');
@@ -1170,7 +1170,7 @@ describe('ReviewOrchestrator', () => {
       expect(second.mode).toBe('fresh'); // no local bundle → fresh mode
 
       // Context should still reference the checkpoint
-      const contextMd = await fs.readFile(path.join(tmpDir, '.revkit', 'CONTEXT.md'), 'utf-8');
+      const contextMd = await fs.readFile(path.join(tmpDir, '.revpack', 'CONTEXT.md'), 'utf-8');
       expect(contextMd).toContain('Review Checkpoint Summary');
       expect(contextMd).toContain('old-head');
     });

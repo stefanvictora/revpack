@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import { resolveProfile, loadDisplayConfig, loadRuntimeConfig, runDoctor, loadFileConfig } from './index.js';
-import type { RevkitConfig } from './types.js';
+import type { RevpackConfig } from './types.js';
 
 // Mock fs
 vi.mock('node:fs/promises');
 
 const mockFs = vi.mocked(fs);
 
-function writeConfig(config: RevkitConfig): void {
+function writeConfig(config: RevpackConfig): void {
   mockFs.readFile.mockResolvedValue(JSON.stringify(config));
 }
 
@@ -24,7 +24,7 @@ describe('loadFileConfig', () => {
   });
 
   it('parses valid config', async () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: { provider: 'gitlab', url: 'https://gitlab.work.com', tokenEnv: 'GL_TOKEN' },
       },
@@ -47,7 +47,7 @@ describe('loadFileConfig', () => {
 
 describe('resolveProfile', () => {
   it('resolves by explicit name', () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
       },
@@ -58,7 +58,7 @@ describe('resolveProfile', () => {
   });
 
   it('resolves by URL-derived remote match', () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
       },
@@ -71,7 +71,7 @@ describe('resolveProfile', () => {
   });
 
   it('resolves by remotePatterns match', () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         custom: { provider: 'github', remotePatterns: ['custom-host'] },
       },
@@ -82,7 +82,7 @@ describe('resolveProfile', () => {
   });
 
   it('explicit takes priority over remote-match', () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
         oss: { provider: 'github', url: 'https://github.com' },
@@ -94,14 +94,14 @@ describe('resolveProfile', () => {
   });
 
   it('throws when no match', () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: { work: { provider: 'gitlab', url: 'https://gitlab.work.com' } },
     };
     expect(() => resolveProfile(config, ['git@other.com:team/repo.git'])).toThrow(/No profile matched/);
   });
 
   it('throws for explicit profile that does not exist', () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: { work: { provider: 'gitlab' } },
     };
     expect(() => resolveProfile(config, [], 'missing')).toThrow(/not found/);
@@ -118,7 +118,7 @@ describe('loadRuntimeConfig', () => {
   });
 
   it('resolves profile and token', async () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: {
           provider: 'gitlab',
@@ -138,7 +138,7 @@ describe('loadRuntimeConfig', () => {
   });
 
   it('handles missing token env gracefully', async () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: { provider: 'gitlab', url: 'https://gitlab.work.com', tokenEnv: 'TEST_TOKEN' },
       },
@@ -151,7 +151,7 @@ describe('loadRuntimeConfig', () => {
   });
 
   it('respects tlsVerify false', async () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         insecure: { provider: 'gitlab', tlsVerify: false, remotePatterns: ['insecure.com'] },
       },
@@ -172,7 +172,7 @@ describe('loadDisplayConfig', () => {
   });
 
   it('includes match information for remote-match', async () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: {
           provider: 'gitlab',
@@ -193,7 +193,7 @@ describe('loadDisplayConfig', () => {
   });
 
   it('includes explicit match info', async () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: {
           provider: 'gitlab',
@@ -221,7 +221,7 @@ describe('runDoctor', () => {
   });
 
   it('reports healthy config', async () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: {
           provider: 'gitlab',
@@ -241,7 +241,7 @@ describe('runDoctor', () => {
   });
 
   it('reports when token env is not set', async () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: {
           provider: 'gitlab',
@@ -260,7 +260,7 @@ describe('runDoctor', () => {
   });
 
   it('reports when no profile matches', async () => {
-    const config: RevkitConfig = {
+    const config: RevpackConfig = {
       profiles: {
         work: { provider: 'gitlab', url: 'https://gitlab.work.com', tokenEnv: 'DOC_TOKEN' },
       },

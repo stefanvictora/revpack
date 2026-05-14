@@ -118,7 +118,7 @@ export async function runSetup(opts: { cwd: string; prompts?: boolean; dryRun?: 
     if (!opts.prompts) {
       console.log(chalk.dim('  Tip: run with --prompts to also install Copilot Chat prompt files'));
     }
-    console.log(chalk.dim('  Then run `revkit prepare` to prepare a review bundle.'));
+    console.log(chalk.dim('  Then run `revpack prepare` to prepare a review bundle.'));
   }
 }
 

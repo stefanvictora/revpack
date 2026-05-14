@@ -1,4 +1,4 @@
-// Configuration types for revkit.
+// Configuration types for revpack.
 // Profile-only config model. No flat config, no default profile, no default repository.
 
 // ─── Provider Type ───────────────────────────────────────
@@ -7,7 +7,7 @@ export type ProviderType = 'gitlab' | 'github';
 
 // ─── Profile Config ──────────────────────────────────────
 
-export interface RevkitProfile {
+export interface RevpackProfile {
   provider: ProviderType;
   url?: string;
   tokenEnv?: string;
@@ -19,8 +19,8 @@ export interface RevkitProfile {
 
 // ─── File Config ─────────────────────────────────────────
 
-export interface RevkitConfig {
-  profiles?: Record<string, RevkitProfile>;
+export interface RevpackConfig {
+  profiles?: Record<string, RevpackProfile>;
 }
 
 // ─── Runtime Config (resolved at runtime) ────────────────
@@ -37,7 +37,7 @@ export interface ResolvedAppConfig {
 // ─── Profile Resolution Result ───────────────────────────
 
 export interface ProfileResolutionResult {
-  profile: RevkitProfile;
+  profile: RevpackProfile;
   profileName: string;
   matchedBy: 'explicit' | 'remote-match';
   matchedPattern?: string;

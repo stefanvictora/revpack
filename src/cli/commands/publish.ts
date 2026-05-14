@@ -13,11 +13,11 @@ import { buildFindingHeader } from '../../workspace/finding-formatter.js';
 
 export { mergeWithMarkers, MARKER_START, MARKER_END };
 
-const DEFAULT_REPLIES_FILE = '.revkit/outputs/replies.json';
-const DEFAULT_FINDINGS_FILE = '.revkit/outputs/new-findings.json';
-const DEFAULT_REVIEW_FILE = '.revkit/outputs/review.md';
-const DEFAULT_SUMMARY_FILE = '.revkit/outputs/summary.md';
-const DEFAULT_LATEST_PATCH_FILE = '.revkit/diffs/latest.patch';
+const DEFAULT_REPLIES_FILE = '.revpack/outputs/replies.json';
+const DEFAULT_FINDINGS_FILE = '.revpack/outputs/new-findings.json';
+const DEFAULT_REVIEW_FILE = '.revpack/outputs/review.md';
+const DEFAULT_SUMMARY_FILE = '.revpack/outputs/summary.md';
+const DEFAULT_LATEST_PATCH_FILE = '.revpack/diffs/latest.patch';
 
 function workspacePath(filePath: string): string {
   return path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
@@ -213,7 +213,7 @@ async function loadAndValidateFindings(filePath: string): Promise<{ findings: Ne
   } catch {
     throw new Error(
       `Cannot validate findings: ${patchPath} not found.\n` +
-        `Run \`revkit prepare\` first to generate the diff bundle.`,
+        `Run \`revpack prepare\` first to generate the diff bundle.`,
     );
   }
 
@@ -311,7 +311,7 @@ async function publishDescription(opts: {
     try {
       content = await fs.readFile(workspacePath(DEFAULT_SUMMARY_FILE), 'utf-8');
     } catch {
-      console.error(chalk.red('No summary found. Run `revkit prepare` first.'));
+      console.error(chalk.red('No summary found. Run `revpack prepare` first.'));
       process.exit(1);
     }
   } else {
@@ -458,11 +458,11 @@ export function registerPublishCommand(program: Command): void {
   publish.action(() => {
     console.log(chalk.yellow('Please specify what to publish:'));
     console.log('');
-    console.log('  revkit publish all           Publish everything pending');
-    console.log('  revkit publish findings      Publish findings only');
-    console.log('  revkit publish replies       Publish replies only');
-    console.log('  revkit publish description   Update MR description');
-    console.log('  revkit publish review        Publish review.md if non-empty and advance checkpoint');
+    console.log('  revpack publish all           Publish everything pending');
+    console.log('  revpack publish findings      Publish findings only');
+    console.log('  revpack publish replies       Publish replies only');
+    console.log('  revpack publish description   Update MR description');
+    console.log('  revpack publish review        Publish review.md if non-empty and advance checkpoint');
     process.exit(1);
   });
 
@@ -602,7 +602,7 @@ export function registerPublishCommand(program: Command): void {
   // ── publish description ────────────────────────────────────
   publish
     .command('description')
-    .description('Update the MR/PR description with a revkit section')
+    .description('Update the MR/PR description with a revpack section')
     .option('--from <file>', 'Read content from a file')
     .option('--from-summary', 'Use the generated summary.md')
     .option('--replace', 'Replace entire description')

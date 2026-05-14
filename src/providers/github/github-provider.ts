@@ -487,7 +487,7 @@ export class GitHubProvider implements ReviewProvider {
   }
 
   private detectOrigin(body: string, login?: string): CommentOrigin {
-    if (body.startsWith('<!-- revkit')) return 'bot';
+    if (body.startsWith('<!-- revpack')) return 'bot';
     const normalized = login?.toLowerCase() ?? '';
     if (normalized.includes('[bot]') || normalized.includes('bot')) return 'bot';
     return 'human';

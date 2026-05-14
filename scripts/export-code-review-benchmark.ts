@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Export locally produced revkit findings into a Martian code-review-benchmark
+ * Export locally produced revpack findings into a Martian code-review-benchmark
  * compatible benchmark_data JSON file.
  *
  * Usage:
@@ -48,14 +48,14 @@ function parseArgs(): CliOptions {
   const program = new Command();
   program
     .name('export-code-review-benchmark')
-    .description('Export revkit findings into a Martian code-review-benchmark data file')
+    .description('Export revpack findings into a Martian code-review-benchmark data file')
     .requiredOption('--benchmark-data <path>', 'Path to the Martian benchmark data JSON')
-    .option('--workspace <repo-root>', 'Export a single prepared revkit workspace')
+    .option('--workspace <repo-root>', 'Export a single prepared revpack workspace')
     .option('--workspace-root <parent-dir>', 'Batch export immediate child prepared workspaces')
-    .option('--tool <name>', 'Benchmark tool identity', 'revkit')
+    .option('--tool <name>', 'Benchmark tool identity', 'revpack')
     .option(
       '--include-tools <names>',
-      'Comma-separated list of other tool names from the benchmark data to include alongside revkit (e.g. "coderabbit,cubic-dev")',
+      'Comma-separated list of other tool names from the benchmark data to include alongside revpack (e.g. "coderabbit,cubic-dev")',
       (val: string) =>
         val
           .split(',')
@@ -96,7 +96,7 @@ async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
 // ─── Bundle reading ───────────────────────────────────────
 
 async function readBundle(workspace: PreparedWorkspace): Promise<BundleState> {
-  const bundlePath = path.join(workspace.root, '.revkit', 'bundle.json');
+  const bundlePath = path.join(workspace.root, '.revpack', 'bundle.json');
   return readJsonFile<BundleState>(bundlePath, 'bundle.json');
 }
 
@@ -137,10 +137,10 @@ async function resolveWorkspaces(opts: CliOptions): Promise<{ workspaces: Prepar
 
   if (opts.workspace) {
     const workspaceRoot = path.resolve(opts.workspace);
-    const bundlePath = path.join(workspaceRoot, '.revkit', 'bundle.json');
+    const bundlePath = path.join(workspaceRoot, '.revpack', 'bundle.json');
     if (!fss.existsSync(bundlePath)) {
       throw new Error(
-        `"${workspaceRoot}" does not appear to be a prepared revkit workspace (missing .revkit/bundle.json).`,
+        `"${workspaceRoot}" does not appear to be a prepared revpack workspace (missing .revpack/bundle.json).`,
       );
     }
     return { workspaces: [{ root: workspaceRoot }], mode: 'workspace' };
@@ -150,8 +150,8 @@ async function resolveWorkspaces(opts: CliOptions): Promise<{ workspaces: Prepar
   const workspaces = discoverImmediateChildWorkspaces(workspaceRoot);
   if (workspaces.length === 0) {
     throw new Error(
-      `No prepared revkit workspaces found under "${workspaceRoot}".\n` +
-        `Ensure each workspace directory contains .revkit/bundle.json.`,
+      `No prepared revpack workspaces found under "${workspaceRoot}".\n` +
+        `Ensure each workspace directory contains .revpack/bundle.json.`,
     );
   }
   return { workspaces, mode: 'workspace-root' };
@@ -181,7 +181,7 @@ function printSummary(opts: {
   findingCounts: Map<string, number>;
 }): void {
   console.log('');
-  console.log('Exported revkit benchmark data');
+  console.log('Exported revpack benchmark data');
   console.log(`Tool: ${opts.tool}`);
   if (opts.includeTools.length > 0) {
     console.log(`Included tools: ${opts.includeTools.join(', ')}`);
@@ -253,7 +253,7 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const findingsPath = path.join(workspace.root, '.revkit', 'outputs', 'new-findings.json');
+    const findingsPath = path.join(workspace.root, '.revpack', 'outputs', 'new-findings.json');
     const findingsExists = fss.existsSync(findingsPath);
 
     const classification = classifyWorkspace(bundle, benchmarkIndex, workspace, findingsExists);

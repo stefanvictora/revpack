@@ -1,6 +1,6 @@
 # Thread replies
 
-Use `.revkit/threads/` and the unresolved thread overview in `.revkit/CONTEXT.md`.
+Use `.revpack/threads/` and the unresolved thread overview in `.revpack/CONTEXT.md`.
 
 ## When to reply
 

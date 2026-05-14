@@ -53,7 +53,7 @@ export class WorkspaceManager {
 
   constructor(workingDir: string) {
     this.workingDir = workingDir;
-    this.baseDir = path.join(workingDir, '.revkit');
+    this.baseDir = path.join(workingDir, '.revpack');
   }
 
   get bundlePath(): string {
@@ -163,8 +163,8 @@ export class WorkspaceManager {
         return {
           shortId,
           providerThreadId: t.threadId,
-          file: `.revkit/threads/${shortId}.json`,
-          markdownFile: `.revkit/threads/${shortId}.md`,
+          file: `.revpack/threads/${shortId}.json`,
+          markdownFile: `.revpack/threads/${shortId}.md`,
           resolved: t.resolved,
           resolvable: t.resolvable,
           commentsCount: t.comments.length,
@@ -176,14 +176,14 @@ export class WorkspaceManager {
     return {
       schemaVersion: 2,
       preparedAt: new Date().toISOString(),
-      tool: { name: 'revkit', version: '0.2.0' },
+      tool: { name: 'revpack', version: '0.2.0' },
       target: {
         provider: target.provider,
         repository: target.repository,
         type: target.targetType,
         id: target.targetId,
         title: target.title,
-        descriptionPath: '.revkit/description.md',
+        descriptionPath: '.revpack/description.md',
         author: target.author,
         state: target.state,
         sourceBranch: target.sourceBranch,
@@ -203,24 +203,24 @@ export class WorkspaceManager {
         items: threadItems,
       },
       outputs: previousOutputs ?? {
-        summary: { path: '.revkit/outputs/summary.md' },
-        review: { path: '.revkit/outputs/review.md' },
+        summary: { path: '.revpack/outputs/summary.md' },
+        review: { path: '.revpack/outputs/review.md' },
       },
       publishedActions: previousActions ?? [],
       paths: {
-        context: '.revkit/CONTEXT.md',
-        contract: '.revkit/AGENT_CONTRACT.md',
-        instructions: '.revkit/INSTRUCTIONS.md',
-        instructionsDir: '.revkit/instructions/',
-        description: '.revkit/description.md',
-        latestPatch: '.revkit/diffs/latest.patch',
+        context: '.revpack/CONTEXT.md',
+        contract: '.revpack/AGENT_CONTRACT.md',
+        instructions: '.revpack/INSTRUCTIONS.md',
+        instructionsDir: '.revpack/instructions/',
+        description: '.revpack/description.md',
+        latestPatch: '.revpack/diffs/latest.patch',
         incrementalPatch: prepareSummary.comparison.targetCodeChangedSinceCheckpoint
-          ? '.revkit/diffs/incremental.patch'
+          ? '.revpack/diffs/incremental.patch'
           : null,
-        filesJson: '.revkit/diffs/files.json',
-        lineMapNdjson: '.revkit/diffs/line-map.ndjson',
-        changeBlocks: '.revkit/diffs/change-blocks.json',
-        outputs: '.revkit/outputs',
+        filesJson: '.revpack/diffs/files.json',
+        lineMapNdjson: '.revpack/diffs/line-map.ndjson',
+        changeBlocks: '.revpack/diffs/change-blocks.json',
+        outputs: '.revpack/outputs',
       },
     };
   }
@@ -279,7 +279,7 @@ export class WorkspaceManager {
   }
 
   /**
-   * Remove the entire bundle directory (.revkit/).
+   * Remove the entire bundle directory (.revpack/).
    */
   async removeBundle(): Promise<void> {
     try {
@@ -334,7 +334,7 @@ export class WorkspaceManager {
 
   /**
    * Write the sanitized MR/PR description to description.md.
-   * Strips the hidden revkit state block so agents never see it.
+   * Strips the hidden revpack state block so agents never see it.
    */
   async writeDescription(description: string): Promise<void> {
     const sanitized = sanitizeDescriptionForAgent(description ?? '');
@@ -456,9 +456,9 @@ export class WorkspaceManager {
     };
 
     // Strip the bot-published marker and find the first meaningful line of a comment body.
-    // For revkit findings, skip the severity/category metadata line (e.g. "_🔴 High_ | _security_").
+    // For revpack findings, skip the severity/category metadata line (e.g. "_🔴 High_ | _security_").
     const cleanSnippet = (body: string, maxLen: number): string => {
-      const lines = body.replace(/^\s*<!-- revkit -->\s*\n?/, '').split('\n');
+      const lines = body.replace(/^\s*<!-- revpack -->\s*\n?/, '').split('\n');
       const meaningful = lines.find((l) => {
         const trimmed = l.trim();
         if (!trimmed) return false;
@@ -500,10 +500,10 @@ export class WorkspaceManager {
     lines.push(`| State | ${tableCell(target.state)} |`);
     if (target.webUrl) lines.push(`| URL | ${target.webUrl} |`);
     lines.push('');
-    lines.push('Read `.revkit/AGENT_CONTRACT.md` first. It contains the short mandatory review contract.');
+    lines.push('Read `.revpack/AGENT_CONTRACT.md` first. It contains the short mandatory review contract.');
     lines.push('');
     lines.push(
-      'Then read `.revkit/INSTRUCTIONS.md`. It is an index for task-specific instruction files, not the full review manual.',
+      'Then read `.revpack/INSTRUCTIONS.md`. It is an index for task-specific instruction files, not the full review manual.',
     );
     lines.push('');
     lines.push(
@@ -558,7 +558,7 @@ export class WorkspaceManager {
           lines.push('');
         }
       } else {
-        lines.push('No previous revkit review checkpoint was found for this MR/PR.');
+        lines.push('No previous revpack review checkpoint was found for this MR/PR.');
         lines.push('');
         lines.push('Treat this as a fresh review.');
         lines.push('');
@@ -569,30 +569,30 @@ export class WorkspaceManager {
     lines.push('## Suggested Reading Order');
     lines.push('');
     lines.push('1. Read this context file.');
-    lines.push('2. Read `.revkit/AGENT_CONTRACT.md`.');
-    lines.push('3. Read `.revkit/INSTRUCTIONS.md` as the instruction index.');
+    lines.push('2. Read `.revpack/AGENT_CONTRACT.md`.');
+    lines.push('3. Read `.revpack/INSTRUCTIONS.md` as the instruction index.');
     lines.push('4. Read the files listed in **Required Instructions for This Run**.');
     lines.push('5. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
-    lines.push('6. Read relevant unresolved thread files in `.revkit/threads/`.');
+    lines.push('6. Read relevant unresolved thread files in `.revpack/threads/`.');
     lines.push(
-      '7. Use `.revkit/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
+      '7. Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
     );
     if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
       lines.push(
-        '8. Read `.revkit/diffs/incremental.patch` first to understand what changed since the last checkpoint, then use `.revkit/diffs/latest.patch` for full MR/PR context.',
+        '8. Read `.revpack/diffs/incremental.patch` first to understand what changed since the last checkpoint, then use `.revpack/diffs/latest.patch` for full MR/PR context.',
       );
     } else {
-      lines.push('8. Use `.revkit/diffs/latest.patch` for the overall change and cross-file context.');
+      lines.push('8. Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.');
     }
-    lines.push('9. Use `.revkit/diffs/patches/by-file/` for focused review of individual changed files.');
+    lines.push('9. Use `.revpack/diffs/patches/by-file/` for focused review of individual changed files.');
     lines.push(
-      '10. Use `.revkit/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
+      '10. Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
     );
     lines.push(
-      '11. Use `.revkit/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
+      '11. Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
     );
     lines.push('12. Inspect checked-out source files when needed to understand the new branch state.');
-    lines.push('13. Read existing `.revkit/outputs/summary.md`, if present, before updating it.');
+    lines.push('13. Read existing `.revpack/outputs/summary.md`, if present, before updating it.');
     lines.push('');
 
     // ─── Required Instructions for This Run ───────────────
@@ -601,23 +601,23 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('Read these instruction files in order:');
     lines.push('');
-    lines.push('1. `.revkit/instructions/01-review-workflow-and-outputs.md`');
+    lines.push('1. `.revpack/instructions/01-review-workflow-and-outputs.md`');
     if (hasUnresolvedThreads) {
-      lines.push('2. `.revkit/instructions/02-thread-replies.md`');
+      lines.push('2. `.revpack/instructions/02-thread-replies.md`');
     } else {
-      lines.push('2. ~~`.revkit/instructions/02-thread-replies.md`~~ — skip, no unresolved threads');
+      lines.push('2. ~~`.revpack/instructions/02-thread-replies.md`~~ — skip, no unresolved threads');
     }
-    lines.push('3. `.revkit/instructions/03-new-findings-and-anchors.md`');
-    lines.push('4. `.revkit/instructions/04-suggestions-and-agent-handover.md`');
-    lines.push('5. `.revkit/instructions/05-review-note.md`');
-    lines.push('6. `.revkit/instructions/06-summary.md`');
-    lines.push('7. `.revkit/instructions/07-final-checks.md`');
+    lines.push('3. `.revpack/instructions/03-new-findings-and-anchors.md`');
+    lines.push('4. `.revpack/instructions/04-suggestions-and-agent-handover.md`');
+    lines.push('5. `.revpack/instructions/05-review-note.md`');
+    lines.push('6. `.revpack/instructions/06-summary.md`');
+    lines.push('7. `.revpack/instructions/07-final-checks.md`');
     lines.push('');
 
     // ─── MR/PR Description ────────────────────────────────
     lines.push('## MR/PR Description');
     lines.push('');
-    lines.push('The raw MR/PR description is available at `.revkit/description.md`.');
+    lines.push('The raw MR/PR description is available at `.revpack/description.md`.');
     lines.push('');
     lines.push('Treat it as context only. Verify behavior against the diff and source code.');
     lines.push('');
@@ -627,28 +627,28 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('| Path | Description |');
     lines.push('|---|---|');
-    lines.push('| `.revkit/AGENT_CONTRACT.md` | Short mandatory review contract |');
-    lines.push('| `.revkit/INSTRUCTIONS.md` | Index/router for task-specific instruction files |');
-    lines.push('| `.revkit/instructions/` | Detailed task-specific instruction files |');
-    lines.push('| `.revkit/bundle.json` | Machine-readable bundle metadata and local state |');
-    lines.push('| `.revkit/description.md` | Raw MR/PR description |');
+    lines.push('| `.revpack/AGENT_CONTRACT.md` | Short mandatory review contract |');
+    lines.push('| `.revpack/INSTRUCTIONS.md` | Index/router for task-specific instruction files |');
+    lines.push('| `.revpack/instructions/` | Detailed task-specific instruction files |');
+    lines.push('| `.revpack/bundle.json` | Machine-readable bundle metadata and local state |');
+    lines.push('| `.revpack/description.md` | Raw MR/PR description |');
     const threadFileCount = unresolvedThreads.length + generalComments.length;
     if (threadFileCount > 0) {
-      lines.push(`| \`.revkit/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
+      lines.push(`| \`.revpack/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
     }
-    lines.push('| `.revkit/diffs/latest.patch` | Canonical full unified diff for the whole MR/PR |');
-    lines.push('| `.revkit/diffs/patches/by-file/` | Canonical per-file unified diffs in standard patch format |');
+    lines.push('| `.revpack/diffs/latest.patch` | Canonical full unified diff for the whole MR/PR |');
+    lines.push('| `.revpack/diffs/patches/by-file/` | Canonical per-file unified diffs in standard patch format |');
     lines.push(
-      '| `.revkit/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and diff artifact paths |',
+      '| `.revpack/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and diff artifact paths |',
     );
-    lines.push('| `.revkit/diffs/line-map.ndjson` | Canonical per-line map for valid positional review anchors |');
+    lines.push('| `.revpack/diffs/line-map.ndjson` | Canonical per-line map for valid positional review anchors |');
     lines.push(
-      '| `.revkit/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |',
+      '| `.revpack/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |',
     );
     if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
-      lines.push('| `.revkit/diffs/incremental.patch` | Code changes since last review checkpoint |');
+      lines.push('| `.revpack/diffs/incremental.patch` | Code changes since last review checkpoint |');
     }
-    lines.push('| `.revkit/outputs/` | Agent output files |');
+    lines.push('| `.revpack/outputs/` | Agent output files |');
     lines.push('');
 
     // ─── Changed Files ────────────────────────────────────
@@ -729,7 +729,7 @@ export class WorkspaceManager {
     if (options?.publishedActions && options.publishedActions.length > 0) {
       lines.push('## Previous Actions');
       lines.push('');
-      lines.push('These actions were published by `revkit` in prior iterations. Do not re-raise the same issues.');
+      lines.push('These actions were published by `revpack` in prior iterations. Do not re-raise the same issues.');
       lines.push('');
       lines.push('| Action | Location | Severity | Category | Title |');
       lines.push('|---|---|---|---|---|');

@@ -1,6 +1,8 @@
-# revkit
+# revpack
 
-CLI toolkit for agent-assisted code reviews — prepare MR/PR context, manage review threads, and publish structured feedback.
+AI-ready review bundles for GitHub and GitLab.
+
+`revpack` prepares structured PR/MR context for coding agents and publishes their review outputs back as comments, replies, summaries, and review notes.
 
 ## Setup
 
@@ -11,46 +13,46 @@ npm run build
 
 ### Configuration
 
-revkit uses a **profiles** system. Each profile targets one provider instance (GitLab self-hosted, GitHub, etc.) and is matched automatically from the current git remote.
+revpack uses a **profiles** system. Each profile targets one provider instance (GitLab self-hosted, GitHub, etc.) and is matched automatically from the current git remote.
 
 The quickest way to create a profile is the interactive setup wizard:
 
 ```bash
-revkit config setup
+revpack config setup
 ```
 
-This detects your git remote, pre-fills the provider URL and suggested defaults, and writes a named profile to `~/.config/revkit/config.json`.
+This detects your git remote, pre-fills the provider URL and suggested defaults, and writes a named profile to `~/.config/revpack/config.json`.
 
 After setup, set the token environment variable it configured:
 
 ```bash
 # GitLab
-export REVKIT_GITLAB_TOKEN=glpat-xxxxxxxxxxxx
+export REVPACK_GITLAB_TOKEN=glpat-xxxxxxxxxxxx
 
 # GitHub
-export REVKIT_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+export REVPACK_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 ```
 
 Then verify:
 
 ```bash
-revkit config doctor
+revpack config doctor
 ```
 
 ## Quick Start
 
 ```bash
 # Optional: add project-specific review guidance and Copilot prompts
-revkit setup --prompts
+revpack setup --prompts
 
 # Prepare a review bundle for the MR/PR of the current branch
-revkit prepare
+revpack prepare
 ```
 
 Then ask your agent to follow:
 
 ```text
-.revkit/CONTEXT.md
+.revpack/CONTEXT.md
 ```
 
 or:
@@ -62,67 +64,67 @@ or:
 The agent writes outputs to:
 
 ```text
-.revkit/outputs/
+.revpack/outputs/
 ```
 
 Check pending outputs:
 
 ```bash
-revkit status
+revpack status
 ```
 
 Publish outputs:
 
 ```bash
-revkit publish all
+revpack publish all
 ```
 
 Optional: Publish only selected outputs:
 
 ```bash
-revkit publish findings
-revkit publish replies
-revkit publish description --from-summary
-revkit publish review    # also advances the review checkpoint (for incremental reviews). Must be last.
+revpack publish findings
+revpack publish replies
+revpack publish description --from-summary
+revpack publish review    # also advances the review checkpoint (for incremental reviews). Must be last.
 ```
 
 After new commits or new comments:
 
 ```bash
-revkit prepare
+revpack prepare
 ```
 
-To discard local revkit state (`.revkit` folder):
+To discard local revpack state (`.revpack` folder):
 
 ```bash
-revkit clean
+revpack clean
 ```
 
 ### Working on an MR/PR not checked out locally
 
 ```bash
-revkit checkout https://gitlab.example.com/group/project/-/merge_requests/42
-revkit prepare
+revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42
+revpack prepare
 ```
 
 Convenience:
 
 ```bash
-revkit checkout https://gitlab.example.com/group/project/-/merge_requests/42 --prepare
+revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42 --prepare
 ```
 
 Alternative:
 
 ```bash
-revkit checkout !42 --repo group/project --profile myGitlab
-revkit checkout 58 --repo user/project --profile myGithub
+revpack checkout !42 --repo group/project --profile myGitlab
+revpack checkout 58 --repo user/project --profile myGithub
 ```
 
 ## Commands
 
 ### `prepare [ref]` — Primary workflow
 
-Fetches MR metadata, threads, diffs, and writes the `.revkit/` bundle with a `CONTEXT.md` entry point for agents.
+Fetches MR metadata, threads, diffs, and writes the `.revpack/` bundle with a `CONTEXT.md` entry point for agents.
 
 Re-running on the same MR automatically produces a **refresh** (detects code and thread changes since the last prepare). Thread IDs (T-001, T-002, ...) are derived from position in the provider's all-threads list (creation order), so they stay stable as long as existing threads aren't deleted.
 
@@ -131,19 +133,19 @@ Re-running on the same MR automatically produces a **refresh** (detects code and
 **Branch mismatch safety**: If a bundle exists but the current git branch doesn't match the MR's source branch, `prepare` refuses to proceed and tells you to run `clean` or switch branches.
 
 ```bash
-revkit prepare                             # auto-detect from branch (or refresh existing bundle)
-revkit prepare !42                         # first prepare (fresh)
-revkit prepare --fresh                     # discard bundle, start fresh
-revkit prepare --discard-outputs           # clear output files before preparing
-revkit prepare !42 --json
+revpack prepare                             # auto-detect from branch (or refresh existing bundle)
+revpack prepare !42                         # first prepare (fresh)
+revpack prepare --fresh                     # discard bundle, start fresh
+revpack prepare --discard-outputs           # clear output files before preparing
+revpack prepare !42 --json
 ```
 
 Output shows MR state (opened/merged/closed), prepare mode (fresh/refresh), code/thread change summary, and bundle path.
 
-Creates `.revkit/`:
+Creates `.revpack/`:
 
 ```
-.revkit/
+.revpack/
   CONTEXT.md              ← agent entry point (start here)
   INSTRUCTIONS.md         ← stable review workflow and output format rules
   bundle.json             ← machine-readable bundle metadata and state
@@ -172,24 +174,24 @@ Outside a git repo: performs a shallow clone into a new directory (named after t
 Does **not** prepare by default. Use `--prepare` to combine checkout and prepare in one command.
 
 ```bash
-revkit checkout !42                        # fetch + switch
-revkit checkout !42 --prepare              # fetch + switch + prepare
-revkit checkout !42 --setup                # fetch + switch + prepare + setup
+revpack checkout !42                        # fetch + switch
+revpack checkout !42 --prepare              # fetch + switch + prepare
+revpack checkout !42 --setup                # fetch + switch + prepare + setup
 
-revkit checkout !42 --repo group/project --profile myprofile                  # clone when not in a git repo
-revkit checkout https://gitlab.example.com/group/project/-/merge_requests/42  # direct URL, detects profile automatically
+revpack checkout !42 --repo group/project --profile myprofile                  # clone when not in a git repo
+revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42  # direct URL, detects profile automatically
 ```
 
-By default, `checkout` clones over HTTPS. If your server requires SSH, set `sshClone: true` in the profile (`revkit config setup` will ask, or `revkit config set sshClone true`). SSH agent key loading is handled by Git as normal — if your key needs a passphrase and no agent is running, Git will prompt you in the terminal.
+By default, `checkout` clones over HTTPS. If your server requires SSH, set `sshClone: true` in the profile (`revpack config setup` will ask, or `revpack config set sshClone true`). SSH agent key loading is handled by Git as normal — if your key needs a passphrase and no agent is running, Git will prompt you in the terminal.
 
 ### `status [ref]` — View MR/PR status
 
 Shows MR state, author, branches, dates, labels, URL, prepare summary (mode, code/thread changes), pending outputs, and published actions. Reads from `bundle.json` when available, falls back to provider API fetch.
 
 ```bash
-revkit status                              # show bundle's MR status
-revkit status !42
-revkit status !42 --json
+revpack status                              # show bundle's MR status
+revpack status !42
+revpack status !42 --json
 ```
 
 ### `publish` — Publish outputs to the MR/PR
@@ -197,82 +199,82 @@ revkit status !42 --json
 Publishes pending replies, findings, description updates, and review notes. After publishing, automatically refreshes the bundle to pick up the new comments.
 
 ```bash
-revkit publish all                              # publish everything pending
-revkit publish all --no-refresh                 # skip auto-refresh after publishing
-revkit publish replies                          # publish all from replies.json
-revkit publish replies T-001                    # publish one thread
-revkit publish replies T-001 --body "Fixed!"    # inline reply
-revkit publish replies T-001 --resolve          # reply and resolve
-revkit publish findings                         # publish new findings
-revkit publish findings --dry-run               # preview without posting
-revkit publish description --from-summary       # update MR description
-revkit publish description --from custom.md     # use any file
-revkit publish description --from-summary --replace  # replace entire description
-revkit publish review                           # publish review.md if non-empty and advance checkpoint
+revpack publish all                              # publish everything pending
+revpack publish all --no-refresh                 # skip auto-refresh after publishing
+revpack publish replies                          # publish all from replies.json
+revpack publish replies T-001                    # publish one thread
+revpack publish replies T-001 --body "Fixed!"    # inline reply
+revpack publish replies T-001 --resolve          # reply and resolve
+revpack publish findings                         # publish new findings
+revpack publish findings --dry-run               # preview without posting
+revpack publish description --from-summary       # update MR description
+revpack publish description --from custom.md     # use any file
+revpack publish description --from-summary --replace  # replace entire description
+revpack publish review                           # publish review.md if non-empty and advance checkpoint
 ```
 
-### `clean` — Remove local revkit state
+### `clean` — Remove local revpack state
 
-Deletes the `.revkit/` directory. The directory is disposable local state — run `prepare` to create a fresh bundle.
+Deletes the `.revpack/` directory. The directory is disposable local state — run `prepare` to create a fresh bundle.
 
 ```bash
-revkit clean
+revpack clean
 ```
 
-### `setup` — Set up a project for revkit
+### `setup` — Set up a project for revpack
 
 Creates a `REVIEW.md` file in the repository root for project-specific review guidance.
 
 ```bash
-revkit setup             # creates REVIEW.md
-revkit setup --prompts   # also creates .github/prompts/ with Copilot prompts
-revkit setup --dry-run   # preview without writing
+revpack setup             # creates REVIEW.md
+revpack setup --prompts   # also creates .github/prompts/ with Copilot prompts
+revpack setup --dry-run   # preview without writing
 ```
 
 ### `config` — Manage configuration
 
-Configuration is stored in `~/.config/revkit/config.json` as named profiles. Each profile holds a provider type, base URL, token env var, and remote match patterns used to auto-select the right profile per repository.
+Configuration is stored in `~/.config/revpack/config.json` as named profiles. Each profile holds a provider type, base URL, token env var, and remote match patterns used to auto-select the right profile per repository.
 
 ```bash
 # Interactive setup — detects git remote, pre-fills suggested values
-revkit config setup
+revpack config setup
 
 # Show resolved config for the current directory
-revkit config show
-revkit config show --profile myprofile
-revkit config show --sources          # show where each value comes from
+revpack config show
+revpack config show --profile myprofile
+revpack config show --sources          # show where each value comes from
 
 # Get / set / unset individual keys on a profile
-revkit config get <key>
-revkit config set <key> <value>
-revkit config unset <key>
+revpack config get <key>
+revpack config set <key> <value>
+revpack config unset <key>
 # --profile <name>  target a specific profile
 # --current         resolve profile from current git remote
 
 # Profile management
-revkit config profile list
-revkit config profile show <name>
-revkit config profile create <name>
-revkit config profile delete <name>
-revkit config profile rename <old> <new>
+revpack config profile list
+revpack config profile show <name>
+revpack config profile create <name>
+revpack config profile delete <name>
+revpack config profile rename <old> <new>
 
 # Health check
-revkit config doctor
-revkit config doctor --profile myprofile
+revpack config doctor
+revpack config doctor --profile myprofile
 ```
 
 Configurable keys: `provider`, `url`, `tokenEnv`, `remotePatterns`, `caFile`, `tlsVerify`, `sshClone`.
 
 ## Benchmark Export
 
-The `eval:export-code-review-benchmark` script exports locally produced revkit findings into a [Martian code-review-benchmark](https://github.com/MartianLabs/code-review-benchmark) compatible `benchmark_data.json` file.
+The `eval:export-code-review-benchmark` script exports locally produced revpack findings into a [Martian code-review-benchmark](https://github.com/MartianLabs/code-review-benchmark) compatible `benchmark_data.json` file.
 
-The script is an **exporter only** — it does not checkout PRs, run `revkit prepare`, invoke a review agent, or publish comments.
+The script is an **exporter only** — it does not checkout PRs, run `revpack prepare`, invoke a review agent, or publish comments.
 
 ### Intended workflow
 
 ```text
-1. Checkout and prepare benchmark PRs locally with revkit.
+1. Checkout and prepare benchmark PRs locally with revpack.
 2. Run your review agent manually for each prepared workspace.
 3. Export all reviewed workspaces into a slim benchmark data file.
 4. Run the Martian benchmark scripts separately with --tool <tool>.
@@ -280,11 +282,11 @@ The script is an **exporter only** — it does not checkout PRs, run `revkit pre
 
 ### Prerequisites
 
-Each workspace must be a prepared revkit workspace with:
+Each workspace must be a prepared revpack workspace with:
 
 ```
-<workspace>/.revkit/bundle.json
-<workspace>/.revkit/outputs/new-findings.json
+<workspace>/.revpack/bundle.json
+<workspace>/.revpack/outputs/new-findings.json
 ```
 
 ### Usage
@@ -300,12 +302,12 @@ npm run eval:export-code-review-benchmark -- \
 
 - `--benchmark-data <path>` — Path to the Martian benchmark data JSON file.
 - Exactly one of:
-  - `--workspace <repo-root>` — Export a single prepared revkit workspace.
-  - `--workspace-root <parent-dir>` — Batch export all immediate child directories that are prepared revkit workspaces.
+  - `--workspace <repo-root>` — Export a single prepared revpack workspace.
+  - `--workspace-root <parent-dir>` — Batch export all immediate child directories that are prepared revpack workspaces.
 
 **Optional:**
 
-- `--tool <name>` — Tool identity written into the benchmark output. Default: `revkit`.
+- `--tool <name>` — Tool identity written into the benchmark output. Default: `revpack`.
 
 ### Examples
 
@@ -314,7 +316,7 @@ Export a single workspace:
 ```bash
 npm run eval:export-code-review-benchmark -- \
   --benchmark-data ../code-review-benchmark/offline/results/benchmark_data.json \
-  --workspace ../revkit-benchmark-workspaces/cal.com-pr-10600
+  --workspace ../revpack-benchmark-workspaces/cal.com-pr-10600
 ```
 
 Batch export all workspaces under a parent directory:
@@ -322,7 +324,7 @@ Batch export all workspaces under a parent directory:
 ```bash
 npm run eval:export-code-review-benchmark -- \
   --benchmark-data ../code-review-benchmark/offline/results/benchmark_data.json \
-  --workspace-root ../revkit-benchmark-workspaces
+  --workspace-root ../revpack-benchmark-workspaces
 ```
 
 Export under a custom tool name for variant comparison:
@@ -330,8 +332,8 @@ Export under a custom tool name for variant comparison:
 ```bash
 npm run eval:export-code-review-benchmark -- \
   --benchmark-data ../code-review-benchmark/offline/results/benchmark_data.json \
-  --workspace-root ../revkit-benchmark-workspaces \
-  --tool revkit-gpt-5.5
+  --workspace-root ../revpack-benchmark-workspaces \
+  --tool revpack-gpt-5.5
 ```
 
 ### Output
@@ -339,17 +341,17 @@ npm run eval:export-code-review-benchmark -- \
 The output file is written to the same directory as `--benchmark-data`, named after the tool slug:
 
 ```
-benchmark_data.revkit.json
-benchmark_data.revkit-gpt-5-5.json
+benchmark_data.revpack.json
+benchmark_data.revpack-gpt-5-5.json
 ```
 
-The output contains only the benchmark PR entries for which revkit produced a review. Each exported entry preserves all original PR-level metadata and contains exactly one `reviews` entry for the selected tool.
+The output contains only the benchmark PR entries for which revpack produced a review. Each exported entry preserves all original PR-level metadata and contains exactly one `reviews` entry for the selected tool.
 
 Workspaces are skipped (with a warning in the summary) when:
 
 - The bundle target is not a GitHub pull request.
 - The bundle's PR URL does not match any entry in the benchmark data.
-- `.revkit/outputs/new-findings.json` is missing.
+- `.revpack/outputs/new-findings.json` is missing.
 
 The script fails without writing output when arguments are invalid, benchmark data is malformed, zero reviews would be exported, or any matched workspace has corrupt findings.
 
@@ -372,7 +374,7 @@ Five layers:
 - **Prepare, not review** — `prepare` generates/refreshes the bundle; the agent performs the review; `publish` writes results back
 - **Read-first, write-guarded** — No auto-push/auto-post; write operations require explicit commands
 - **bundle.json as canonical state** — Single source of truth for bundle metadata, thread mappings, and published actions
-- **Marker-based description updates** — Preserves original MR description; revkit content lives in a marked section
+- **Marker-based description updates** — Preserves original MR description; revpack content lives in a marked section
 - **No file copies in bundle** — Instruction files (REVIEW.md) and source code are read directly from the repo, not copied into the bundle
 
 ## Tests, linting, formatting

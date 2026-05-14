@@ -106,7 +106,7 @@ export function parseGitHubPullUrl(url: string): GitHubPullIdentity {
 
 /**
  * Compute the default output path for the slim benchmark file.
- * Example: /dir/benchmark_data.json + revkit-gpt-5-5 => /dir/benchmark_data.revkit-gpt-5-5.json
+ * Example: /dir/benchmark_data.json + revpack-gpt-5-5 => /dir/benchmark_data.revpack-gpt-5-5.json
  */
 export function resolveDefaultOutputPath(benchmarkDataPath: string, toolSlug: string): string {
   const dir = path.dirname(benchmarkDataPath);
@@ -136,7 +136,7 @@ export function indexBenchmarkByGitHubIdentity(benchmark: BenchmarkData): Map<st
 // ─── Workspace discovery ─────────────────────────────────
 
 /**
- * Discover immediate child directories of workspaceRoot that contain .revkit/bundle.json.
+ * Discover immediate child directories of workspaceRoot that contain .revpack/bundle.json.
  * Does not recurse. Returns PreparedWorkspace objects for each qualifying child.
  */
 export function discoverImmediateChildWorkspaces(workspaceRoot: string): PreparedWorkspace[] {
@@ -153,7 +153,7 @@ export function discoverImmediateChildWorkspaces(workspaceRoot: string): Prepare
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const childRoot = path.join(workspaceRoot, entry.name);
-    const bundlePath = path.join(childRoot, '.revkit', 'bundle.json');
+    const bundlePath = path.join(childRoot, '.revpack', 'bundle.json');
     if (fs.existsSync(bundlePath)) {
       workspaces.push({ root: childRoot });
     }
@@ -170,7 +170,7 @@ export function discoverImmediateChildWorkspaces(workspaceRoot: string): Prepare
  * @param bundle         - the parsed bundle.json content
  * @param benchmarkIndex - index built from benchmark data
  * @param workspace      - workspace descriptor
- * @param findingsExists - whether .revkit/outputs/new-findings.json exists on disk
+ * @param findingsExists - whether .revpack/outputs/new-findings.json exists on disk
  */
 export function classifyWorkspace(
   bundle: BundleState,
@@ -206,11 +206,11 @@ export function classifyWorkspace(
     return {
       type: 'skip',
       workspace,
-      reason: 'missing .revkit/outputs/new-findings.json',
+      reason: 'missing .revpack/outputs/new-findings.json',
     };
   }
 
-  const findingsPath = path.join(workspace.root, '.revkit', 'outputs', 'new-findings.json');
+  const findingsPath = path.join(workspace.root, '.revpack', 'outputs', 'new-findings.json');
   return { type: 'export', workspace, bundle, identity, benchmarkEntry, findingsPath };
 }
 

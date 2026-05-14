@@ -1,10 +1,10 @@
 {
-  "name": "revkit",
+  "name": "revpack",
   "version": "0.1.0",
-  "description": "CLI toolkit for agent-assisted code reviews — prepare MR/PR context, manage review threads, and publish structured feedback.",
+  "description": "CLI for preparing AI-ready PR/MR review bundles and publishing review feedback.",
   "type": "module",
   "bin": {
-    "revkit": "./dist/cli/index.js"
+    "revpack": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

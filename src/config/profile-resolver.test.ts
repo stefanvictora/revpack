@@ -1,22 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { ProfileResolver, getProfileRemotePatterns } from './profile-resolver.js';
-import type { RevkitConfig, RevkitProfile } from './types.js';
+import type { RevpackConfig, RevpackProfile } from './types.js';
 
 describe('getProfileRemotePatterns', () => {
   it('derives host from URL', () => {
-    const profile: RevkitProfile = { provider: 'gitlab', url: 'https://gitlab.work.com/api/v4' };
+    const profile: RevpackProfile = { provider: 'gitlab', url: 'https://gitlab.work.com/api/v4' };
     const patterns = getProfileRemotePatterns(profile);
     expect(patterns).toEqual([{ pattern: 'gitlab.work.com', source: 'url-derived' }]);
   });
 
   it('includes explicit remotePatterns', () => {
-    const profile: RevkitProfile = { provider: 'gitlab', remotePatterns: ['my-gitlab.internal'] };
+    const profile: RevpackProfile = { provider: 'gitlab', remotePatterns: ['my-gitlab.internal'] };
     const patterns = getProfileRemotePatterns(profile);
     expect(patterns).toEqual([{ pattern: 'my-gitlab.internal', source: 'remote-pattern' }]);
   });
 
   it('combines URL host and remotePatterns, deduplicating', () => {
-    const profile: RevkitProfile = {
+    const profile: RevpackProfile = {
       provider: 'gitlab',
       url: 'https://gitlab.work.com',
       remotePatterns: ['gitlab.work.com', 'extra.host.com'],
@@ -29,12 +29,12 @@ describe('getProfileRemotePatterns', () => {
   });
 
   it('returns empty for profile without URL or remotePatterns', () => {
-    const profile: RevkitProfile = { provider: 'github' };
+    const profile: RevpackProfile = { provider: 'github' };
     expect(getProfileRemotePatterns(profile)).toEqual([]);
   });
 
   it('handles invalid URL gracefully', () => {
-    const profile: RevkitProfile = { provider: 'gitlab', url: 'not-a-url' };
+    const profile: RevpackProfile = { provider: 'gitlab', url: 'not-a-url' };
     expect(getProfileRemotePatterns(profile)).toEqual([]);
   });
 });
@@ -44,7 +44,7 @@ describe('ProfileResolver', () => {
 
   describe('explicit profile', () => {
     it('returns explicit profile by name', () => {
-      const config: RevkitConfig = {
+      const config: RevpackConfig = {
         profiles: {
           work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
         },
@@ -56,7 +56,7 @@ describe('ProfileResolver', () => {
     });
 
     it('throws when explicit profile not found', () => {
-      const config: RevkitConfig = {
+      const config: RevpackConfig = {
         profiles: { work: { provider: 'gitlab' } },
       };
       expect(() => resolver.resolve(config, [], 'nope')).toThrow(/not found/);
@@ -65,7 +65,7 @@ describe('ProfileResolver', () => {
 
   describe('URL-derived matching', () => {
     it('matches by URL host against git remote', () => {
-      const config: RevkitConfig = {
+      const config: RevpackConfig = {
         profiles: {
           work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
         },
@@ -78,7 +78,7 @@ describe('ProfileResolver', () => {
     });
 
     it('matches HTTPS remote by host', () => {
-      const config: RevkitConfig = {
+      const config: RevpackConfig = {
         profiles: {
           work: { provider: 'gitlab', url: 'https://gitlab.example.org/api/v4' },
         },
@@ -91,7 +91,7 @@ describe('ProfileResolver', () => {
 
   describe('remotePatterns matching', () => {
     it('matches by explicit remotePattern', () => {
-      const config: RevkitConfig = {
+      const config: RevpackConfig = {
         profiles: {
           custom: { provider: 'github', remotePatterns: ['my-github'] },
         },
@@ -103,7 +103,7 @@ describe('ProfileResolver', () => {
     });
 
     it('prefers URL host over remotePatterns when both match', () => {
-      const config: RevkitConfig = {
+      const config: RevpackConfig = {
         profiles: {
           work: {
             provider: 'gitlab',
@@ -119,7 +119,7 @@ describe('ProfileResolver', () => {
 
   describe('no match', () => {
     it('throws when no profile matches', () => {
-      const config: RevkitConfig = {
+      const config: RevpackConfig = {
         profiles: {
           work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
         },
@@ -128,7 +128,7 @@ describe('ProfileResolver', () => {
     });
 
     it('throws when no remotes and no explicit profile', () => {
-      const config: RevkitConfig = {
+      const config: RevpackConfig = {
         profiles: { work: { provider: 'gitlab', url: 'https://gitlab.work.com' } },
       };
       expect(() => resolver.resolve(config, [])).toThrow(/No profile matched/);
@@ -137,7 +137,7 @@ describe('ProfileResolver', () => {
 
   describe('ambiguous match', () => {
     it('throws when multiple profiles match', () => {
-      const config: RevkitConfig = {
+      const config: RevpackConfig = {
         profiles: {
           a: { provider: 'gitlab', url: 'https://shared.host.com' },
           b: { provider: 'github', remotePatterns: ['shared.host.com'] },

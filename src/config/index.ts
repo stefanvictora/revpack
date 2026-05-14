@@ -4,8 +4,8 @@ import * as os from 'node:os';
 import { configSchema } from '../core/schemas.js';
 import { ConfigError } from '../core/errors.js';
 import type {
-  RevkitConfig,
-  RevkitProfile,
+  RevpackConfig,
+  RevpackProfile,
   ResolvedAppConfig,
   DisplayAppConfig,
   ProfileResolutionResult,
@@ -14,15 +14,15 @@ import type {
 } from './types.js';
 import { ProfileResolver, getProfileRemotePatterns } from './profile-resolver.js';
 
-export const CONFIG_DIR = path.join(os.homedir(), '.config', 'revkit');
+export const CONFIG_DIR = path.join(os.homedir(), '.config', 'revpack');
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 // ─── File I/O ────────────────────────────────────────────
 
 /**
- * Load raw config from ~/.config/revkit/config.json.
+ * Load raw config from ~/.config/revpack/config.json.
  */
-export async function loadFileConfig(): Promise<RevkitConfig> {
+export async function loadFileConfig(): Promise<RevpackConfig> {
   let raw: string;
   try {
     raw = await fs.readFile(CONFIG_FILE, 'utf-8');
@@ -54,7 +54,7 @@ export async function loadFileConfig(): Promise<RevkitConfig> {
 /**
  * Write a full config object to disk (explicit read-modify-write).
  */
-export async function saveFileConfig(config: RevkitConfig): Promise<void> {
+export async function saveFileConfig(config: RevpackConfig): Promise<void> {
   await fs.mkdir(CONFIG_DIR, { recursive: true });
   await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
 }
@@ -65,7 +65,7 @@ export async function saveFileConfig(config: RevkitConfig): Promise<void> {
  * Resolve the active profile. Throws if no profile matches.
  */
 export function resolveProfile(
-  config: RevkitConfig,
+  config: RevpackConfig,
   remoteUrls: string[],
   explicitProfile?: string,
 ): ProfileResolutionResult {
@@ -147,7 +147,7 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
   let profileName: string | undefined;
 
   // 1. Config file readable
-  let fileConfig: RevkitConfig;
+  let fileConfig: RevpackConfig;
   try {
     fileConfig = await loadFileConfig();
     checks.push({ ok: true, label: 'Config file readable' });
@@ -158,7 +158,7 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
   }
 
   // 2. Profile resolution
-  let profile: RevkitProfile;
+  let profile: RevpackProfile;
   try {
     const result = resolveProfile(fileConfig, remoteUrls, explicitProfile);
     profile = result.profile;
@@ -166,7 +166,7 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
     checks.push({ ok: true, label: `Profile: ${profileName}` });
   } catch (err) {
     checks.push({ ok: false, label: 'Profile resolution', detail: (err as Error).message });
-    nextSteps.push('revkit config setup');
+    nextSteps.push('revpack config setup');
     return { checks, profileName, nextSteps };
   }
 
@@ -201,7 +201,7 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
     }
   } else {
     checks.push({ ok: false, label: 'Token env not configured' });
-    nextSteps.push(`revkit config set tokenEnv <ENV_VAR_NAME> --profile ${profileName}`);
+    nextSteps.push(`revpack config set tokenEnv <ENV_VAR_NAME> --profile ${profileName}`);
   }
 
   // 7. CA file
@@ -235,7 +235,7 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
       checks.push({ ok: true, label: 'Current git remote matches profile' });
     } else if (matchingNames.length === 0) {
       checks.push({ ok: false, label: 'No profile matches current git remotes' });
-      nextSteps.push(`revkit config set remotePatterns <pattern> --profile ${profileName}`);
+      nextSteps.push(`revpack config set remotePatterns <pattern> --profile ${profileName}`);
     } else {
       checks.push({
         ok: false,
@@ -252,8 +252,8 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
 
 export { ProfileResolver, getProfileRemotePatterns } from './profile-resolver.js';
 export type {
-  RevkitConfig,
-  RevkitProfile,
+  RevpackConfig,
+  RevpackProfile,
   ResolvedAppConfig,
   DisplayAppConfig,
   ProfileResolutionResult,

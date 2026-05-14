@@ -23,7 +23,7 @@ export function buildFindingHeader(severity: string, category: string): string {
 
 /**
  * Render the full publish body for a finding.
- * Returns the same body shape that revkit publishes via `publish findings`.
+ * Returns the same body shape that revpack publishes via `publish findings`.
  */
 export function renderPublishFindingBody(finding: Pick<NewFinding, 'severity' | 'category' | 'body'>): string {
   return buildFindingHeader(finding.severity, finding.category) + finding.body;

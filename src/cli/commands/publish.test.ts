@@ -17,7 +17,7 @@ describe('publish command internals', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revkit-publish-test-'));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revpack-publish-test-'));
     vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
     vi.mocked(getRepoFromGit).mockResolvedValue('group/project');
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -71,8 +71,8 @@ describe('publish command internals', () => {
   });
 
   it('skips empty summaries instead of publishing an empty description section', async () => {
-    await fs.mkdir(path.join(tmpDir, '.revkit', 'outputs'), { recursive: true });
-    await fs.writeFile(path.join(tmpDir, '.revkit', 'outputs', 'summary.md'), ' \n\t', 'utf-8');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), ' \n\t', 'utf-8');
 
     await expect(__testing.publishDescription({ fromSummary: true })).rejects.toThrow('summary.md is empty');
     expect(createOrchestrator).not.toHaveBeenCalled();

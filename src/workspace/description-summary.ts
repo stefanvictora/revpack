@@ -1,6 +1,6 @@
 // Marker-based MR/PR description summary section.
-export const MARKER_START = '<!-- revkit:start -->';
-export const MARKER_END = '<!-- revkit:end -->';
+export const MARKER_START = '<!-- revpack:start -->';
+export const MARKER_END = '<!-- revpack:end -->';
 
 /**
  * Merge new content into the description using HTML comment markers.
@@ -22,7 +22,7 @@ export function mergeWithMarkers(existing: string, newContent: string): string {
 }
 
 /**
- * Extract the published revkit summary section from an MR/PR description.
+ * Extract the published revpack summary section from an MR/PR description.
  */
 export function extractMarkedSummary(description: string): string | null {
   const startIdx = description.indexOf(MARKER_START);

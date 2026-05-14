@@ -2,9 +2,9 @@
 
 ## Review goal
 
-Review the MR/PR changes and write structured review outputs under `.revkit/outputs/`. Do not modify source files. The developer decides what to apply or publish.
+Review the MR/PR changes and write structured review outputs under `.revpack/outputs/`. Do not modify source files. The developer decides what to apply or publish.
 
-If you accidentally modify files outside `.revkit/outputs/`, stop and report it immediately.
+If you accidentally modify files outside `.revpack/outputs/`, stop and report it immediately.
 
 ## Execution model
 
@@ -35,11 +35,11 @@ Always write all four output files. Use `[]` for empty JSON outputs. Leave `revi
 
 ## Output validation
 
-revkit validates output files, JSON syntax, schemas, and positional anchors before publishing. Do not spend extra tool calls re-checking what revkit can verify mechanically.
+revpack validates output files, JSON syntax, schemas, and positional anchors before publishing. Do not spend extra tool calls re-checking what revpack can verify mechanically.
 
 ## Input files
 
-Follow the reading order from `.revkit/CONTEXT.md`.
+Follow the reading order from `.revpack/CONTEXT.md`.
 
 Key diff artifacts:
 

@@ -5,7 +5,7 @@ import { createOrchestrator, getRepoFromGit, handleError, outputJson } from '../
 export function registerPrepareCommand(program: Command): void {
   program
     .command('prepare [ref]')
-    .description('Fetch MR/PR data and generate/refresh the .revkit/ bundle')
+    .description('Fetch MR/PR data and generate/refresh the .revpack/ bundle')
     .option('--json', 'Output as JSON')
     .option('--fresh', 'Delete existing bundle and prepare from scratch')
     .option('--discard-outputs', 'Clear pending outputs before preparing')
@@ -105,9 +105,9 @@ export function registerPrepareCommand(program: Command): void {
 
         // Next steps
         console.log(chalk.dim('Next steps:'));
-        console.log(chalk.dim('  • Open .revkit/CONTEXT.md and point your agent at it'));
+        console.log(chalk.dim('  • Open .revpack/CONTEXT.md and point your agent at it'));
         console.log(chalk.dim('  • Or use a Copilot prompt: /review or /review-summarize'));
-        console.log(chalk.dim('  • Re-run `revkit prepare` after changes to refresh'));
+        console.log(chalk.dim('  • Re-run `revpack prepare` after changes to refresh'));
       } catch (err) {
         handleError(err);
       }

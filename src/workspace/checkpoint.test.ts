@@ -49,7 +49,7 @@ describe('checkpoint parser', () => {
   it('parses raw JSON inside HTML comment', () => {
     const state = {
       schemaVersion: 1,
-      tool: { name: 'revkit', version: '0.2.0' },
+      tool: { name: 'revpack', version: '0.2.0' },
       target: { provider: 'gitlab', repository: 'group/proj', type: 'merge_request', id: '42' },
       checkpoint: {
         createdAt: '2026-04-27T12:00:00Z',
@@ -122,7 +122,7 @@ ${CHECKPOINT_MARKER_END}`;
 
   it('handles marker with missing required fields as null', () => {
     const noteBody = `${CHECKPOINT_MARKER_START}
-${Buffer.from(JSON.stringify({ schemaVersion: 1, tool: { name: 'revkit' } })).toString('base64url')}
+${Buffer.from(JSON.stringify({ schemaVersion: 1, tool: { name: 'revpack' } })).toString('base64url')}
 ${CHECKPOINT_MARKER_END}`;
 
     const result = parseCheckpointMarker(noteBody);
@@ -143,7 +143,7 @@ describe('checkpoint serializer', () => {
     );
 
     expect(state.schemaVersion).toBe(1);
-    expect(state.tool.name).toBe('revkit');
+    expect(state.tool.name).toBe('revpack');
     expect(state.target.provider).toBe('gitlab');
     expect(state.target.id).toBe('902');
     expect(state.checkpoint.headSha).toBe('headabc');
@@ -249,11 +249,11 @@ ${buildDescriptionStateBlock(state)}`;
     const block = buildDescriptionStateBlock(state);
     const description = `# My MR\n\n${block}\n\nSome text\n\n${block}`;
 
-    expect(() => parseDescriptionState(description)).toThrow('multiple revkit state blocks');
+    expect(() => parseDescriptionState(description)).toThrow('multiple revpack state blocks');
   });
 
   it('handles malformed state block gracefully', () => {
-    const description = `# My MR\n\n<!-- revkit:state\nnot-valid-data\n-->`;
+    const description = `# My MR\n\n<!-- revpack:state\nnot-valid-data\n-->`;
     expect(parseDescriptionState(description)).toBeNull();
   });
 });
@@ -265,7 +265,7 @@ describe('patchDescriptionWithState', () => {
 
     expect(result).toContain('# My MR');
     expect(result).toContain('Description text.');
-    expect(result).toContain('<!-- revkit:state');
+    expect(result).toContain('<!-- revpack:state');
 
     // Verify roundtrip
     const parsed = parseDescriptionState(result);
@@ -281,7 +281,7 @@ describe('patchDescriptionWithState', () => {
     const updated = patchDescriptionWithState(existing, newState);
 
     // Should only have one state block
-    const matches = [...updated.matchAll(/<!-- revkit:state/g)];
+    const matches = [...updated.matchAll(/<!-- revpack:state/g)];
     expect(matches).toHaveLength(1);
 
     // Should preserve original text
@@ -299,7 +299,7 @@ describe('patchDescriptionWithState', () => {
     const block = buildDescriptionStateBlock(state);
     const description = `# My MR\n\n${block}\n\nText\n\n${block}`;
 
-    expect(() => patchDescriptionWithState(description, state)).toThrow('multiple revkit state blocks');
+    expect(() => patchDescriptionWithState(description, state)).toThrow('multiple revpack state blocks');
   });
 
   it('preserves unrelated description content', () => {
@@ -309,10 +309,10 @@ describe('patchDescriptionWithState', () => {
 ## Summary
 Implements OAuth login flow.
 
-<!-- revkit:start -->
+<!-- revpack:start -->
 ## Changed
 - Added OAuth support.
-<!-- revkit:end -->
+<!-- revpack:end -->
 
 ## Notes
 Some extra notes.`;
@@ -321,8 +321,8 @@ Some extra notes.`;
     expect(result).toContain('# Feature: Login');
     expect(result).toContain('## Summary');
     expect(result).toContain('Implements OAuth login flow.');
-    expect(result).toContain('<!-- revkit:start -->');
-    expect(result).toContain('<!-- revkit:end -->');
+    expect(result).toContain('<!-- revpack:start -->');
+    expect(result).toContain('<!-- revpack:end -->');
     expect(result).toContain('## Notes');
     expect(result).toContain('Some extra notes.');
   });
@@ -336,26 +336,26 @@ describe('sanitizeDescriptionForAgent', () => {
     const sanitized = sanitizeDescriptionForAgent(description);
     expect(sanitized).toContain('# My MR');
     expect(sanitized).toContain('Some text here.');
-    expect(sanitized).not.toContain('<!-- revkit:state');
+    expect(sanitized).not.toContain('<!-- revpack:state');
   });
 
-  it('strips the revkit-generated summary marker block', () => {
+  it('strips the revpack-generated summary marker block', () => {
     const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
     const description = `# My MR
 
-<!-- revkit:start -->
+<!-- revpack:start -->
 ## Changed
 - Updated login flow.
-<!-- revkit:end -->
+<!-- revpack:end -->
 
 ${buildDescriptionStateBlock(state)}`;
 
     const sanitized = sanitizeDescriptionForAgent(description);
     expect(sanitized).toContain('# My MR');
-    expect(sanitized).not.toContain('<!-- revkit:start -->');
+    expect(sanitized).not.toContain('<!-- revpack:start -->');
     expect(sanitized).not.toContain('## Changed');
-    expect(sanitized).not.toContain('<!-- revkit:end -->');
-    expect(sanitized).not.toContain('<!-- revkit:state');
+    expect(sanitized).not.toContain('<!-- revpack:end -->');
+    expect(sanitized).not.toContain('<!-- revpack:state');
   });
 
   it('returns description unchanged when no state block', () => {
@@ -366,13 +366,13 @@ ${buildDescriptionStateBlock(state)}`;
 
   it('strips the summary block and its separator when appended to existing description', () => {
     // Simulate the structure mergeWithMarkers produces when appending
-    const description = `# My MR\n\nSome text here.\n\n---\n\n<!-- revkit:start -->\n## Changed\n- Updated login flow.\n<!-- revkit:end -->`;
+    const description = `# My MR\n\nSome text here.\n\n---\n\n<!-- revpack:start -->\n## Changed\n- Updated login flow.\n<!-- revpack:end -->`;
 
     const sanitized = sanitizeDescriptionForAgent(description);
     expect(sanitized).toContain('# My MR');
     expect(sanitized).toContain('Some text here.');
     expect(sanitized).not.toContain('---');
-    expect(sanitized).not.toContain('<!-- revkit:start -->');
-    expect(sanitized).not.toContain('<!-- revkit:end -->');
+    expect(sanitized).not.toContain('<!-- revpack:start -->');
+    expect(sanitized).not.toContain('<!-- revpack:end -->');
   });
 });

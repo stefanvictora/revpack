@@ -78,7 +78,7 @@ describe('WorkspaceManager', () => {
   let manager: WorkspaceManager;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revkit-test-'));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revpack-test-'));
     manager = new WorkspaceManager(tmpDir);
   });
 
@@ -107,7 +107,7 @@ describe('WorkspaceManager', () => {
     expect(bundle.diffs).toHaveLength(1);
 
     // Verify directory structure
-    const bundleDir = path.join(tmpDir, '.revkit');
+    const bundleDir = path.join(tmpDir, '.revpack');
     const entries = await fs.readdir(bundleDir);
     expect(entries).toContain('description.md');
     expect(entries).toContain('threads');
@@ -121,7 +121,7 @@ describe('WorkspaceManager', () => {
 
     await manager.writeContext(makeTarget(), threads, [makeDiff()], threadIndex);
 
-    const bundleDir = path.join(tmpDir, '.revkit');
+    const bundleDir = path.join(tmpDir, '.revpack');
     const entries = await fs.readdir(bundleDir);
     expect(entries).toContain('AGENT_CONTRACT.md');
     expect(entries).toContain('INSTRUCTIONS.md');
@@ -137,7 +137,7 @@ describe('WorkspaceManager', () => {
   it('writes description.md with MR description', async () => {
     await createBundle(manager, makeTarget(), []);
 
-    const descPath = path.join(tmpDir, '.revkit', 'description.md');
+    const descPath = path.join(tmpDir, '.revpack', 'description.md');
     const content = await fs.readFile(descPath, 'utf-8');
 
     expect(content).toContain('A test merge request');
@@ -146,7 +146,7 @@ describe('WorkspaceManager', () => {
   it('writes thread JSON and markdown files', async () => {
     await createBundle(manager, makeTarget(), [makeThread()]);
 
-    const threadDir = path.join(tmpDir, '.revkit', 'threads');
+    const threadDir = path.join(tmpDir, '.revpack', 'threads');
     const files = await fs.readdir(threadDir);
 
     expect(files).toContain('T-001.json');
@@ -164,7 +164,7 @@ describe('WorkspaceManager', () => {
   it('writes latest.patch', async () => {
     await createBundle(manager, makeTarget(), [], [makeDiff()]);
 
-    const patchPath = path.join(tmpDir, '.revkit', 'diffs', 'latest.patch');
+    const patchPath = path.join(tmpDir, '.revpack', 'diffs', 'latest.patch');
     const patch = await fs.readFile(patchPath, 'utf-8');
 
     expect(patch).toContain('diff --git');
@@ -174,7 +174,7 @@ describe('WorkspaceManager', () => {
   it('writes structured diff artifacts', async () => {
     await createBundle(manager, makeTarget(), [], [makeStructuredDiff()]);
 
-    const diffDir = path.join(tmpDir, '.revkit', 'diffs');
+    const diffDir = path.join(tmpDir, '.revpack', 'diffs');
     const filesJson = JSON.parse(await fs.readFile(path.join(diffDir, 'files.json'), 'utf-8'));
     expect(filesJson.files).toHaveLength(1);
     expect(filesJson.files[0]).toMatchObject({
@@ -311,13 +311,13 @@ describe('WorkspaceManager', () => {
     // Two threads → T-001 and T-002 based on position
     await createBundle(manager, makeTarget(), [thread1, thread2]);
 
-    const threadDir = path.join(tmpDir, '.revkit', 'threads');
+    const threadDir = path.join(tmpDir, '.revpack', 'threads');
     const files = (await fs.readdir(threadDir)).sort();
     expect(files).toContain('T-001.json');
     expect(files).toContain('T-002.json');
 
     // No thread-map.json file should exist
-    const mapPath = path.join(tmpDir, '.revkit', 'thread-map.json');
+    const mapPath = path.join(tmpDir, '.revpack', 'thread-map.json');
     expect(await fileExists(mapPath)).toBe(false);
 
     // Second run with different threads: positions are recalculated
@@ -351,7 +351,7 @@ describe('WorkspaceManager', () => {
     const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
     // Write a replies.json with two entries
-    const repliesPath = path.join(tmpDir, '.revkit', 'outputs', 'replies.json');
+    const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
     await fs.writeFile(
       repliesPath,
       JSON.stringify([
@@ -380,7 +380,7 @@ describe('WorkspaceManager', () => {
   it('removeBundle removes entire directory', async () => {
     await createBundle(manager, makeTarget(), [makeThread()]);
 
-    const bundleDir = path.join(tmpDir, '.revkit');
+    const bundleDir = path.join(tmpDir, '.revpack');
     expect(await fileExists(bundleDir)).toBe(true);
 
     await manager.removeBundle();
@@ -442,7 +442,7 @@ describe('WorkspaceManager', () => {
     };
     await manager.writeIncrementalDiff([incrementalDiff]);
 
-    const patchPath = path.join(tmpDir, '.revkit', 'diffs', 'incremental.patch');
+    const patchPath = path.join(tmpDir, '.revpack', 'diffs', 'incremental.patch');
     const patch = await fs.readFile(patchPath, 'utf-8');
     expect(patch).toContain('diff --git a/src/foo.ts b/src/foo.ts');
     expect(patch).toContain('+new incremental line');
@@ -603,9 +603,9 @@ describe('WorkspaceManager', () => {
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Required Instructions for This Run');
-      expect(content).toContain('`.revkit/instructions/01-review-workflow-and-outputs.md`');
-      expect(content).toContain('~~`.revkit/instructions/02-thread-replies.md`~~ — skip, no unresolved threads');
-      expect(content).toContain('`.revkit/instructions/03-new-findings-and-anchors.md`');
+      expect(content).toContain('`.revpack/instructions/01-review-workflow-and-outputs.md`');
+      expect(content).toContain('~~`.revpack/instructions/02-thread-replies.md`~~ — skip, no unresolved threads');
+      expect(content).toContain('`.revpack/instructions/03-new-findings-and-anchors.md`');
     });
 
     it('includes thread-replies instruction when unresolved threads exist', async () => {
@@ -617,7 +617,7 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Required Instructions for This Run');
       expect(content).not.toContain('skip, no unresolved threads');
-      expect(content).toContain('`.revkit/instructions/02-thread-replies.md`');
+      expect(content).toContain('`.revpack/instructions/02-thread-replies.md`');
     });
 
     it('shows general comments section for non-resolvable human threads', async () => {
@@ -691,7 +691,7 @@ describe('WorkspaceManager', () => {
         comments: [
           {
             id: 'self-note',
-            body: '<!-- revkit -->\nUnsafe token comparison',
+            body: '<!-- revpack -->\nUnsafe token comparison',
             author: 'bot',
             createdAt: '2026-01-01T00:00:00Z',
             updatedAt: '2026-01-01T00:00:00Z',
@@ -728,7 +728,7 @@ describe('WorkspaceManager', () => {
           },
           {
             id: 'first-bot',
-            body: '<!-- revkit -->\nOriginal finding',
+            body: '<!-- revpack -->\nOriginal finding',
             author: 'bot',
             createdAt: '2026-01-01T00:00:00Z',
             updatedAt: '2026-01-01T00:00:00Z',
@@ -743,7 +743,7 @@ describe('WorkspaceManager', () => {
         comments: [
           {
             id: 'later-bot',
-            body: '<!-- revkit -->\nFixed now',
+            body: '<!-- revpack -->\nFixed now',
             author: 'bot',
             createdAt: '2026-01-01T01:00:00Z',
             updatedAt: '2026-01-01T01:00:00Z',
@@ -788,7 +788,7 @@ describe('WorkspaceManager', () => {
           },
           {
             id: 'bot-reply',
-            body: '<!-- revkit -->\nFixed, good catch!',
+            body: '<!-- revpack -->\nFixed, good catch!',
             author: 'bot',
             createdAt: '2026-01-01T01:00:00Z',
             updatedAt: '2026-01-01T01:00:00Z',
@@ -945,7 +945,7 @@ describe('WorkspaceManager', () => {
       };
       await createBundle(manager, makeTarget(), [], [addedDiff]);
 
-      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'files.json'), 'utf-8'));
       const entry = filesJson.files[0];
       expect(entry.status).toBe('added');
       expect(entry.binary).toBe(false);
@@ -964,7 +964,7 @@ describe('WorkspaceManager', () => {
       };
       await createBundle(manager, makeTarget(), [], [deletedDiff]);
 
-      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'files.json'), 'utf-8'));
       const entry = filesJson.files[0];
       expect(entry.status).toBe('deleted');
       expect(entry.binary).toBe(false);
@@ -984,7 +984,7 @@ describe('WorkspaceManager', () => {
       };
       await createBundle(manager, makeTarget(), [], [binaryAddedDiff]);
 
-      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'files.json'), 'utf-8'));
       const entry = filesJson.files[0];
       expect(entry.status).toBe('added');
       expect(entry.binary).toBe(true);
@@ -1005,7 +1005,7 @@ describe('WorkspaceManager', () => {
       };
       await createBundle(manager, makeTarget(), [], [binaryDeletedDiff]);
 
-      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'files.json'), 'utf-8'));
       const entry = filesJson.files[0];
       expect(entry.status).toBe('deleted');
       expect(entry.binary).toBe(true);
@@ -1016,7 +1016,7 @@ describe('WorkspaceManager', () => {
     it('marks a regular modification as modified with binary=false, both exist', async () => {
       await createBundle(manager, makeTarget(), [], [makeDiff()]);
 
-      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'files.json'), 'utf-8'));
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'files.json'), 'utf-8'));
       const entry = filesJson.files[0];
       expect(entry.status).toBe('modified');
       expect(entry.binary).toBe(false);
@@ -1044,7 +1044,7 @@ describe('WorkspaceManager', () => {
 
       await createBundle(manager, makeTarget(), [threadWithFullTargetRef]);
 
-      const threadJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revkit', 'threads', 'T-001.json'), 'utf-8'));
+      const threadJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.json'), 'utf-8'));
 
       expect(Object.keys(threadJson.targetRef)).toEqual(['provider', 'repository', 'targetType', 'targetId']);
       expect(threadJson.targetRef.provider).toBe('gitlab');

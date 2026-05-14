@@ -2,9 +2,9 @@
 
 This file is the router for detailed task-specific instruction files. It does not contain the full review rules.
 
-Read `.revkit/CONTEXT.md` first — it has the MR/PR metadata, changed files, threads, and the **Required Instructions for This Run** section that tells you exactly which files to read.
+Read `.revpack/CONTEXT.md` first — it has the MR/PR metadata, changed files, threads, and the **Required Instructions for This Run** section that tells you exactly which files to read.
 
-Read `.revkit/AGENT_CONTRACT.md` next — it contains the short mandatory review contract.
+Read `.revpack/AGENT_CONTRACT.md` next — it contains the short mandatory review contract.
 
 Then read the instruction files listed in CONTEXT.md.
 
@@ -20,7 +20,7 @@ Then read the instruction files listed in CONTEXT.md.
 | `06-summary.md`                        | Always                   | Changelog-style `outputs/summary.md`                                         |
 | `07-final-checks.md`                   | Always                   | Lightweight final self-check                                                 |
 
-All instruction files are in `.revkit/instructions/`.
+All instruction files are in `.revpack/instructions/`.
 
 ## Output routing
 
@@ -31,4 +31,4 @@ All instruction files are in `.revkit/instructions/`.
 | `outputs/summary.md`        | What the MR/PR changes (changelog-style)                      |
 | `outputs/review.md`         | Optional MR/PR-level synthesis; leave empty if nothing useful |
 
-Only write files under `.revkit/outputs/`. Do not modify source files.
+Only write files under `.revpack/outputs/`. Do not modify source files.

@@ -51,23 +51,23 @@ function makeBenchmarkEntry(overrides: Partial<BenchmarkPrEntry> = {}): Benchmar
 
 describe('slugifyToolName', () => {
   it('lowercases and replaces dots with hyphens', () => {
-    expect(slugifyToolName('revkit-gpt-5.5')).toBe('revkit-gpt-5-5');
+    expect(slugifyToolName('revpack-gpt-5.5')).toBe('revpack-gpt-5-5');
   });
 
   it('handles uppercase and slashes', () => {
-    expect(slugifyToolName('Revkit / GPT-5.5')).toBe('revkit-gpt-5-5');
+    expect(slugifyToolName('revpack / GPT-5.5')).toBe('revpack-gpt-5-5');
   });
 
   it('handles underscores', () => {
-    expect(slugifyToolName('revkit_strict')).toBe('revkit-strict');
+    expect(slugifyToolName('revpack_strict')).toBe('revpack-strict');
   });
 
   it('returns the slug unchanged for clean names', () => {
-    expect(slugifyToolName('revkit')).toBe('revkit');
+    expect(slugifyToolName('revpack')).toBe('revpack');
   });
 
   it('trims leading and trailing hyphens', () => {
-    expect(slugifyToolName('  /revkit/  ')).toBe('revkit');
+    expect(slugifyToolName('  /revpack/  ')).toBe('revpack');
   });
 });
 
@@ -118,13 +118,13 @@ describe('parseGitHubPullUrl', () => {
 
 describe('resolveDefaultOutputPath', () => {
   it('inserts tool slug before .json extension', () => {
-    const result = resolveDefaultOutputPath('/results/benchmark_data.json', 'revkit');
-    expect(result).toBe(path.join('/results', 'benchmark_data.revkit.json'));
+    const result = resolveDefaultOutputPath('/results/benchmark_data.json', 'revpack');
+    expect(result).toBe(path.join('/results', 'benchmark_data.revpack.json'));
   });
 
   it('handles sanitized tool slug with hyphens', () => {
-    const result = resolveDefaultOutputPath('/results/benchmark_data.json', 'revkit-gpt-5-5');
-    expect(result).toBe(path.join('/results', 'benchmark_data.revkit-gpt-5-5.json'));
+    const result = resolveDefaultOutputPath('/results/benchmark_data.json', 'revpack-gpt-5-5');
+    expect(result).toBe(path.join('/results', 'benchmark_data.revpack-gpt-5-5.json'));
   });
 });
 
@@ -167,13 +167,13 @@ describe('indexBenchmarkByGitHubIdentity', () => {
 // ─── discoverImmediateChildWorkspaces ─────────────────────
 
 describe('discoverImmediateChildWorkspaces', () => {
-  it('returns only immediate children with .revkit/bundle.json', () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'revkit-test-'));
+  it('returns only immediate children with .revpack/bundle.json', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'revpack-test-'));
     try {
       // prepared workspace
       const prepared = path.join(tmp, 'prepared-ws');
-      fs.mkdirSync(path.join(prepared, '.revkit'), { recursive: true });
-      fs.writeFileSync(path.join(prepared, '.revkit', 'bundle.json'), '{}');
+      fs.mkdirSync(path.join(prepared, '.revpack'), { recursive: true });
+      fs.writeFileSync(path.join(prepared, '.revpack', 'bundle.json'), '{}');
 
       // unprepared workspace (no bundle.json)
       fs.mkdirSync(path.join(tmp, 'unprepared-ws'));
@@ -183,8 +183,8 @@ describe('discoverImmediateChildWorkspaces', () => {
 
       // nested — should not be discovered
       const nested = path.join(tmp, 'prepared-ws', 'nested');
-      fs.mkdirSync(path.join(nested, '.revkit'), { recursive: true });
-      fs.writeFileSync(path.join(nested, '.revkit', 'bundle.json'), '{}');
+      fs.mkdirSync(path.join(nested, '.revpack'), { recursive: true });
+      fs.writeFileSync(path.join(nested, '.revpack', 'bundle.json'), '{}');
 
       const result = discoverImmediateChildWorkspaces(tmp);
       expect(result).toHaveLength(1);
@@ -195,7 +195,7 @@ describe('discoverImmediateChildWorkspaces', () => {
   });
 
   it('returns empty array when no prepared workspaces exist', () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'revkit-test-'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'revpack-test-'));
     try {
       fs.mkdirSync(path.join(tmp, 'plain-dir'));
       const result = discoverImmediateChildWorkspaces(tmp);
@@ -251,7 +251,7 @@ describe('classifyWorkspace', () => {
     const bundle = makeBundle('github', 'pull_request', 'https://github.com/owner/repo/pull/42');
     const result = classifyWorkspace(bundle, benchmarkIndex, workspace, false);
     assert(result.type === 'skip');
-    expect(result.reason).toContain('missing .revkit/outputs/new-findings.json');
+    expect(result.reason).toContain('missing .revpack/outputs/new-findings.json');
   });
 });
 
@@ -341,38 +341,38 @@ describe('buildReviewEntry', () => {
     const review = buildReviewEntry(
       identity,
       'https://github.com/calcom/cal.com/pull/10600',
-      'revkit-gpt-5.5',
-      'revkit-gpt-5-5',
+      'revpack-gpt-5.5',
+      'revpack-gpt-5-5',
       [],
     );
-    expect(review.tool).toBe('revkit-gpt-5.5');
+    expect(review.tool).toBe('revpack-gpt-5.5');
   });
 
   it('builds repo_name with sanitized tool slug', () => {
     const review = buildReviewEntry(
       identity,
       'https://github.com/calcom/cal.com/pull/10600',
-      'revkit-gpt-5.5',
-      'revkit-gpt-5-5',
+      'revpack-gpt-5.5',
+      'revpack-gpt-5-5',
       [],
     );
-    expect(review.repo_name).toBe('calcom__cal.com__revkit-gpt-5-5__PR10600__local');
+    expect(review.repo_name).toBe('calcom__cal.com__revpack-gpt-5-5__PR10600__local');
   });
 
   it('preserves original owner and repo in repo_name (no sanitization)', () => {
     const id = parseGitHubPullUrl('https://github.com/keycloak/keycloak/pull/37429');
-    const review = buildReviewEntry(id, 'https://github.com/keycloak/keycloak/pull/37429', 'revkit', 'revkit', []);
-    expect(review.repo_name).toBe('keycloak__keycloak__revkit__PR37429__local');
+    const review = buildReviewEntry(id, 'https://github.com/keycloak/keycloak/pull/37429', 'revpack', 'revpack', []);
+    expect(review.repo_name).toBe('keycloak__keycloak__revpack__PR37429__local');
   });
 
   it('sets pr_url to the canonical benchmark URL', () => {
     const canonicalUrl = 'https://github.com/calcom/cal.com/pull/10600';
-    const review = buildReviewEntry(identity, canonicalUrl, 'revkit', 'revkit', []);
+    const review = buildReviewEntry(identity, canonicalUrl, 'revpack', 'revpack', []);
     expect(review.pr_url).toBe(canonicalUrl);
   });
 
   it('maps empty findings to empty review_comments', () => {
-    const review = buildReviewEntry(identity, 'https://github.com/calcom/cal.com/pull/10600', 'revkit', 'revkit', []);
+    const review = buildReviewEntry(identity, 'https://github.com/calcom/cal.com/pull/10600', 'revpack', 'revpack', []);
     expect(review.review_comments).toEqual([]);
   });
 });
@@ -393,7 +393,7 @@ describe('buildSlimOutputPreservingBenchmarkOrder', () => {
   it('includes only exported entries', () => {
     const exportedEntry: BenchmarkPrEntry = {
       ...entry1,
-      reviews: [{ tool: 'revkit', repo_name: 'x', pr_url: 'y', review_comments: [] }],
+      reviews: [{ tool: 'revpack', repo_name: 'x', pr_url: 'y', review_comments: [] }],
     };
     const exportedEntries = new Map([['https://github.com/owner/repo/pull/1', exportedEntry]]);
     const result = buildSlimOutputPreservingBenchmarkOrder(originalBenchmark, exportedEntries);
@@ -417,7 +417,7 @@ describe('buildSlimOutputPreservingBenchmarkOrder', () => {
   it('preserves PR-level metadata in exported entries', () => {
     const exportedEntry: BenchmarkPrEntry = {
       ...entry1,
-      reviews: [{ tool: 'revkit', repo_name: 'r', pr_url: 'u', review_comments: [] }],
+      reviews: [{ tool: 'revpack', repo_name: 'r', pr_url: 'u', review_comments: [] }],
     };
     const exportedEntries = new Map([['https://github.com/owner/repo/pull/1', exportedEntry]]);
     const result = buildSlimOutputPreservingBenchmarkOrder(originalBenchmark, exportedEntries);
@@ -426,8 +426,8 @@ describe('buildSlimOutputPreservingBenchmarkOrder', () => {
 
   it('reviews contains exactly one review entry for the selected tool', () => {
     const review: BenchmarkReview = {
-      tool: 'revkit',
-      repo_name: 'owner__repo__revkit__PR1__local',
+      tool: 'revpack',
+      repo_name: 'owner__repo__revpack__PR1__local',
       pr_url: 'https://github.com/owner/repo/pull/1',
       review_comments: [],
     };
@@ -435,7 +435,7 @@ describe('buildSlimOutputPreservingBenchmarkOrder', () => {
     const exportedEntries = new Map([['https://github.com/owner/repo/pull/1', exportedEntry]]);
     const result = buildSlimOutputPreservingBenchmarkOrder(originalBenchmark, exportedEntries);
     expect(result['https://github.com/owner/repo/pull/1'].reviews).toHaveLength(1);
-    expect(result['https://github.com/owner/repo/pull/1'].reviews[0].tool).toBe('revkit');
+    expect(result['https://github.com/owner/repo/pull/1'].reviews[0].tool).toBe('revpack');
   });
 });
 
@@ -474,7 +474,7 @@ describe('filterReviewsByTools', () => {
   const nonPositional: BenchmarkReviewComment = { path: null, line: 0, body: 'summary', created_at: '' };
 
   const entry: BenchmarkPrEntry = {
-    reviews: [review('gpt-4o'), review('claude-3-5-sonnet'), review('revkit')],
+    reviews: [review('gpt-4o'), review('claude-3-5-sonnet'), review('revpack')],
   };
 
   it('returns only reviews matching the specified tool names', () => {

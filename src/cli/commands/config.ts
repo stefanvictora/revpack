@@ -8,7 +8,7 @@ import {
   resolveProfile,
   CONFIG_FILE,
 } from '../../config/index.js';
-import type { RevkitConfig, RevkitProfile } from '../../config/types.js';
+import type { RevpackConfig, RevpackProfile } from '../../config/types.js';
 import { CONFIG_KEYS, VALID_CONFIG_KEYS } from '../../config/keys.js';
 import { ConfigError } from '../../core/errors.js';
 import { GitHelper } from '../../workspace/git-helper.js';
@@ -19,7 +19,7 @@ export function registerConfigCommand(program: Command): void {
     .command('config')
     .description('View or update configuration')
     .action(async () => {
-      // `revkit config` behaves like `revkit config show`
+      // `revpack config` behaves like `revpack config show`
       await showAction({ json: false, sources: false });
     });
 
@@ -73,7 +73,7 @@ export function registerConfigCommand(program: Command): void {
         }
 
         const defaultProvider = detectedProvider ?? 'gitlab';
-        const defaultTokenEnv = defaultProvider === 'github' ? 'REVKIT_GITHUB_TOKEN' : 'REVKIT_GITLAB_TOKEN';
+        const defaultTokenEnv = defaultProvider === 'github' ? 'REVPACK_GITHUB_TOKEN' : 'REVPACK_GITLAB_TOKEN';
         // github.com and gitlab.com are managed cloud services — skip enterprise-only TLS/CA prompts
         const isCloudProvider =
           suggestedUrl === 'https://github.com' ||
@@ -85,7 +85,7 @@ export function registerConfigCommand(program: Command): void {
         const rl = createInterface({ input: process.stdin, output: process.stdout });
         const ask = (prompt: string): Promise<string> => new Promise((resolve) => rl.question(prompt, resolve));
 
-        console.log(chalk.bold('revkit — Profile Setup'));
+        console.log(chalk.bold('revpack — Profile Setup'));
         console.log('');
 
         const name =
@@ -114,7 +114,7 @@ export function registerConfigCommand(program: Command): void {
         if (!isCloudProvider) {
           caFileInput = await ask(`Custom CA file (optional): `);
           tlsInput = (await ask(`Verify TLS certificates [yes]: `)) || 'yes';
-          sshCloneInput = (await ask(`Use SSH for git clone (revkit checkout) [no]: `)) || 'no';
+          sshCloneInput = (await ask(`Use SSH for git clone (revpack checkout) [no]: `)) || 'no';
         }
 
         rl.close();
@@ -124,7 +124,7 @@ export function registerConfigCommand(program: Command): void {
           throw new ConfigError(`Invalid provider: "${providerInput}". Must be "gitlab" or "github".`);
         }
 
-        const profile: RevkitProfile = {
+        const profile: RevpackProfile = {
           provider: providerInput,
         };
         if (url) profile.url = url;
@@ -171,7 +171,7 @@ export function registerConfigCommand(program: Command): void {
         if (profile.tokenEnv) {
           console.log(`  export ${profile.tokenEnv}=...`);
         }
-        console.log(`  revkit config doctor --profile ${name}`);
+        console.log(`  revpack config doctor --profile ${name}`);
       } catch (err) {
         handleError(err);
       }
@@ -224,7 +224,7 @@ export function registerConfigCommand(program: Command): void {
       try {
         validateKey(key);
         const { profile } = await resolveWriteTarget(opts.profile);
-        const value = profile[key as keyof RevkitProfile];
+        const value = profile[key as keyof RevpackProfile];
         if (value === undefined) {
           console.log(chalk.dim('(not set)'));
         } else {
@@ -312,7 +312,7 @@ export function registerConfigCommand(program: Command): void {
         if (names.length === 0) {
           console.log(chalk.dim('No profiles configured.'));
           console.log('');
-          console.log(`Run ${chalk.cyan('revkit config setup')} to create one.`);
+          console.log(`Run ${chalk.cyan('revpack config setup')} to create one.`);
           return;
         }
 
@@ -404,7 +404,7 @@ export function registerConfigCommand(program: Command): void {
         try {
           const provider = CONFIG_KEYS.provider.parse(opts.provider) as 'gitlab' | 'github';
 
-          const profile: RevkitProfile = { provider };
+          const profile: RevpackProfile = { provider };
           if (opts.url) profile.url = CONFIG_KEYS.url.parse(opts.url) as string;
           if (opts.tokenEnv) profile.tokenEnv = CONFIG_KEYS.tokenEnv.parse(opts.tokenEnv) as string;
           if (opts.match.length > 0) {
@@ -552,14 +552,14 @@ async function showNoMatchMessage(remoteUrls: string[]): Promise<void> {
   }
 
   console.log(chalk.bold('Next:'));
-  console.log(`  revkit config setup`);
+  console.log(`  revpack config setup`);
   if (remoteUrls.length > 0 && names.length > 0) {
     const firstName = names[0];
-    console.log(`  revkit config set remotePatterns <pattern> --profile ${firstName}`);
+    console.log(`  revpack config set remotePatterns <pattern> --profile ${firstName}`);
   }
 }
 
-function printProfileDetails(profile: RevkitProfile, sources?: boolean): void {
+function printProfileDetails(profile: RevpackProfile, sources?: boolean): void {
   console.log(`  ${chalk.dim('Provider:')}    ${profile.provider}`);
   if (profile.url) console.log(`  ${chalk.dim('URL:')}         ${profile.url}`);
   if (profile.tokenEnv) {
@@ -608,7 +608,7 @@ function validateKey(key: string): void {
 async function resolveWriteTarget(
   explicitProfile?: string,
   useCurrent?: boolean,
-): Promise<{ profileName: string; profile: RevkitProfile; config: RevkitConfig }> {
+): Promise<{ profileName: string; profile: RevpackProfile; config: RevpackConfig }> {
   const config = await loadFileConfig();
 
   if (explicitProfile) {

@@ -71,12 +71,12 @@ export function registerCheckoutCommand(program: Command): void {
             console.log('');
           }
 
-          console.log(chalk.dim('Next: open .revkit/CONTEXT.md and point your agent at it'));
+          console.log(chalk.dim('Next: open .revpack/CONTEXT.md and point your agent at it'));
           if (clonedTo) {
             console.log(chalk.dim(`      cd ${clonedTo}`));
           }
         } else {
-          console.log(chalk.dim('Next: run `revkit prepare` to generate the review bundle'));
+          console.log(chalk.dim('Next: run `revpack prepare` to generate the review bundle'));
           if (clonedTo) {
             console.log(chalk.dim(`      cd ${clonedTo}`));
           }
