@@ -29,12 +29,12 @@ Create positional findings only on lines listed in `line-map.ndjson`.
 
 The workspace contains only the new branch state. Deleted lines do not exist in checked-out files.
 
-| Artifact | Use for |
-|---|---|
-| `diffs/files.json` | Navigation, file selection, locating per-file patches. Not for review anchors. |
-| `diffs/latest.patch` | Overall MR/PR understanding, cross-file relationships, change intent. |
-| `diffs/patches/by-file/` | Detailed review of individual files (preferred over full patch). |
-| `diffs/line-map.ndjson` | **Source of truth** for valid positional anchors. Every finding must reference a line here. |
+| Artifact                   | Use for                                                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `diffs/files.json`         | Navigation, file selection, locating per-file patches. Not for review anchors.                             |
+| `diffs/latest.patch`       | Overall MR/PR understanding, cross-file relationships, change intent.                                      |
+| `diffs/patches/by-file/`   | Detailed review of individual files (preferred over full patch).                                           |
+| `diffs/line-map.ndjson`    | **Source of truth** for valid positional anchors. Every finding must reference a line here.                |
 | `diffs/change-blocks.json` | Understanding larger edits and replacement relationships. `preferredCommentTarget` gives a default anchor. |
 
 **Do not** calculate line numbers manually from patches or checked-out files. Use patches to understand changes; use `line-map.ndjson` to choose anchors.
@@ -43,10 +43,10 @@ The workspace contains only the new branch state. Deleted lines do not exist in 
 
 Each finding must anchor to exactly one `line-map.ndjson` entry:
 
-| `kind` | Use |
-|---|---|
-| `added` | `newLine` only |
-| `removed` | `oldLine` only |
+| `kind`    | Use                          |
+| --------- | ---------------------------- |
+| `added`   | `newLine` only               |
+| `removed` | `oldLine` only               |
 | `context` | both `oldLine` and `newLine` |
 
 Prefer added-line anchors — they are the clearest for issues introduced by the MR/PR. Use removed-line anchors only for harmful deletions. A line in the workspace but not in `line-map.ndjson` is not valid for a finding.
@@ -107,13 +107,13 @@ Keep findings concise — no long code walkthroughs.
 
 Choose based on concrete impact, not how suspicious the code looks. If you cannot explain the impact, do not use `high` or `blocker`.
 
-| Severity | Meaning |
-|---|---|
-| `blocker` | Breaks core functionality, data loss, or serious security issue |
-| `high` | Likely production bug, security issue, broken API contract, or serious regression |
-| `medium` | Realistic edge case or maintainability issue that can cause future bugs |
-| `low` | Minor risk or small robustness improvement |
-| `nit` | Cosmetic or naming; use rarely |
+| Severity  | Meaning                                                                           |
+| --------- | --------------------------------------------------------------------------------- |
+| `blocker` | Breaks core functionality, data loss, or serious security issue                   |
+| `high`    | Likely production bug, security issue, broken API contract, or serious regression |
+| `medium`  | Realistic edge case or maintainability issue that can cause future bugs           |
+| `low`     | Minor risk or small robustness improvement                                        |
+| `nit`     | Cosmetic or naming; use rarely                                                    |
 
 ## Categories
 

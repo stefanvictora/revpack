@@ -20,12 +20,12 @@ Allowed activity: reading and searching files needed for review (source files, d
 
 Always write all four output files. Use `[]` for empty JSON outputs. Leave `review.md` empty (not filler) when there is no useful MR/PR-level note.
 
-| File | Purpose |
-|---|---|
-| `outputs/replies.json` | Replies to existing MR/PR threads |
-| `outputs/new-findings.json` | New positional review findings |
-| `outputs/summary.md` | Changelog-style description of what the MR/PR changes — not what you found |
-| `outputs/review.md` | Optional MR/PR-level synthesis; may be empty |
+| File                        | Purpose                                                                    |
+| --------------------------- | -------------------------------------------------------------------------- |
+| `outputs/replies.json`      | Replies to existing MR/PR threads                                          |
+| `outputs/new-findings.json` | New positional review findings                                             |
+| `outputs/summary.md`        | Changelog-style description of what the MR/PR changes — not what you found |
+| `outputs/review.md`         | Optional MR/PR-level synthesis; may be empty                               |
 
 ## Language and encoding
 
@@ -43,13 +43,13 @@ Follow the reading order from `.revkit/CONTEXT.md`.
 
 Key diff artifacts:
 
-| Artifact | Purpose |
-|---|---|
-| `diffs/files.json` | Changed-file index — use for navigation and file selection |
-| `diffs/latest.patch` | Full unified diff — use for overall MR/PR understanding |
-| `diffs/patches/by-file/` | Per-file diffs — use for focused review of individual files |
-| `diffs/line-map.ndjson` | Valid positional anchors — every finding must reference a line here |
-| `diffs/change-blocks.json` | Grouped insert/delete/replace blocks |
+| Artifact                   | Purpose                                                             |
+| -------------------------- | ------------------------------------------------------------------- |
+| `diffs/files.json`         | Changed-file index — use for navigation and file selection          |
+| `diffs/latest.patch`       | Full unified diff — use for overall MR/PR understanding             |
+| `diffs/patches/by-file/`   | Per-file diffs — use for focused review of individual files         |
+| `diffs/line-map.ndjson`    | Valid positional anchors — every finding must reference a line here |
+| `diffs/change-blocks.json` | Grouped insert/delete/replace blocks                                |
 
 Use checked-out source files when the diff alone is not enough.
 

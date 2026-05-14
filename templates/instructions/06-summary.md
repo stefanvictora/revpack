@@ -12,14 +12,23 @@ Write a concise, curated summary — not a file list, commit list, or code walkt
 
 ```md
 ## Added
+
 ## Changed
+
 ## Deprecated
+
 ## Removed
+
 ## Fixed
+
 ## Security
+
 ## Performance
+
 ## Tests
+
 ## Documentation
+
 ## Internal
 ```
 
