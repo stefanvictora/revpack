@@ -367,8 +367,15 @@ export class LocalGitProvider implements ReviewProvider {
         nextThreadNumber: parsed.nextThreadNumber || 1,
         threads: parsed.threads ?? [],
       };
-    } catch {
-      return { ...DEFAULT_STATE, threads: [] };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { ...DEFAULT_STATE, threads: [] };
+      }
+      throw new Error(
+        `Failed to load local review state from ${this.statePath}. The file may be corrupt; repair or remove it and retry.\n` +
+          `Reason: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
     }
   }
 

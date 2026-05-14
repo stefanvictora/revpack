@@ -191,4 +191,17 @@ describe('LocalGitProvider integration', () => {
     expect(result.bundleState.outputs.summary.lastPublishedHash).toBeUndefined();
     expect(result.bundleState.outputs.review.lastPublishedHash).toBeUndefined();
   }, 20000);
+
+  it('fails clearly instead of resetting malformed local state', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'local'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'local', 'state.json'), '{ this is not json', 'utf-8');
+
+    const provider = new LocalGitProvider(tmpDir);
+    const orchestrator = new ReviewOrchestrator({ provider, workingDir: tmpDir });
+
+    await expect(orchestrator.prepare()).rejects.toThrow('Failed to load local review state');
+
+    const stateRaw = await fs.readFile(path.join(tmpDir, '.revpack', 'local', 'state.json'), 'utf-8');
+    expect(stateRaw).toBe('{ this is not json');
+  }, 20000);
 });

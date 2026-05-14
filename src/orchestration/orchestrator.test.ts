@@ -559,6 +559,28 @@ describe('ReviewOrchestrator', () => {
       );
     });
 
+    it('throws descriptive error when multiple GitHub PRs match the branch', async () => {
+      deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
+
+      const firstTarget: ReviewTarget = {
+        ...mockTarget,
+        provider: 'github',
+        targetType: 'pull_request',
+        targetId: '42',
+      };
+      const secondTarget: ReviewTarget = { ...firstTarget, targetId: '99' };
+      mockProvider = {
+        ...mockProvider,
+        providerType: 'github',
+        findTargetByBranch: vi.fn().mockResolvedValue([firstTarget, secondTarget]),
+      };
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow(
+        'Multiple open PRs found for branch "feature/test": #42, #99',
+      );
+    });
+
     it('throws when no MR found for the current branch', async () => {
       deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
       currentBranchSpy.mockResolvedValue('feature/orphan');

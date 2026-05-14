@@ -697,7 +697,7 @@ export class ReviewOrchestrator {
           }
         }
       } catch (err) {
-        if (err instanceof Error && err.message.includes('Multiple open MRs')) throw err;
+        if (err instanceof Error && err.message.startsWith('Multiple open ')) throw err;
       }
     }
 
