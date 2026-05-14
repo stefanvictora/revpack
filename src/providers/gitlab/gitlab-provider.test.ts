@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { GitLabProvider } from './gitlab-provider.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('GitLabProvider.resolveTarget', () => {
   const provider = new GitLabProvider('https://gitlab.example.com', 'fake-token');
@@ -55,6 +59,63 @@ describe('GitLabProvider.resolveTarget', () => {
       repository: 'org/team/project',
       targetType: 'merge_request',
       targetId: '5',
+    });
+  });
+});
+
+describe('GitLabProvider.getLatestDiff', () => {
+  const provider = new GitLabProvider('https://gitlab.example.com', 'fake-token');
+  const ref = {
+    provider: 'gitlab' as const,
+    repository: 'group/project',
+    targetType: 'merge_request' as const,
+    targetId: '42',
+  };
+
+  it('marks too_large diff entries as incomplete', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            old_path: 'src/large.ts',
+            new_path: 'src/large.ts',
+            diff: '',
+            too_large: true,
+          },
+        ]),
+        { headers: { 'x-total-pages': '1' } },
+      ),
+    );
+
+    await expect(provider.getLatestDiff(ref)).resolves.toEqual([
+      expect.objectContaining({
+        oldPath: 'src/large.ts',
+        newPath: 'src/large.ts',
+        diff: '',
+        incomplete: true,
+        incompleteReason: 'too_large',
+      }),
+    ]);
+  });
+
+  it('marks collapsed entries with no usable diff as incomplete', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            old_path: 'src/collapsed.ts',
+            new_path: 'src/collapsed.ts',
+            collapsed: true,
+          },
+        ]),
+        { headers: { 'x-total-pages': '1' } },
+      ),
+    );
+
+    const diffs = await provider.getLatestDiff(ref);
+    expect(diffs[0]).toMatchObject({
+      incomplete: true,
+      incompleteReason: 'collapsed_without_diff',
     });
   });
 });

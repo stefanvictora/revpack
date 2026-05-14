@@ -51,6 +51,13 @@ export function registerPrepareCommand(program: Command): void {
         console.log(`  ${chalk.dim('Updated:')}     ${formatDate(target.updatedAt)}`);
         console.log(`  ${chalk.dim('Threads:')}     ${bundle.threads.length} unresolved`);
         console.log(`  ${chalk.dim('Files:')}       ${bundle.diffs.length} changed`);
+        if (result.diffFallback) {
+          const count = result.diffFallback.incompleteFileCount;
+          const subject = count > 0 ? `incomplete diff data for ${count} file(s)` : 'possibly incomplete diff metadata';
+          console.log(
+            chalk.yellow(`  GitLab returned ${subject}; regenerated latest.patch from local Git using MR diff refs.`),
+          );
+        }
         console.log('');
 
         // Prepare summary — changes

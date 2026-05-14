@@ -43,6 +43,7 @@ export interface ReviewTarget extends ReviewTargetRef {
   updatedAt: string;
   labels: string[];
   diffRefs: DiffRefs;
+  changesCount?: string;
   /**
    * For fork-based PRs: the `owner/repo` slug of the contributor's fork.
    * Undefined for same-repository PRs.
@@ -82,6 +83,8 @@ export interface ReviewDiff {
   newFile: boolean;
   renamedFile: boolean;
   deletedFile: boolean;
+  incomplete?: boolean;
+  incompleteReason?: string;
 }
 
 // ─── Review Thread & Comment ─────────────────────────────

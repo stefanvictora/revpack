@@ -184,6 +184,11 @@ export class GitHelper {
     await exec('git', ['fetch', remote], { cwd: this.cwd });
   }
 
+  /** Fetch a specific commit/object from a remote into FETCH_HEAD when the server allows it. */
+  async fetchCommit(commitSha: string, remote = 'origin'): Promise<void> {
+    await exec('git', ['fetch', remote, commitSha], { cwd: this.cwd });
+  }
+
   /** Read a file at a specific ref. */
   async showFile(ref: string, filePath: string): Promise<string> {
     const { stdout } = await exec('git', ['show', `${ref}:${filePath}`], { cwd: this.cwd });
@@ -212,6 +217,16 @@ export class GitHelper {
     return head === commitSha;
   }
 
+  /** Check whether a commit object exists locally. */
+  async hasCommit(commitSha: string): Promise<boolean> {
+    try {
+      await exec('git', ['cat-file', '-e', `${commitSha}^{commit}`], { cwd: this.cwd });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Check if working tree is clean. */
   async isClean(): Promise<boolean> {
     const { stdout } = await exec('git', ['status', '--porcelain'], { cwd: this.cwd });
@@ -227,6 +242,18 @@ export class GitHelper {
   /** Generate a diff between two refs. */
   async diff(baseRef: string, headRef: string): Promise<string> {
     const { stdout } = await exec('git', ['diff', baseRef, headRef], { cwd: this.cwd });
+    return stdout;
+  }
+
+  /** Generate the canonical review patch between two commits. */
+  async diffForReview(baseSha: string, headSha: string): Promise<string> {
+    const { stdout } = await exec(
+      'git',
+      ['diff', '--find-renames', '--unified=3', '--ignore-space-at-eol', '--ignore-blank-lines', baseSha, headSha],
+      {
+        cwd: this.cwd,
+      },
+    );
     return stdout;
   }
 

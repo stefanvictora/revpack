@@ -396,6 +396,7 @@ export class GitLabProvider implements ReviewProvider {
       updatedAt: mr.updated_at,
       labels: mr.labels ?? [],
       diffRefs: this.mapDiffRefs(mr.diff_refs),
+      changesCount: mr.changes_count,
     };
   }
 
@@ -458,6 +459,17 @@ export class GitLabProvider implements ReviewProvider {
   }
 
   private mapDiff(diff: GitLabDiffFile): ReviewDiff {
+    const diffMissing = diff.diff == null || diff.diff === '';
+    const collapsedWithoutDiff = diff.collapsed === true && diffMissing;
+    const emptyModifiedDiff = diffMissing && !diff.new_file && !diff.deleted_file;
+    const incompleteReason = diff.too_large
+      ? 'too_large'
+      : collapsedWithoutDiff
+        ? 'collapsed_without_diff'
+        : emptyModifiedDiff
+          ? 'missing_diff'
+          : undefined;
+
     return {
       oldPath: diff.old_path,
       newPath: diff.new_path,
@@ -465,6 +477,8 @@ export class GitLabProvider implements ReviewProvider {
       newFile: diff.new_file ?? false,
       renamedFile: diff.renamed_file ?? false,
       deletedFile: diff.deleted_file ?? false,
+      incomplete: incompleteReason !== undefined,
+      incompleteReason,
     };
   }
 
@@ -496,6 +510,7 @@ interface GitLabMR {
   updated_at: string;
   labels?: string[];
   diff_refs?: GitLabDiffRefs;
+  changes_count?: string;
   author?: { username: string };
 }
 
@@ -540,6 +555,8 @@ interface GitLabDiffFile {
   new_file?: boolean;
   renamed_file?: boolean;
   deleted_file?: boolean;
+  too_large?: boolean;
+  collapsed?: boolean;
 }
 
 interface GitLabDiffVersion {

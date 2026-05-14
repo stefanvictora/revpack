@@ -2,6 +2,7 @@ import type { ReviewProvider } from '../providers/provider.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
+  ReviewDiff,
   WorkspaceBundle,
   BundleState,
   BundleLocal,
@@ -13,6 +14,7 @@ import type {
 import type { ResolvedAppConfig } from '../config/types.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
+import { parsePatch } from '../workspace/patch-parser.js';
 import {
   computeAggregateThreadsDigest,
   computeContentHash,
@@ -47,6 +49,19 @@ export interface PrepareResult {
   hasCheckpoint: boolean;
   prunedReplies: number;
   publishedActionCount: number;
+  diffFallback?: PrepareDiffFallback;
+}
+
+export interface PrepareDiffFallback {
+  provider: 'gitlab';
+  reason: string;
+  incompleteFileCount: number;
+  baseSha: string;
+  headSha: string;
+}
+
+interface LocalPatchFallbackResult extends PrepareDiffFallback {
+  patchContent: string;
 }
 
 export interface CheckoutResult {
@@ -228,8 +243,13 @@ export class ReviewOrchestrator {
     // Only non-resolved threads go into the bundle
     const activeThreads = activeReviewThreads(allThreads);
 
+    const diffFallback = await this.maybeRegenerateGitLabPatch(target, diffs);
+    const bundleDiffs = diffFallback ? this.reviewDiffsFromPatch(diffFallback.patchContent) : diffs;
+
     // Create the bundle
-    const bundle = await this.workspace.createBundle(target, activeThreads, diffs, versions, threadIndex);
+    const bundle = await this.workspace.createBundle(target, activeThreads, bundleDiffs, versions, threadIndex, {
+      latestPatchContent: diffFallback?.patchContent,
+    });
 
     // Compute prepare summary — compare against remote checkpoint
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
@@ -336,7 +356,7 @@ export class ReviewOrchestrator {
     }
 
     // Write CONTEXT.md
-    const contextPath = await this.workspace.writeContext(target, activeThreads, diffs, threadIndex, {
+    const contextPath = await this.workspace.writeContext(target, activeThreads, bundleDiffs, threadIndex, {
       prepareSummary,
       publishedActions: previousActions,
       changedThreadIds,
@@ -377,6 +397,15 @@ export class ReviewOrchestrator {
       hasCheckpoint: remoteCheckpoint !== null,
       prunedReplies,
       publishedActionCount: previousActions.length,
+      diffFallback: diffFallback
+        ? {
+            provider: diffFallback.provider,
+            reason: diffFallback.reason,
+            incompleteFileCount: diffFallback.incompleteFileCount,
+            baseSha: diffFallback.baseSha,
+            headSha: diffFallback.headSha,
+          }
+        : undefined,
     };
   }
 
@@ -691,6 +720,128 @@ export class ReviewOrchestrator {
       'Could not determine which MR to prepare.\n' +
         'No ref provided, no existing bundle, and no open MR found for the current branch.\n' +
         'Run `revkit prepare !<id>` to specify one explicitly.',
+    );
+  }
+
+  private async maybeRegenerateGitLabPatch(
+    target: ReviewTarget,
+    diffs: ReviewDiff[],
+  ): Promise<LocalPatchFallbackResult | undefined> {
+    if (target.provider !== 'gitlab') return undefined;
+
+    const incompleteDiffs = diffs.filter((d) => {
+      const missingModifiedDiff = !d.diff && !d.newFile && !d.deletedFile;
+      return d.incomplete || missingModifiedDiff;
+    });
+    const changesCountOverflow = target.changesCount?.trim().endsWith('+') === true;
+
+    if (incompleteDiffs.length === 0 && !changesCountOverflow) return undefined;
+
+    const baseSha = target.diffRefs.baseSha;
+    const headSha = target.diffRefs.headSha;
+    const reasonParts = [
+      ...new Set(incompleteDiffs.map((d) => d.incompleteReason ?? 'missing_diff')),
+      ...(changesCountOverflow ? [`changes_count=${target.changesCount}`] : []),
+    ];
+    const reason = reasonParts.join(', ');
+
+    if (!baseSha || !headSha) {
+      throw this.gitLabLocalPatchFailure(baseSha, headSha, 'MR diff_refs.base_sha or diff_refs.head_sha is missing.');
+    }
+
+    try {
+      await this.ensureCommitsAvailableForDiff(target, baseSha, headSha);
+      const patchContent = await this.git.diffForReview(baseSha, headSha);
+      return {
+        provider: 'gitlab',
+        reason,
+        incompleteFileCount: incompleteDiffs.length,
+        baseSha,
+        headSha,
+        patchContent,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw this.gitLabLocalPatchFailure(baseSha, headSha, message);
+    }
+  }
+
+  private async ensureCommitsAvailableForDiff(target: ReviewTarget, baseSha: string, headSha: string): Promise<void> {
+    let missing = await this.missingCommits(baseSha, headSha);
+    if (missing.length === 0) return;
+
+    const fetchErrors: string[] = [];
+
+    for (const sha of missing) {
+      try {
+        await this.git.fetchCommit(sha);
+      } catch (err) {
+        fetchErrors.push(`git fetch origin ${sha}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    try {
+      await this.git.fetch();
+    } catch (err) {
+      fetchErrors.push(`git fetch origin: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    for (const branch of [target.targetBranch, target.sourceBranch]) {
+      if (!branch) continue;
+      try {
+        await this.git.fetchBranch(branch);
+      } catch (err) {
+        fetchErrors.push(`git fetch origin ${branch}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    missing = await this.missingCommits(baseSha, headSha);
+    if (missing.length > 0) {
+      const details =
+        fetchErrors.length > 0 ? `\n\nFetch attempts:\n${fetchErrors.map((e) => `  ${e}`).join('\n')}` : '';
+      throw new Error(`Required commit(s) not available locally: ${missing.join(', ')}.${details}`);
+    }
+  }
+
+  private async missingCommits(baseSha: string, headSha: string): Promise<string[]> {
+    const checks = await Promise.all([
+      this.git.hasCommit(baseSha).then((ok) => (ok ? null : baseSha)),
+      this.git.hasCommit(headSha).then((ok) => (ok ? null : headSha)),
+    ]);
+    return checks.filter((sha): sha is string => sha !== null);
+  }
+
+  private reviewDiffsFromPatch(patchContent: string): ReviewDiff[] {
+    const lineMap = parsePatch(patchContent);
+    const patchSections = WorkspaceManager.splitPatchByFile(patchContent);
+
+    return lineMap.files.map((file, index) => ({
+      oldPath: file.oldPath,
+      newPath: file.newPath,
+      diff: this.stripGitDiffHeader(patchSections[index] ?? ''),
+      newFile: file.status === 'added',
+      renamedFile: file.status === 'renamed',
+      deletedFile: file.status === 'deleted',
+    }));
+  }
+
+  private stripGitDiffHeader(patchSection: string): string {
+    const lines = patchSection.split('\n');
+    const diffStart = lines.findIndex(
+      (line) => line.startsWith('--- ') || line.startsWith('@@ ') || line.startsWith('Binary files '),
+    );
+    return diffStart >= 0 ? lines.slice(diffStart).join('\n') : '';
+  }
+
+  private gitLabLocalPatchFailure(baseSha: string, headSha: string, reason: string): Error {
+    return new Error(
+      `GitLab returned incomplete MR diff data, and revkit could not regenerate the patch from local Git.\n\n` +
+        `Required range:\n` +
+        `  base: ${baseSha || '<missing>'}\n` +
+        `  head: ${headSha || '<missing>'}\n\n` +
+        `Reason:\n` +
+        `  ${reason.replace(/\n/g, '\n  ')}\n\n` +
+        `The prepared review bundle would be incomplete, so prepare was aborted.`,
     );
   }
 }

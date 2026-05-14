@@ -80,6 +80,7 @@ export class WorkspaceManager {
     diffs: ReviewDiff[],
     versions: ReviewVersion[],
     threadIndex: ThreadIndex,
+    options?: { latestPatchContent?: string },
   ): Promise<WorkspaceBundle> {
     const preparedAt = new Date().toISOString();
 
@@ -104,10 +105,10 @@ export class WorkspaceManager {
 
     // Write thread files
     await this.clearThreadFiles();
-    await this.writeThreads(threads, threadIndex, diffs, target.diffRefs.headSha);
+    await this.writeThreads(threads, threadIndex, diffs, target.diffRefs.headSha, options?.latestPatchContent);
 
     // Write diffs and diff bundle artifacts
-    await this.writeDiffs(diffs);
+    await this.writeDiffs(diffs, options?.latestPatchContent);
     await this.writeDiffBundle();
 
     // Ensure output placeholders exist (preserve existing outputs)
@@ -1085,9 +1086,10 @@ export class WorkspaceManager {
     threadIndex: ThreadIndex,
     diffs: ReviewDiff[],
     currentHeadSha: string,
+    latestPatchContent?: string,
   ): Promise<void> {
     // Build line map from diffs for embedding diff context in thread files
-    const patchContent = diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
+    const patchContent = latestPatchContent ?? diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
     const lineMap = parsePatch(patchContent);
 
     for (const thread of threads) {
@@ -1115,8 +1117,8 @@ export class WorkspaceManager {
     }
   }
 
-  private async writeDiffs(diffs: ReviewDiff[]): Promise<void> {
-    const patchContent = diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
+  private async writeDiffs(diffs: ReviewDiff[], latestPatchContent?: string): Promise<void> {
+    const patchContent = latestPatchContent ?? diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'latest.patch'), patchContent, 'utf-8');
   }
 
