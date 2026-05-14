@@ -29,7 +29,6 @@ export async function createOrchestrator(hintUrls?: string[], explicitProfile?: 
   return new ReviewOrchestrator({
     provider,
     workingDir: cwd,
-    runtimeConfig: config,
   });
 }
 
@@ -43,7 +42,6 @@ export async function createOrchestratorAt(workingDir: string): Promise<ReviewOr
   return new ReviewOrchestrator({
     provider,
     workingDir,
-    runtimeConfig: config,
   });
 }
 
