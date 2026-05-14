@@ -12,7 +12,7 @@ export function registerStatusCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (ref: string | undefined, opts: { json?: boolean }) => {
       try {
-        const orchestrator = await createOrchestrator();
+        const orchestrator = await createOrchestrator(undefined, undefined, { allowActiveLocal: !ref });
         const defaultRepo = await getRepoFromGit();
 
         // Load bundle state
