@@ -49,19 +49,6 @@ export interface PrepareResult {
   hasCheckpoint: boolean;
   prunedReplies: number;
   publishedActionCount: number;
-  diffFallback?: PrepareDiffFallback;
-}
-
-export interface PrepareDiffFallback {
-  provider: 'gitlab';
-  reason: string;
-  incompleteFileCount: number;
-  baseSha: string;
-  headSha: string;
-}
-
-interface LocalPatchFallbackResult extends PrepareDiffFallback {
-  patchContent: string;
 }
 
 export interface CheckoutResult {
@@ -126,11 +113,10 @@ export class ReviewOrchestrator {
       }
     }
 
-    // Fetch all data in parallel
-    const [target, rawThreads, diffs, versions] = await Promise.all([
+    // Fetch provider metadata and discussion state. Patch content is generated from local Git below.
+    const [target, rawThreads, versions] = await Promise.all([
       this.provider.getTargetSnapshot(targetRef),
       this.provider.listAllThreads(targetRef),
-      this.provider.getLatestDiff(targetRef),
       this.provider.getDiffVersions(targetRef),
     ]);
 
@@ -243,12 +229,12 @@ export class ReviewOrchestrator {
     // Only non-resolved threads go into the bundle
     const activeThreads = activeReviewThreads(allThreads);
 
-    const diffFallback = await this.maybeRegenerateGitLabPatch(target, diffs);
-    const bundleDiffs = diffFallback ? this.reviewDiffsFromPatch(diffFallback.patchContent) : diffs;
+    const latestPatchContent = await this.generateReviewPatchFromGit(target);
+    const bundleDiffs = this.reviewDiffsFromPatch(latestPatchContent);
 
     // Create the bundle
     const bundle = await this.workspace.createBundle(target, activeThreads, bundleDiffs, versions, threadIndex, {
-      latestPatchContent: diffFallback?.patchContent,
+      latestPatchContent,
     });
 
     // Compute prepare summary — compare against remote checkpoint
@@ -299,25 +285,12 @@ export class ReviewOrchestrator {
 
     // Incremental diff relative to checkpoint head (not previous prepare)
     if (targetCodeChanged && remoteCheckpoint) {
-      // Prefer git-based diff: `git diff fromSha toSha` gives the true incremental
-      // changes between two commits, unlike the provider API which returns full
-      // file diffs against the target branch for files that changed between versions.
       try {
+        await this.ensureCommitsAvailableForDiff(target, remoteCheckpoint.headSha, mrHeadSha);
         await this.workspace.writeIncrementalDiffFromGit(this.git, remoteCheckpoint.headSha, mrHeadSha);
-      } catch {
-        // Fall back to provider-based incremental diff if git is unavailable
-        if (remoteCheckpoint.providerVersionId && latestVersionId) {
-          try {
-            const incrementalDiffs = await this.provider.getIncrementalDiff(
-              targetRef,
-              remoteCheckpoint.providerVersionId,
-              latestVersionId,
-            );
-            await this.workspace.writeIncrementalDiff(incrementalDiffs);
-          } catch {
-            // No incremental patch available
-          }
-        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw this.localPatchFailure(remoteCheckpoint.headSha, mrHeadSha, message);
       }
     } else if (remoteCheckpoint && !targetCodeChanged) {
       await this.workspace.writeNoCodeChangeIncrementalPatch();
@@ -397,15 +370,6 @@ export class ReviewOrchestrator {
       hasCheckpoint: remoteCheckpoint !== null,
       prunedReplies,
       publishedActionCount: previousActions.length,
-      diffFallback: diffFallback
-        ? {
-            provider: diffFallback.provider,
-            reason: diffFallback.reason,
-            incompleteFileCount: diffFallback.incompleteFileCount,
-            baseSha: diffFallback.baseSha,
-            headSha: diffFallback.headSha,
-          }
-        : undefined,
     };
   }
 
@@ -723,46 +687,20 @@ export class ReviewOrchestrator {
     );
   }
 
-  private async maybeRegenerateGitLabPatch(
-    target: ReviewTarget,
-    diffs: ReviewDiff[],
-  ): Promise<LocalPatchFallbackResult | undefined> {
-    if (target.provider !== 'gitlab') return undefined;
-
-    const incompleteDiffs = diffs.filter((d) => {
-      const missingModifiedDiff = !d.diff && !d.newFile && !d.deletedFile;
-      return d.incomplete || missingModifiedDiff;
-    });
-    const changesCountOverflow = target.changesCount?.trim().endsWith('+') === true;
-
-    if (incompleteDiffs.length === 0 && !changesCountOverflow) return undefined;
-
+  private async generateReviewPatchFromGit(target: ReviewTarget): Promise<string> {
     const baseSha = target.diffRefs.baseSha;
     const headSha = target.diffRefs.headSha;
-    const reasonParts = [
-      ...new Set(incompleteDiffs.map((d) => d.incompleteReason ?? 'missing_diff')),
-      ...(changesCountOverflow ? [`changes_count=${target.changesCount}`] : []),
-    ];
-    const reason = reasonParts.join(', ');
 
     if (!baseSha || !headSha) {
-      throw this.gitLabLocalPatchFailure(baseSha, headSha, 'MR diff_refs.base_sha or diff_refs.head_sha is missing.');
+      throw this.localPatchFailure(baseSha, headSha, 'MR/PR diff_refs.base_sha or diff_refs.head_sha is missing.');
     }
 
     try {
       await this.ensureCommitsAvailableForDiff(target, baseSha, headSha);
-      const patchContent = await this.git.diffForReview(baseSha, headSha);
-      return {
-        provider: 'gitlab',
-        reason,
-        incompleteFileCount: incompleteDiffs.length,
-        baseSha,
-        headSha,
-        patchContent,
-      };
+      return await this.git.diffForReview(baseSha, headSha);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      throw this.gitLabLocalPatchFailure(baseSha, headSha, message);
+      throw this.localPatchFailure(baseSha, headSha, message);
     }
   }
 
@@ -833,9 +771,9 @@ export class ReviewOrchestrator {
     return diffStart >= 0 ? lines.slice(diffStart).join('\n') : '';
   }
 
-  private gitLabLocalPatchFailure(baseSha: string, headSha: string, reason: string): Error {
+  private localPatchFailure(baseSha: string, headSha: string, reason: string): Error {
     return new Error(
-      `GitLab returned incomplete MR diff data, and revkit could not regenerate the patch from local Git.\n\n` +
+      `revkit could not generate the review patch from local Git.\n\n` +
         `Required range:\n` +
         `  base: ${baseSha || '<missing>'}\n` +
         `  head: ${headSha || '<missing>'}\n\n` +

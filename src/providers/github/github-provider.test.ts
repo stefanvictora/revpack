@@ -208,66 +208,9 @@ describe('GitHubProvider REST reads', () => {
     expect(matches[0].sourceBranch).toBe('feature/test');
   });
 
-  it('maps paginated PR files to diffs', async () => {
-    installFetch((url) => {
-      if (url === 'https://api.github.com/repos/octo/repo/pulls/42/files') {
-        return jsonResponse(
-          [
-            { filename: 'src/new.ts', status: 'added', patch: '@@ -0,0 +1 @@\n+new' },
-            {
-              filename: 'src/new-name.ts',
-              previous_filename: 'src/old-name.ts',
-              status: 'renamed',
-              patch: '@@ -1 +1 @@\n-old\n+new',
-            },
-          ],
-          {
-            headers: {
-              link: '<https://api.github.com/repos/octo/repo/pulls/42/files?page=2>; rel="next"',
-            },
-          },
-        );
-      }
-      if (url === 'https://api.github.com/repos/octo/repo/pulls/42/files?page=2') {
-        return jsonResponse([{ filename: 'src/remove.ts', status: 'removed' }]);
-      }
-      throw new Error(`Unexpected URL: ${url}`);
-    });
-
-    await expect(provider.getLatestDiff(ref)).resolves.toEqual([
-      {
-        oldPath: 'src/new.ts',
-        newPath: 'src/new.ts',
-        diff: '@@ -0,0 +1 @@\n+new',
-        newFile: true,
-        renamedFile: false,
-        deletedFile: false,
-      },
-      {
-        oldPath: 'src/old-name.ts',
-        newPath: 'src/new-name.ts',
-        diff: '@@ -1 +1 @@\n-old\n+new',
-        newFile: false,
-        renamedFile: true,
-        deletedFile: false,
-      },
-      {
-        oldPath: 'src/remove.ts',
-        newPath: 'src/remove.ts',
-        diff: '',
-        newFile: false,
-        renamedFile: false,
-        deletedFile: true,
-      },
-    ]);
-  });
-
-  it('uses the PR head SHA as the provider version and compares versions by commit SHA', async () => {
+  it('uses the PR head SHA as the provider version', async () => {
     installFetch((url) => {
       if (url === 'https://api.github.com/repos/octo/repo/pulls/42') return jsonResponse(pr());
-      if (url === 'https://api.github.com/repos/octo/repo/compare/old-sha...head-sha') {
-        return jsonResponse({ files: [{ filename: 'src/app.ts', status: 'modified', patch: '@@ -1 +1 @@' }] });
-      }
       throw new Error(`Unexpected URL: ${url}`);
     });
 
@@ -281,17 +224,6 @@ describe('GitHubProvider REST reads', () => {
         startCommitSha: 'base-sha',
         createdAt: '2026-01-02T00:00:00Z',
         realSize: 3,
-      },
-    ]);
-    await expect(provider.getIncrementalDiff(ref, 'head-sha', 'head-sha')).resolves.toEqual([]);
-    await expect(provider.getIncrementalDiff(ref, 'old-sha', 'head-sha')).resolves.toEqual([
-      {
-        oldPath: 'src/app.ts',
-        newPath: 'src/app.ts',
-        diff: '@@ -1 +1 @@',
-        newFile: false,
-        renamedFile: false,
-        deletedFile: false,
       },
     ]);
   });

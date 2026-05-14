@@ -6,7 +6,6 @@ import type {
   DiffPosition,
   DiffRefs,
   ReviewComment,
-  ReviewDiff,
   ReviewTarget,
   ReviewTargetRef,
   ReviewThread,
@@ -175,24 +174,9 @@ export class GitHubProvider implements ReviewProvider {
     return threads.map((thread) => this.mapReviewThread(ref, thread));
   }
 
-  async getLatestDiff(ref: ReviewTargetRef): Promise<ReviewDiff[]> {
-    const files = await this.requestPaginated<GitHubPullFile>(
-      `${this.repoPath(ref.repository)}/pulls/${ref.targetId}/files`,
-    );
-    return files.map((file) => this.mapFileDiff(file));
-  }
-
   async getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]> {
     const pr = await this.request<GitHubPullRequest>(`${this.repoPath(ref.repository)}/pulls/${ref.targetId}`);
     return [this.mapVersion(ref, pr)];
-  }
-
-  async getIncrementalDiff(ref: ReviewTargetRef, fromVersion: string, toVersion: string): Promise<ReviewDiff[]> {
-    if (fromVersion === toVersion) return [];
-    const comparison = await this.request<GitHubCompare>(
-      `${this.repoPath(ref.repository)}/compare/${fromVersion}...${toVersion}`,
-    );
-    return (comparison.files ?? []).map((file) => this.mapFileDiff(file));
   }
 
   // ─── Write operations ───────────────────────────────────
@@ -489,19 +473,6 @@ export class GitHubProvider implements ReviewProvider {
     };
   }
 
-  private mapFileDiff(file: GitHubPullFile): ReviewDiff {
-    const status = file.status;
-    const oldPath = status === 'renamed' ? (file.previous_filename ?? file.filename) : file.filename;
-    return {
-      oldPath,
-      newPath: file.filename,
-      diff: file.patch ?? '',
-      newFile: status === 'added',
-      renamedFile: status === 'renamed',
-      deletedFile: status === 'removed',
-    };
-  }
-
   private mapVersion(ref: ReviewTargetRef, pr: GitHubPullRequest): ReviewVersion {
     return {
       provider: 'github',
@@ -587,17 +558,6 @@ interface GitHubPullRequest {
 
 interface GitHubUser {
   login: string;
-}
-
-interface GitHubPullFile {
-  filename: string;
-  previous_filename?: string;
-  status: string;
-  patch?: string;
-}
-
-interface GitHubCompare {
-  files?: GitHubPullFile[];
 }
 
 interface GitHubIssueComment {

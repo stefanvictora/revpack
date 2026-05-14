@@ -14,7 +14,7 @@ import {
   REVIEW_NOTE_MARKER,
 } from '../workspace/checkpoint.js';
 import type { ReviewProvider } from '../providers/provider.js';
-import type { ReviewTarget, ReviewThread, ReviewDiff, ReviewVersion, ReviewTargetRef } from '../core/types.js';
+import type { ReviewTarget, ReviewThread, ReviewVersion, ReviewTargetRef } from '../core/types.js';
 
 const targetRef: ReviewTargetRef = {
   provider: 'gitlab',
@@ -57,15 +57,6 @@ const mockThread: ReviewThread = {
   ],
 };
 
-const mockDiff: ReviewDiff = {
-  oldPath: 'src/app.ts',
-  newPath: 'src/app.ts',
-  diff: '+added line',
-  newFile: false,
-  renamedFile: false,
-  deletedFile: false,
-};
-
 function localPatch(): string {
   return [
     'diff --git a/src/app.ts b/src/app.ts',
@@ -99,9 +90,7 @@ function createMockProvider(): ReviewProvider {
     getTargetSnapshot: vi.fn().mockResolvedValue(mockTarget),
     listUnresolvedThreads: vi.fn().mockResolvedValue([mockThread]),
     listAllThreads: vi.fn().mockResolvedValue([mockThread]),
-    getLatestDiff: vi.fn().mockResolvedValue([mockDiff]),
     getDiffVersions: vi.fn().mockResolvedValue([mockVersion]),
-    getIncrementalDiff: vi.fn().mockResolvedValue([mockDiff]),
     postReply: vi.fn().mockResolvedValue(undefined),
     resolveThread: vi.fn().mockResolvedValue(undefined),
     updateDescription: vi.fn().mockResolvedValue(undefined),
@@ -126,6 +115,7 @@ describe('ReviewOrchestrator', () => {
   let fetchSpy: MockInstance<any[], any>;
   let fetchBranchSpy: MockInstance<any[], any>;
   let diffForReviewSpy: MockInstance<any[], any>;
+  let diffSpy: MockInstance<any[], any>;
 
   beforeEach(async () => {
     mockProvider = createMockProvider();
@@ -141,6 +131,7 @@ describe('ReviewOrchestrator', () => {
     fetchSpy = vi.spyOn(GitHelper.prototype, 'fetch').mockResolvedValue(undefined);
     fetchBranchSpy = vi.spyOn(GitHelper.prototype, 'fetchBranch').mockResolvedValue(undefined);
     diffForReviewSpy = vi.spyOn(GitHelper.prototype, 'diffForReview').mockResolvedValue(localPatch());
+    diffSpy = vi.spyOn(GitHelper.prototype, 'diff').mockResolvedValue(localPatch());
   });
 
   afterEach(async () => {
@@ -154,6 +145,7 @@ describe('ReviewOrchestrator', () => {
     fetchSpy.mockRestore();
     fetchBranchSpy.mockRestore();
     diffForReviewSpy.mockRestore();
+    diffSpy.mockRestore();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -200,35 +192,10 @@ describe('ReviewOrchestrator', () => {
   });
 
   describe('prepare', () => {
-    it('uses GitLab API patch when diff data is complete', async () => {
+    it('generates latest.patch from local git by default', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      expect(diffForReviewSpy).not.toHaveBeenCalled();
-      const latestPatch = await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'latest.patch'), 'utf-8');
-      expect(latestPatch).toContain('diff --git a/src/app.ts b/src/app.ts');
-      expect(latestPatch).toContain('+added line');
-    });
-
-    it('regenerates latest.patch from local git when a GitLab diff entry is incomplete', async () => {
-      (mockProvider.getLatestDiff as ReturnType<typeof vi.fn>).mockResolvedValue([
-        {
-          ...mockDiff,
-          diff: '',
-          incomplete: true,
-          incompleteReason: 'too_large',
-        },
-      ]);
-
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      const result = await orchestrator.prepare('!42', 'group/project');
-
-      expect(result.diffFallback).toMatchObject({
-        provider: 'gitlab',
-        incompleteFileCount: 1,
-        baseSha: 'aaa',
-        headSha: 'bbb',
-      });
       expect(hasCommitSpy).toHaveBeenCalledWith('aaa');
       expect(hasCommitSpy).toHaveBeenCalledWith('bbb');
       expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
@@ -236,34 +203,18 @@ describe('ReviewOrchestrator', () => {
       expect(latestPatch).toBe(localPatch());
     });
 
-    it('fails prepare instead of using an incomplete GitLab patch when local fallback fails', async () => {
-      (mockProvider.getLatestDiff as ReturnType<typeof vi.fn>).mockResolvedValue([
-        {
-          ...mockDiff,
-          diff: '',
-          incomplete: true,
-          incompleteReason: 'collapsed_without_diff',
-        },
-      ]);
+    it('fails prepare when local git patch generation fails', async () => {
       diffForReviewSpy.mockRejectedValue(new Error('local diff failed'));
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow(
-        'could not regenerate the patch from local Git',
+        'could not generate the review patch from local Git',
       );
       await expect(fs.access(path.join(tmpDir, '.revkit', 'diffs', 'latest.patch'))).rejects.toThrow();
     });
 
-    it('uses commit-to-commit local diff without requiring a clean working tree for fallback', async () => {
+    it('uses commit-to-commit local diff without requiring a clean working tree', async () => {
       isCleanSpy.mockResolvedValue(false);
-      (mockProvider.getLatestDiff as ReturnType<typeof vi.fn>).mockResolvedValue([
-        {
-          ...mockDiff,
-          diff: '',
-          incomplete: true,
-          incompleteReason: 'missing_diff',
-        },
-      ]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
@@ -348,10 +299,13 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(updatedTarget);
       headShaSpy.mockResolvedValue('ccc');
 
-      // Second run — no checkpoint → no incremental diff
+      diffForReviewSpy.mockClear();
+
+      // Second run — no checkpoint → only the canonical full patch is generated
       await orchestrator.prepare('!42', 'group/project');
 
-      expect(mockProvider.getIncrementalDiff).not.toHaveBeenCalled();
+      expect(diffForReviewSpy).toHaveBeenCalledTimes(1);
+      expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'ccc');
     });
 
     it('resumes from bundle.json when no ref is provided', async () => {
@@ -1080,12 +1034,8 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      // Should have called getIncrementalDiff with checkpoint version → latest version
-      expect(mockProvider.getIncrementalDiff).toHaveBeenCalledWith(
-        expect.objectContaining({ targetId: '42' }),
-        'v-old',
-        'v1',
-      );
+      expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
+      expect(diffSpy).toHaveBeenCalledWith('old-head', 'bbb');
     });
   });
 

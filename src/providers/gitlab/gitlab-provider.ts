@@ -5,7 +5,6 @@ import type {
   ReviewTarget,
   ReviewTargetRef,
   ReviewThread,
-  ReviewDiff,
   ReviewVersion,
   ReviewComment,
   DiffPosition,
@@ -116,43 +115,12 @@ export class GitLabProvider implements ReviewProvider {
     return discussions.map((d) => this.mapDiscussion(ref, d));
   }
 
-  async getLatestDiff(ref: ReviewTargetRef): Promise<ReviewDiff[]> {
-    const projectId = encodeURIComponent(ref.repository);
-    const changes = await this.requestPaginated<GitLabDiffFile>(
-      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/diffs`,
-    );
-    return changes.map((c) => this.mapDiff(c));
-  }
-
   async getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]> {
     const projectId = encodeURIComponent(ref.repository);
     const versions = await this.request<GitLabDiffVersion[]>(
       `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/versions`,
     );
     return versions.map((v) => this.mapVersion(ref, v));
-  }
-
-  async getIncrementalDiff(ref: ReviewTargetRef, fromVersion: string, toVersion: string): Promise<ReviewDiff[]> {
-    const projectId = encodeURIComponent(ref.repository);
-    const basePath = `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/versions`;
-
-    // Fetch diffs from both versions in parallel
-    const [fromData, toData] = await Promise.all([
-      this.request<GitLabVersionDetail>(`${basePath}/${fromVersion}`),
-      this.request<GitLabVersionDetail>(`${basePath}/${toVersion}`),
-    ]);
-
-    const fromDiffs = fromData.diffs ?? [];
-    const toDiffs = toData.diffs ?? [];
-
-    // Build a lookup of the previous version's diffs keyed by new_path
-    const fromByPath = new Map<string, string>();
-    for (const d of fromDiffs) {
-      fromByPath.set(d.new_path, d.diff ?? '');
-    }
-
-    // Return only files whose diff content changed between the two versions
-    return toDiffs.filter((d) => fromByPath.get(d.new_path) !== (d.diff ?? '')).map((d) => this.mapDiff(d));
   }
 
   // ─── Write operations ───────────────────────────────────
@@ -396,7 +364,6 @@ export class GitLabProvider implements ReviewProvider {
       updatedAt: mr.updated_at,
       labels: mr.labels ?? [],
       diffRefs: this.mapDiffRefs(mr.diff_refs),
-      changesCount: mr.changes_count,
     };
   }
 
@@ -458,30 +425,6 @@ export class GitLabProvider implements ReviewProvider {
     };
   }
 
-  private mapDiff(diff: GitLabDiffFile): ReviewDiff {
-    const diffMissing = diff.diff == null || diff.diff === '';
-    const collapsedWithoutDiff = diff.collapsed === true && diffMissing;
-    const emptyModifiedDiff = diffMissing && !diff.new_file && !diff.deleted_file;
-    const incompleteReason = diff.too_large
-      ? 'too_large'
-      : collapsedWithoutDiff
-        ? 'collapsed_without_diff'
-        : emptyModifiedDiff
-          ? 'missing_diff'
-          : undefined;
-
-    return {
-      oldPath: diff.old_path,
-      newPath: diff.new_path,
-      diff: diff.diff ?? '',
-      newFile: diff.new_file ?? false,
-      renamedFile: diff.renamed_file ?? false,
-      deletedFile: diff.deleted_file ?? false,
-      incomplete: incompleteReason !== undefined,
-      incompleteReason,
-    };
-  }
-
   private mapVersion(ref: ReviewTargetRef, v: GitLabDiffVersion): ReviewVersion {
     return {
       provider: 'gitlab',
@@ -510,7 +453,6 @@ interface GitLabMR {
   updated_at: string;
   labels?: string[];
   diff_refs?: GitLabDiffRefs;
-  changes_count?: string;
   author?: { username: string };
 }
 
@@ -548,17 +490,6 @@ interface GitLabPosition {
   start_sha?: string;
 }
 
-interface GitLabDiffFile {
-  old_path: string;
-  new_path: string;
-  diff?: string;
-  new_file?: boolean;
-  renamed_file?: boolean;
-  deleted_file?: boolean;
-  too_large?: boolean;
-  collapsed?: boolean;
-}
-
 interface GitLabDiffVersion {
   id: number;
   head_commit_sha: string;
@@ -566,16 +497,6 @@ interface GitLabDiffVersion {
   start_commit_sha: string;
   created_at: string;
   real_size?: number;
-  diffs?: GitLabDiffFile[];
-}
-
-interface GitLabVersionDetail {
-  id: number;
-  head_commit_sha: string;
-  base_commit_sha: string;
-  start_commit_sha: string;
-  created_at: string;
-  diffs?: GitLabDiffFile[];
 }
 
 // ─── TLS / dispatcher helper ──────────────────────────────

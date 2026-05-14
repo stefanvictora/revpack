@@ -1,4 +1,4 @@
-import type { ReviewTarget, ReviewTargetRef, ReviewThread, ReviewDiff, ReviewVersion } from '../core/types.js';
+import type { ReviewTarget, ReviewTargetRef, ReviewThread, ReviewVersion } from '../core/types.js';
 
 /**
  * Position for creating a new discussion thread on a diff.
@@ -39,14 +39,8 @@ export interface ReviewProvider {
   /** List all threads (resolved + unresolved). */
   listAllThreads(ref: ReviewTargetRef): Promise<ReviewThread[]>;
 
-  /** Get the diff for the latest version of the target. */
-  getLatestDiff(ref: ReviewTargetRef): Promise<ReviewDiff[]>;
-
   /** List diff versions (for incremental review). */
   getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]>;
-
-  /** Get the diff between two versions (incremental diff). */
-  getIncrementalDiff(ref: ReviewTargetRef, fromVersion: string, toVersion: string): Promise<ReviewDiff[]>;
 
   /** Post a reply to a thread. */
   postReply(ref: ReviewTargetRef, threadId: string, body: string): Promise<void>;
