@@ -16,8 +16,8 @@ export type FindingCategory =
   | 'general';
 export type Confidence = 'high' | 'medium' | 'low';
 export type CommentOrigin = 'human' | 'bot' | 'unknown';
-export type ProviderType = 'gitlab' | 'github';
-export type TargetType = 'merge_request' | 'pull_request';
+export type ProviderType = 'gitlab' | 'github' | 'local';
+export type TargetType = 'merge_request' | 'pull_request' | 'local_review';
 export type LearningScope = 'org' | 'repository' | 'path' | 'file';
 export type LearningRuleType = 'review_preference' | 'architecture_rule' | 'testing_rule' | 'false_positive_pattern';
 export type ApprovalState = 'pending' | 'approved' | 'rejected';

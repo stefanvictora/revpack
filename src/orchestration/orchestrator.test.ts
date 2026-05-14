@@ -347,6 +347,52 @@ describe('ReviewOrchestrator', () => {
       );
     });
 
+    it('does not derive a remote repository slug for explicit local refs', async () => {
+      mockProvider = {
+        ...createMockProvider(),
+        providerType: 'local',
+        resolveTarget: vi.fn().mockReturnValue({
+          provider: 'local',
+          repository: '',
+          targetType: 'local_review',
+          targetId: 'main...HEAD',
+        }),
+        findTargetByBranch: vi.fn().mockResolvedValue([]),
+        getTargetSnapshot: vi.fn().mockResolvedValue({
+          ...mockTarget,
+          provider: 'local',
+          repository: '',
+          targetType: 'local_review',
+          targetId: 'main...HEAD',
+          sourceBranch: 'feature/test',
+          targetBranch: 'main',
+          webUrl: '',
+        }),
+        getDiffVersions: vi.fn().mockResolvedValue([
+          {
+            ...mockVersion,
+            provider: 'local',
+            targetRef: {
+              provider: 'local',
+              repository: '',
+              targetType: 'local_review',
+              targetId: 'main...HEAD',
+            },
+          },
+        ]),
+      };
+      const deriveRepoSlugSpy = vi
+        .spyOn(GitHelper.prototype, 'deriveRepoSlug')
+        .mockRejectedValue(new Error('no remote'));
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('main...HEAD');
+
+      expect(result.bundle.target.provider).toBe('local');
+      expect(deriveRepoSlugSpy).not.toHaveBeenCalled();
+      deriveRepoSlugSpy.mockRestore();
+    });
+
     it('returns prepare stats on second run', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
@@ -510,6 +556,28 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow(
         'Multiple open MRs found for branch "feature/test": !42, !99',
+      );
+    });
+
+    it('throws descriptive error when multiple GitHub PRs match the branch', async () => {
+      deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
+
+      const firstTarget: ReviewTarget = {
+        ...mockTarget,
+        provider: 'github',
+        targetType: 'pull_request',
+        targetId: '42',
+      };
+      const secondTarget: ReviewTarget = { ...firstTarget, targetId: '99' };
+      mockProvider = {
+        ...mockProvider,
+        providerType: 'github',
+        findTargetByBranch: vi.fn().mockResolvedValue([firstTarget, secondTarget]),
+      };
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow(
+        'Multiple open PRs found for branch "feature/test": #42, #99',
       );
     });
 
@@ -1043,6 +1111,7 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('incremental patch is generated from checkpoint head to current head', async () => {
+      isAncestorSpy.mockResolvedValue(true);
       const checkpointState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null, 'v-old');
       const descriptionWithState = patchDescriptionWithState('Test description', checkpointState);
 
@@ -1055,6 +1124,23 @@ describe('ReviewOrchestrator', () => {
 
       expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
       expect(diffSpy).toHaveBeenCalledWith('old-head', 'bbb');
+    });
+
+    it('writes an unavailable incremental patch when checkpoint head is not an ancestor', async () => {
+      isAncestorSpy.mockResolvedValue(false);
+      const checkpointState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null, 'v-old');
+      const descriptionWithState = patchDescriptionWithState('Test description', checkpointState);
+
+      const targetWithState = { ...mockTarget, description: descriptionWithState };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      expect(diffSpy).not.toHaveBeenCalledWith('old-head', 'bbb');
+      const incrementalPatch = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'incremental.patch'), 'utf-8');
+      expect(incrementalPatch).toContain('previous review checkpoint is not an ancestor');
     });
   });
 

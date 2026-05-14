@@ -19,7 +19,7 @@ export interface NewThreadPosition {
  * Implementations: GitLabProvider, (future) GitHubProvider.
  */
 export interface ReviewProvider {
-  readonly providerType: 'gitlab' | 'github';
+  readonly providerType: 'gitlab' | 'github' | 'local';
 
   /** Resolve a human-friendly reference (branch name, MR !123, URL) to a ReviewTargetRef. */
   resolveTarget(ref: string): ReviewTargetRef;

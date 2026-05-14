@@ -15,6 +15,7 @@ import type {
   ReviewVersion,
   WorkspaceBundle,
 } from '../core/types.js';
+import { formatTargetDisplayId, formatTargetKind } from '../core/display.js';
 import { WorkspaceError } from '../core/errors.js';
 import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
 import type { GitHelper } from './git-helper.js';
@@ -463,8 +464,7 @@ export class WorkspaceManager {
         const trimmed = l.trim();
         if (!trimmed) return false;
         // Skip lines that are only severity/category badges like "_🔴 High_ | _security_"
-        if (/^_[^_]+_(\s*\|\s*_[^_]+_)*\s*$/.test(trimmed)) return false;
-        return true;
+        return !/^_[^_]+_(\s*\|\s*_[^_]+_)*\s*$/.test(trimmed);
       });
       return tableCell(meaningful?.trim().slice(0, maxLen) ?? '');
     };
@@ -482,7 +482,15 @@ export class WorkspaceManager {
     }
 
     const lines: string[] = [];
-    const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
+    const isLocal = target.provider === 'local';
+    const targetKind = formatTargetKind(target);
+    const targetDisplayId = formatTargetDisplayId(target);
+    const targetTypeLabel =
+      target.provider === 'gitlab'
+        ? 'GitLab merge request'
+        : target.provider === 'github'
+          ? 'GitHub pull request'
+          : 'Local Git review';
 
     // ─── Target table ─────────────────────────────────────
     lines.push('# Review Context');
@@ -491,10 +499,10 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('| Field | Value |');
     lines.push('|---|---|');
-    lines.push(`| Type | ${target.provider === 'gitlab' ? 'GitLab merge request' : 'GitHub pull request'} |`);
-    lines.push(`| ${mrType} | !${target.targetId} — ${tableCell(target.title)} |`);
+    lines.push(`| Type | ${targetTypeLabel} |`);
+    lines.push(`| ${targetKind} | ${targetDisplayId} — ${tableCell(target.title)} |`);
     lines.push(`| Repository | \`${tableCell(target.repository)}\` |`);
-    lines.push(`| Author | @${tableCell(target.author)} |`);
+    lines.push(`| Author | ${isLocal ? tableCell(target.author) : `@${tableCell(target.author)}`} |`);
     lines.push(`| Source branch | \`${tableCell(target.sourceBranch)}\` |`);
     lines.push(`| Target branch | \`${tableCell(target.targetBranch)}\` |`);
     lines.push(`| State | ${tableCell(target.state)} |`);
@@ -1079,6 +1087,14 @@ export class WorkspaceManager {
       '# No code changes since last review checkpoint.\n',
       'utf-8',
     );
+  }
+
+  /**
+   * Write an explanatory incremental patch placeholder when history was rewritten.
+   */
+  async writeUnavailableIncrementalPatch(reason: string): Promise<void> {
+    await this.ensureDir(path.join(this.baseDir, 'diffs'));
+    await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), `# ${reason}\n`, 'utf-8');
   }
 
   private async writeThreads(

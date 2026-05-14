@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
+import { formatTargetDisplayId, formatTargetKind } from '../../core/display.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { GitHelper } from '../../workspace/git-helper.js';
 import { createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
@@ -12,7 +13,7 @@ export function registerStatusCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (ref: string | undefined, opts: { json?: boolean }) => {
       try {
-        const orchestrator = await createOrchestrator();
+        const orchestrator = await createOrchestrator(undefined, undefined, { allowActiveLocal: !ref });
         const defaultRepo = await getRepoFromGit();
 
         // Load bundle state
@@ -59,14 +60,21 @@ export function registerStatusCommand(program: Command): void {
         // If we have a bundle, show bundle-first status
         if (bundleState) {
           const t = bundleState.target;
-          const mrType = t.type === 'merge_request' ? 'MR' : 'PR';
+          const targetKind = formatTargetKind({ targetType: t.type });
+          const targetDisplayId = formatTargetDisplayId({
+            provider: t.provider,
+            targetType: t.type,
+            targetId: t.id,
+          });
           const stateColor = getStateColor(t.state);
 
-          console.log(chalk.bold(`${mrType} !${t.id}: ${t.title}`));
+          console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${t.title}`));
           console.log(`  ${chalk.dim('Repository:')} ${t.repository}`);
           console.log(`  ${chalk.dim('Branch:')}     ${t.sourceBranch} → ${t.targetBranch}`);
           console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
-          console.log(`  ${chalk.dim('URL:')}        ${t.webUrl}`);
+          if (t.webUrl) {
+            console.log(`  ${chalk.dim('URL:')}        ${t.webUrl}`);
+          }
           console.log('');
 
           // Bundle info
@@ -95,7 +103,7 @@ export function registerStatusCommand(program: Command): void {
               console.log(`  ${chalk.dim('Matches target:')} ${chalk.green('yes')}`);
             } else {
               const isAncestor = await git.isAncestor(t.diffRefs.headSha).catch(() => false);
-              const relation = isAncestor ? 'ahead of MR head' : 'behind MR head';
+              const relation = isAncestor ? `ahead of ${targetKind} head` : `behind ${targetKind} head`;
               console.log(`  ${chalk.dim('Target head:')}    ${t.diffRefs.headSha.slice(0, 7)}`);
               console.log(`  ${chalk.dim('Matches target:')} ${chalk.yellow(`no — ${relation}`)}`);
               console.log('');
@@ -116,7 +124,7 @@ export function registerStatusCommand(program: Command): void {
             console.log('');
             console.log(
               chalk.yellow(
-                `  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but bundle targets "${mismatch.expectedBranch}" (!${mismatch.targetId})`,
+                `  ⚠ Branch mismatch: on "${mismatch.currentBranch}" but bundle targets "${mismatch.expectedBranch}" (${targetDisplayId})`,
               ),
             );
             console.log(
@@ -150,10 +158,11 @@ export function registerStatusCommand(program: Command): void {
         } else {
           // No bundle — fall back to fetching target from provider
           const target = await orchestrator.open(ref, defaultRepo);
-          const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
+          const targetKind = formatTargetKind(target);
+          const targetDisplayId = formatTargetDisplayId(target);
           const stateColor = getStateColor(target.state);
 
-          console.log(chalk.bold(`${mrType} !${target.targetId}: ${target.title}`));
+          console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${target.title}`));
           console.log('');
           console.log(`  ${chalk.dim('State:')}     ${stateColor(target.state)}`);
           console.log(`  ${chalk.dim('Author:')}    @${target.author}`);

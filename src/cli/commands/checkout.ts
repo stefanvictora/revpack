@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import chalk from 'chalk';
+import { formatTargetDisplayId } from '../../core/display.js';
 import { createOrchestrator, createOrchestratorAt, getRepoFromGit, handleError } from '../helpers.js';
 import { runSetup } from './setup.js';
 
@@ -22,16 +23,17 @@ export function registerCheckoutCommand(program: Command): void {
         // When ref is a full URL, pass it as a hint so profile resolution can
         // match by the URL's host even outside a git repo.
         const hintUrls = /^https?:\/\//i.test(ref) ? [ref] : undefined;
-        let orchestrator = await createOrchestrator(hintUrls, opts.profile);
+        let orchestrator = await createOrchestrator(hintUrls, opts.profile, { allowActiveLocal: false });
         const defaultRepo = opts.repo ?? (await getRepoFromGit());
 
         // Switch branch (or clone if no git repo)
         const result = await orchestrator.checkout(ref, defaultRepo);
         const { branch, target, clonedTo } = result;
+        const targetDisplayId = formatTargetDisplayId(target);
 
         if (clonedTo) {
           console.log(chalk.green(`✓ Cloned into ${clonedTo}`));
-          console.log(`  ${chalk.bold(`!${target.targetId}`)}: ${target.title}`);
+          console.log(`  ${chalk.bold(targetDisplayId)}: ${target.title}`);
           console.log(`  ${chalk.dim('Branch:')} ${branch}`);
           console.log(`  ${chalk.dim('Author:')} @${target.author}`);
           console.log('');
@@ -40,7 +42,7 @@ export function registerCheckoutCommand(program: Command): void {
           orchestrator = await createOrchestratorAt(clonedTo);
         } else {
           console.log(chalk.green(`✓ Switched to branch "${branch}"`));
-          console.log(`  ${chalk.bold(`!${target.targetId}`)}: ${target.title}`);
+          console.log(`  ${chalk.bold(targetDisplayId)}: ${target.title}`);
           console.log(`  ${chalk.dim('Author:')} @${target.author}`);
           console.log('');
         }
