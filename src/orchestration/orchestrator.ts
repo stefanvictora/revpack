@@ -282,7 +282,13 @@ export class ReviewOrchestrator {
     if (targetCodeChanged && remoteCheckpoint) {
       try {
         await this.ensureCommitsAvailableForDiff(target, remoteCheckpoint.headSha, mrHeadSha, progress);
-        await this.workspace.writeIncrementalDiffFromGit(this.git, remoteCheckpoint.headSha, mrHeadSha);
+        if (await this.git.isAncestor(remoteCheckpoint.headSha)) {
+          await this.workspace.writeIncrementalDiffFromGit(this.git, remoteCheckpoint.headSha, mrHeadSha);
+        } else {
+          await this.workspace.writeUnavailableIncrementalPatch(
+            'Incremental diff unavailable: previous review checkpoint is not an ancestor of current HEAD.',
+          );
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         throw this.localPatchFailure(remoteCheckpoint.headSha, mrHeadSha, message);
@@ -645,7 +651,16 @@ export class ReviewOrchestrator {
       };
     }
 
-    // 3. Auto-detect MR from current git branch
+    // 3. Local provider auto-detects the current branch/base without a repository slug.
+    if (this.provider.providerType === 'local') {
+      const branch = await this.git.currentBranch();
+      if (branch && branch !== 'HEAD') {
+        const targets = await this.provider.findTargetByBranch('', branch);
+        if (targets.length === 1) return targets[0];
+      }
+    }
+
+    // 4. Auto-detect MR from current git branch
     let repo = defaultRepo;
     if (!repo) {
       try {

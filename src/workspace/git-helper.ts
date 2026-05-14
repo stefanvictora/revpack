@@ -138,6 +138,39 @@ export class GitHelper {
     return url;
   }
 
+  /** Resolve a ref to a commit SHA. */
+  async revParse(ref: string): Promise<string> {
+    const { stdout } = await exec('git', ['rev-parse', '--verify', `${ref}^{commit}`], { cwd: this.cwd });
+    return stdout.trim();
+  }
+
+  /** Check whether a ref resolves to a commit. */
+  async refExists(ref: string): Promise<boolean> {
+    try {
+      await this.revParse(ref);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Return the merge-base between two refs. */
+  async mergeBase(leftRef: string, rightRef: string): Promise<string> {
+    const { stdout } = await exec('git', ['merge-base', leftRef, rightRef], { cwd: this.cwd });
+    return stdout.trim();
+  }
+
+  /** Read a git config value, returning undefined when it is not configured. */
+  async configValue(key: string): Promise<string | undefined> {
+    try {
+      const { stdout } = await exec('git', ['config', '--get', key], { cwd: this.cwd });
+      const value = stdout.trim();
+      return value || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** Fetch a branch from a specific remote URL without adding a named remote. */
   async fetchBranchFromUrl(remoteUrl: string, branch: string): Promise<void> {
     // git fetch <url> <branch>:<branch> — creates a local tracking ref with the same name.

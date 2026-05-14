@@ -59,14 +59,16 @@ export function registerStatusCommand(program: Command): void {
         // If we have a bundle, show bundle-first status
         if (bundleState) {
           const t = bundleState.target;
-          const mrType = t.type === 'merge_request' ? 'MR' : 'PR';
+          const targetKind = t.type === 'merge_request' ? 'MR' : t.type === 'pull_request' ? 'PR' : 'Local review';
           const stateColor = getStateColor(t.state);
 
-          console.log(chalk.bold(`${mrType} !${t.id}: ${t.title}`));
+          console.log(chalk.bold(`${targetKind} ${t.provider === 'local' ? t.id : `!${t.id}`}: ${t.title}`));
           console.log(`  ${chalk.dim('Repository:')} ${t.repository}`);
           console.log(`  ${chalk.dim('Branch:')}     ${t.sourceBranch} → ${t.targetBranch}`);
           console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
-          console.log(`  ${chalk.dim('URL:')}        ${t.webUrl}`);
+          if (t.webUrl) {
+            console.log(`  ${chalk.dim('URL:')}        ${t.webUrl}`);
+          }
           console.log('');
 
           // Bundle info

@@ -482,7 +482,15 @@ export class WorkspaceManager {
     }
 
     const lines: string[] = [];
-    const mrType = target.targetType === 'merge_request' ? 'MR' : 'PR';
+    const isLocal = target.provider === 'local';
+    const targetKind =
+      target.targetType === 'merge_request' ? 'MR' : target.targetType === 'pull_request' ? 'PR' : 'Local review';
+    const targetTypeLabel =
+      target.provider === 'gitlab'
+        ? 'GitLab merge request'
+        : target.provider === 'github'
+          ? 'GitHub pull request'
+          : 'Local Git review';
 
     // ─── Target table ─────────────────────────────────────
     lines.push('# Review Context');
@@ -491,10 +499,10 @@ export class WorkspaceManager {
     lines.push('');
     lines.push('| Field | Value |');
     lines.push('|---|---|');
-    lines.push(`| Type | ${target.provider === 'gitlab' ? 'GitLab merge request' : 'GitHub pull request'} |`);
-    lines.push(`| ${mrType} | !${target.targetId} — ${tableCell(target.title)} |`);
+    lines.push(`| Type | ${targetTypeLabel} |`);
+    lines.push(`| ${targetKind} | ${isLocal ? '' : '!'}${target.targetId} — ${tableCell(target.title)} |`);
     lines.push(`| Repository | \`${tableCell(target.repository)}\` |`);
-    lines.push(`| Author | @${tableCell(target.author)} |`);
+    lines.push(`| Author | ${isLocal ? tableCell(target.author) : `@${tableCell(target.author)}`} |`);
     lines.push(`| Source branch | \`${tableCell(target.sourceBranch)}\` |`);
     lines.push(`| Target branch | \`${tableCell(target.targetBranch)}\` |`);
     lines.push(`| State | ${tableCell(target.state)} |`);
@@ -1079,6 +1087,14 @@ export class WorkspaceManager {
       '# No code changes since last review checkpoint.\n',
       'utf-8',
     );
+  }
+
+  /**
+   * Write an explanatory incremental patch placeholder when history was rewritten.
+   */
+  async writeUnavailableIncrementalPatch(reason: string): Promise<void> {
+    await this.ensureDir(path.join(this.baseDir, 'diffs'));
+    await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), `# ${reason}\n`, 'utf-8');
   }
 
   private async writeThreads(

@@ -1043,6 +1043,7 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('incremental patch is generated from checkpoint head to current head', async () => {
+      isAncestorSpy.mockResolvedValue(true);
       const checkpointState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null, 'v-old');
       const descriptionWithState = patchDescriptionWithState('Test description', checkpointState);
 
@@ -1055,6 +1056,23 @@ describe('ReviewOrchestrator', () => {
 
       expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
       expect(diffSpy).toHaveBeenCalledWith('old-head', 'bbb');
+    });
+
+    it('writes an unavailable incremental patch when checkpoint head is not an ancestor', async () => {
+      isAncestorSpy.mockResolvedValue(false);
+      const checkpointState = buildCheckpointState(targetRef, 'old-head', 'aaa', 'aaa', null, 'v-old');
+      const descriptionWithState = patchDescriptionWithState('Test description', checkpointState);
+
+      const targetWithState = { ...mockTarget, description: descriptionWithState };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      expect(diffSpy).not.toHaveBeenCalledWith('old-head', 'bbb');
+      const incrementalPatch = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'incremental.patch'), 'utf-8');
+      expect(incrementalPatch).toContain('previous review checkpoint is not an ancestor');
     });
   });
 

@@ -1,8 +1,10 @@
 import chalk from 'chalk';
 import { loadRuntimeConfig } from '../config/index.js';
 import { createProvider } from '../providers/factory.js';
+import { LocalGitProvider } from '../providers/local/local-git-provider.js';
 import { ReviewOrchestrator } from '../orchestration/orchestrator.js';
 import { GitHelper } from '../workspace/git-helper.js';
+import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { ReviewAssistError } from '../core/errors.js';
 
 /**
@@ -21,13 +23,35 @@ async function getRemoteUrls(cwd: string): Promise<string[]> {
  * Create an orchestrator from config. Shared setup for all CLI commands.
  * Resolves the active profile from git remote URLs in the current directory.
  */
-export async function createOrchestrator(hintUrls?: string[], explicitProfile?: string): Promise<ReviewOrchestrator> {
+export async function createOrchestrator(
+  hintUrls?: string[],
+  explicitProfile?: string,
+  options?: { allowActiveLocal?: boolean },
+): Promise<ReviewOrchestrator> {
   const cwd = process.cwd();
+  if (options?.allowActiveLocal !== false && !explicitProfile) {
+    const bundleState = await new WorkspaceManager(cwd).loadBundleState();
+    if (bundleState?.target.provider === 'local') {
+      return createLocalOrchestrator();
+    }
+  }
+
   const remoteUrls = await getRemoteUrls(cwd);
   const config = await loadRuntimeConfig([...remoteUrls, ...(hintUrls ?? [])], explicitProfile);
   const provider = createProvider(config);
   return new ReviewOrchestrator({
     provider,
+    workingDir: cwd,
+  });
+}
+
+/**
+ * Create an orchestrator backed by local Git state instead of a forge profile.
+ */
+export function createLocalOrchestrator(baseOrRange?: string): ReviewOrchestrator {
+  const cwd = process.cwd();
+  return new ReviewOrchestrator({
+    provider: new LocalGitProvider(cwd, baseOrRange),
     workingDir: cwd,
   });
 }

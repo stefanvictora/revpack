@@ -2,8 +2,9 @@ import { z } from 'zod';
 
 // Zod schemas for validation at system boundaries.
 
-export const providerTypeSchema = z.enum(['gitlab', 'github']);
-export const targetTypeSchema = z.enum(['merge_request', 'pull_request']);
+export const providerTypeSchema = z.enum(['gitlab', 'github', 'local']);
+export const remoteProviderTypeSchema = z.enum(['gitlab', 'github']);
+export const targetTypeSchema = z.enum(['merge_request', 'pull_request', 'local_review']);
 
 export const reviewTargetRefSchema = z.object({
   provider: providerTypeSchema,
@@ -54,7 +55,7 @@ export const repliesArraySchema = z.array(replyDraftSchema);
 // ─── Profile Schema ──────────────────────────────────────
 
 export const profileSchema = z.object({
-  provider: providerTypeSchema,
+  provider: remoteProviderTypeSchema,
   url: z.string().url().optional(),
   tokenEnv: z.string().min(1).optional(),
   remotePatterns: z.array(z.string().min(1)).optional(),
