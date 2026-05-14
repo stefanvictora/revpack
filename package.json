@@ -8,7 +8,6 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "prepare": "tsc -p tsconfig.build.json",
     "dev": "tsx src/cli/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -17,6 +16,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "rimraf dist",
+    "pack:dry": "npm pack --dry-run",
+    "release:check": "npm run clean && npm run build && npm test && npm run lint && npm run format:check && npm pack --dry-run",
+    "prepack": "npm run clean && npm run build",
+    "prepublishOnly": "npm test && npm run lint && npm run format:check && npm run build",
     "eval:export-code-review-benchmark": "tsx scripts/export-code-review-benchmark.ts"
   },
   "files": [
@@ -34,9 +37,19 @@
     "github",
     "merge-request",
     "pull-request",
-    "cli"
+    "cli",
+    "ai"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stefanvictora/revpack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stefanvictora/revpack/issues"
+  },
+  "homepage": "https://github.com/stefanvictora/revpack#readme",
+  "packageManager": "npm@11.14.1",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^20.19.39",
