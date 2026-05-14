@@ -622,7 +622,7 @@ export class ReviewOrchestrator {
       if (!targetRef.repository && defaultRepo) {
         targetRef.repository = defaultRepo;
       }
-      if (!targetRef.repository) {
+      if (!targetRef.repository && this.provider.providerType !== 'local') {
         targetRef.repository = await this.git.deriveRepoSlug();
       }
       return targetRef;
@@ -663,7 +663,7 @@ export class ReviewOrchestrator {
 
     // 4. Auto-detect MR from current git branch
     let repo = defaultRepo;
-    if (!repo) {
+    if (!repo && this.provider.providerType !== 'local') {
       try {
         repo = await this.git.deriveRepoSlug();
       } catch {

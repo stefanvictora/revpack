@@ -18,7 +18,7 @@ export function registerPrepareCommand(program: Command): void {
         try {
           const orchestrator = opts.local
             ? createLocalOrchestrator(ref)
-            : await createOrchestrator(undefined, undefined, { allowActiveLocal: ref ? false : true });
+            : await createOrchestrator(undefined, undefined, { allowActiveLocal: !ref });
           const defaultRepo = opts.local ? undefined : await getRepoFromGit();
           const onProgress = opts.json ? undefined : createPrepareFetchLogger();
 
@@ -50,6 +50,8 @@ export function registerPrepareCommand(program: Command): void {
           const target = bundle.target;
           const stateColor = getStateColor(target.state);
           const isLocal = target.provider === 'local';
+          const targetLabel =
+            target.targetType === 'merge_request' ? 'MR' : target.targetType === 'pull_request' ? 'PR' : 'Local review';
 
           const modeLabel = mode === 'fresh' ? '' : ' (refresh)';
           console.log(chalk.green(`✓ Bundle prepared${modeLabel}`));
@@ -104,10 +106,10 @@ export function registerPrepareCommand(program: Command): void {
 
           // Warnings
           if (target.state === 'merged') {
-            console.log(chalk.yellow('  ⚠ This MR is already merged'));
+            console.log(chalk.yellow(`  ⚠ This ${targetLabel} is already merged`));
             console.log('');
           } else if (target.state === 'closed') {
-            console.log(chalk.yellow('  ⚠ This MR is closed'));
+            console.log(chalk.yellow(`  ⚠ This ${targetLabel} is closed`));
             console.log('');
           }
 

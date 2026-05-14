@@ -11,7 +11,10 @@ import { registerSetupCommand } from './commands/setup.js';
 
 const program = new Command();
 
-program.name('revpack').description('CLI assistant for code review workflows').version('0.1.0');
+program
+  .name('revpack')
+  .description('CLI for preparing AI-ready PR/MR review bundles and publishing review feedback.')
+  .version('0.1.1');
 
 registerPrepareCommand(program);
 registerStatusCommand(program);

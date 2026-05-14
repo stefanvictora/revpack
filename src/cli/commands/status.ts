@@ -97,7 +97,7 @@ export function registerStatusCommand(program: Command): void {
               console.log(`  ${chalk.dim('Matches target:')} ${chalk.green('yes')}`);
             } else {
               const isAncestor = await git.isAncestor(t.diffRefs.headSha).catch(() => false);
-              const relation = isAncestor ? 'ahead of MR head' : 'behind MR head';
+              const relation = isAncestor ? `ahead of ${targetKind} head` : `behind ${targetKind} head`;
               console.log(`  ${chalk.dim('Target head:')}    ${t.diffRefs.headSha.slice(0, 7)}`);
               console.log(`  ${chalk.dim('Matches target:')} ${chalk.yellow(`no — ${relation}`)}`);
               console.log('');

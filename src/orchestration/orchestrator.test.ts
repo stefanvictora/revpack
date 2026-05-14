@@ -347,6 +347,52 @@ describe('ReviewOrchestrator', () => {
       );
     });
 
+    it('does not derive a remote repository slug for explicit local refs', async () => {
+      mockProvider = {
+        ...createMockProvider(),
+        providerType: 'local',
+        resolveTarget: vi.fn().mockReturnValue({
+          provider: 'local',
+          repository: '',
+          targetType: 'local_review',
+          targetId: 'main...HEAD',
+        }),
+        findTargetByBranch: vi.fn().mockResolvedValue([]),
+        getTargetSnapshot: vi.fn().mockResolvedValue({
+          ...mockTarget,
+          provider: 'local',
+          repository: '',
+          targetType: 'local_review',
+          targetId: 'main...HEAD',
+          sourceBranch: 'feature/test',
+          targetBranch: 'main',
+          webUrl: '',
+        }),
+        getDiffVersions: vi.fn().mockResolvedValue([
+          {
+            ...mockVersion,
+            provider: 'local',
+            targetRef: {
+              provider: 'local',
+              repository: '',
+              targetType: 'local_review',
+              targetId: 'main...HEAD',
+            },
+          },
+        ]),
+      };
+      const deriveRepoSlugSpy = vi
+        .spyOn(GitHelper.prototype, 'deriveRepoSlug')
+        .mockRejectedValue(new Error('no remote'));
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('main...HEAD');
+
+      expect(result.bundle.target.provider).toBe('local');
+      expect(deriveRepoSlugSpy).not.toHaveBeenCalled();
+      deriveRepoSlugSpy.mockRestore();
+    });
+
     it('returns prepare stats on second run', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
