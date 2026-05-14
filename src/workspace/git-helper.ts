@@ -165,8 +165,18 @@ export class GitHelper {
   }
 
   /** Fetch a specific branch from remote. */
-  async fetchBranch(branch: string, remote = 'origin'): Promise<void> {
-    await exec('git', ['fetch', remote, branch], { cwd: this.cwd });
+  async fetchBranch(
+    branch: string,
+    remote = 'origin',
+    options?: { depth?: number; noTags?: boolean; progress?: boolean },
+  ): Promise<void> {
+    const args = this.buildFetchArgs(remote, branch, options);
+    if (options?.progress) {
+      await this.runGitWithInheritedOutput(this.buildFetchArgs(remote, branch, options, true));
+      return;
+    }
+
+    await exec('git', args, { cwd: this.cwd });
   }
 
   /** Check if we're inside a git repository. */
@@ -180,13 +190,29 @@ export class GitHelper {
   }
 
   /** Fetch latest from remote. */
-  async fetch(remote = 'origin'): Promise<void> {
-    await exec('git', ['fetch', remote], { cwd: this.cwd });
+  async fetch(remote = 'origin', options?: { depth?: number; noTags?: boolean; progress?: boolean }): Promise<void> {
+    const args = this.buildFetchArgs(remote, undefined, options);
+    if (options?.progress) {
+      await this.runGitWithInheritedOutput(this.buildFetchArgs(remote, undefined, options, true));
+      return;
+    }
+
+    await exec('git', args, { cwd: this.cwd });
   }
 
   /** Fetch a specific commit/object from a remote into FETCH_HEAD when the server allows it. */
-  async fetchCommit(commitSha: string, remote = 'origin'): Promise<void> {
-    await exec('git', ['fetch', remote, commitSha], { cwd: this.cwd });
+  async fetchCommit(
+    commitSha: string,
+    remote = 'origin',
+    options?: { depth?: number; noTags?: boolean; progress?: boolean },
+  ): Promise<void> {
+    const args = this.buildFetchArgs(remote, commitSha, options);
+    if (options?.progress) {
+      await this.runGitWithInheritedOutput(this.buildFetchArgs(remote, commitSha, options, true));
+      return;
+    }
+
+    await exec('git', args, { cwd: this.cwd });
   }
 
   /** Read a file at a specific ref. */
@@ -261,5 +287,35 @@ export class GitHelper {
   async changedFiles(baseRef: string, headRef: string): Promise<string[]> {
     const { stdout } = await exec('git', ['diff', '--name-only', baseRef, headRef], { cwd: this.cwd });
     return stdout.trim().split('\n').filter(Boolean);
+  }
+
+  private async runGitWithInheritedOutput(args: string[]): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const child = nodeSpawn('git', args, {
+        cwd: this.cwd,
+        stdio: 'inherit',
+      });
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`git ${args.join(' ')} exited with code ${code}`));
+      });
+      child.on('error', reject);
+    });
+  }
+
+  private buildFetchArgs(
+    remote: string,
+    ref?: string,
+    options?: { depth?: number; noTags?: boolean },
+    progress = false,
+  ): string[] {
+    return [
+      'fetch',
+      ...(progress ? ['--progress'] : []),
+      ...(options?.noTags ? ['--no-tags'] : []),
+      ...(options?.depth ? [`--depth=${options.depth}`] : []),
+      remote,
+      ...(ref ? [ref] : []),
+    ];
   }
 }

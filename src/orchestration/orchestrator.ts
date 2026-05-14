@@ -38,6 +38,8 @@ export interface OrchestratorOptions {
   runtimeConfig?: ResolvedAppConfig;
 }
 
+export type PrepareProgress = (message: string) => void;
+
 export interface PrepareResult {
   bundle: WorkspaceBundle;
   bundleState: BundleState;
@@ -86,16 +88,15 @@ export class ReviewOrchestrator {
   async prepare(
     ref?: string,
     defaultRepo?: string,
-    options?: { fresh?: boolean; discardOutputs?: boolean },
+    options?: { fresh?: boolean; discardOutputs?: boolean; onProgress?: PrepareProgress },
   ): Promise<PrepareResult> {
     const existingBundle = await this.workspace.loadBundleState();
+    const progress = options?.onProgress;
 
-    // --fresh: remove everything and start clean
     if (options?.fresh) {
       await this.workspace.removeBundle();
     }
 
-    // Discard outputs if requested
     if (options?.discardOutputs) {
       await this.workspace.discardOutputs();
     }
@@ -113,7 +114,6 @@ export class ReviewOrchestrator {
       }
     }
 
-    // Fetch provider metadata and discussion state. Patch content is generated from local Git below.
     const [target, rawThreads, versions] = await Promise.all([
       this.provider.getTargetSnapshot(targetRef),
       this.provider.listAllThreads(targetRef),
@@ -229,10 +229,9 @@ export class ReviewOrchestrator {
     // Only non-resolved threads go into the bundle
     const activeThreads = activeReviewThreads(allThreads);
 
-    const latestPatchContent = await this.generateReviewPatchFromGit(target);
+    const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
     const bundleDiffs = this.reviewDiffsFromPatch(latestPatchContent);
 
-    // Create the bundle
     const bundle = await this.workspace.createBundle(target, activeThreads, bundleDiffs, versions, threadIndex, {
       latestPatchContent,
     });
@@ -286,7 +285,7 @@ export class ReviewOrchestrator {
     // Incremental diff relative to checkpoint head (not previous prepare)
     if (targetCodeChanged && remoteCheckpoint) {
       try {
-        await this.ensureCommitsAvailableForDiff(target, remoteCheckpoint.headSha, mrHeadSha);
+        await this.ensureCommitsAvailableForDiff(target, remoteCheckpoint.headSha, mrHeadSha, progress);
         await this.workspace.writeIncrementalDiffFromGit(this.git, remoteCheckpoint.headSha, mrHeadSha);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -687,7 +686,7 @@ export class ReviewOrchestrator {
     );
   }
 
-  private async generateReviewPatchFromGit(target: ReviewTarget): Promise<string> {
+  private async generateReviewPatchFromGit(target: ReviewTarget, progress?: PrepareProgress): Promise<string> {
     const baseSha = target.diffRefs.baseSha;
     const headSha = target.diffRefs.headSha;
 
@@ -696,7 +695,7 @@ export class ReviewOrchestrator {
     }
 
     try {
-      await this.ensureCommitsAvailableForDiff(target, baseSha, headSha);
+      await this.ensureCommitsAvailableForDiff(target, baseSha, headSha, progress);
       return await this.git.diffForReview(baseSha, headSha);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -704,33 +703,58 @@ export class ReviewOrchestrator {
     }
   }
 
-  private async ensureCommitsAvailableForDiff(target: ReviewTarget, baseSha: string, headSha: string): Promise<void> {
+  private async ensureCommitsAvailableForDiff(
+    target: ReviewTarget,
+    baseSha: string,
+    headSha: string,
+    progress?: PrepareProgress,
+  ): Promise<void> {
     let missing = await this.missingCommits(baseSha, headSha);
     if (missing.length === 0) return;
 
     const fetchErrors: string[] = [];
+    const reportFetch = progress !== undefined;
+
+    if (reportFetch) {
+      progress(
+        `Fetching additional Git objects needed to generate the review patch (${missing.map(shortSha).join(', ')}).`,
+      );
+    }
 
     for (const sha of missing) {
       try {
-        await this.git.fetchCommit(sha);
+        await this.git.fetchCommit(sha, 'origin', { depth: 1, noTags: true, progress: reportFetch });
       } catch (err) {
         fetchErrors.push(`git fetch origin ${sha}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+    missing = await this.missingCommits(baseSha, headSha);
+    if (missing.length === 0) return;
 
     try {
-      await this.git.fetch();
+      await this.git.fetchBranch(target.targetBranch, 'origin', { depth: 1, noTags: true, progress: reportFetch });
     } catch (err) {
-      fetchErrors.push(`git fetch origin: ${err instanceof Error ? err.message : String(err)}`);
+      fetchErrors.push(`git fetch origin ${target.targetBranch}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    missing = await this.missingCommits(baseSha, headSha);
+    if (missing.length === 0) return;
+
+    if (target.sourceBranch && target.sourceBranch !== target.targetBranch) {
+      try {
+        await this.git.fetchBranch(target.sourceBranch, 'origin', { depth: 1, noTags: true, progress: reportFetch });
+      } catch (err) {
+        fetchErrors.push(
+          `git fetch origin ${target.sourceBranch}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      missing = await this.missingCommits(baseSha, headSha);
+      if (missing.length === 0) return;
     }
 
-    for (const branch of [target.targetBranch, target.sourceBranch]) {
-      if (!branch) continue;
-      try {
-        await this.git.fetchBranch(branch);
-      } catch (err) {
-        fetchErrors.push(`git fetch origin ${branch}: ${err instanceof Error ? err.message : String(err)}`);
-      }
+    try {
+      await this.git.fetch('origin', { noTags: true, progress: reportFetch });
+    } catch (err) {
+      fetchErrors.push(`git fetch origin: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     missing = await this.missingCommits(baseSha, headSha);
@@ -782,4 +806,8 @@ export class ReviewOrchestrator {
         `The prepared review bundle would be incomplete, so prepare was aborted.`,
     );
   }
+}
+
+function shortSha(sha: string): string {
+  return sha ? sha.slice(0, 8) : '<missing>';
 }

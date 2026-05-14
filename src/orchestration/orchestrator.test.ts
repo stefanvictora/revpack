@@ -194,13 +194,32 @@ describe('ReviewOrchestrator', () => {
   describe('prepare', () => {
     it('generates latest.patch from local git by default', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
+      const onProgress = vi.fn();
+      await orchestrator.prepare('!42', 'group/project', { onProgress });
 
       expect(hasCommitSpy).toHaveBeenCalledWith('aaa');
       expect(hasCommitSpy).toHaveBeenCalledWith('bbb');
       expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
+      expect(onProgress).not.toHaveBeenCalled();
       const latestPatch = await fs.readFile(path.join(tmpDir, '.revkit', 'diffs', 'latest.patch'), 'utf-8');
       expect(latestPatch).toBe(localPatch());
+    });
+
+    it('prints a minimal message and streams git fetch when commits are missing', async () => {
+      hasCommitSpy
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true);
+      const onProgress = vi.fn();
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project', { onProgress });
+
+      expect(onProgress).toHaveBeenCalledWith(expect.stringContaining('Fetching additional Git objects'));
+      expect(fetchCommitSpy).toHaveBeenCalledWith('aaa', 'origin', { depth: 1, noTags: true, progress: true });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(fetchBranchSpy).not.toHaveBeenCalled();
     });
 
     it('fails prepare when local git patch generation fails', async () => {

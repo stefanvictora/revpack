@@ -13,10 +13,12 @@ export function registerPrepareCommand(program: Command): void {
       try {
         const orchestrator = await createOrchestrator();
         const defaultRepo = await getRepoFromGit();
+        const onProgress = opts.json ? undefined : createPrepareFetchLogger();
 
         const result = await orchestrator.prepare(ref, defaultRepo, {
           fresh: opts.fresh,
           discardOutputs: opts.discardOutputs,
+          onProgress,
         });
 
         if (opts.json) {
@@ -110,6 +112,12 @@ export function registerPrepareCommand(program: Command): void {
         handleError(err);
       }
     });
+}
+
+function createPrepareFetchLogger(): (message: string) => void {
+  return (message: string) => {
+    console.log(chalk.dim(message));
+  };
 }
 
 function getStateColor(state: string): (text: string) => string {

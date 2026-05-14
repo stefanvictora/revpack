@@ -50,7 +50,10 @@ export function registerCheckoutCommand(program: Command): void {
           console.log(chalk.dim('Running prepare...'));
           console.log('');
 
-          const prepareResult = await orchestrator.prepare(ref, defaultRepo, { fresh: true });
+          const prepareResult = await orchestrator.prepare(ref, defaultRepo, {
+            fresh: true,
+            onProgress: createPrepareFetchLogger(),
+          });
           const { bundle } = prepareResult;
 
           console.log(chalk.green('✓ Bundle prepared'));
@@ -82,4 +85,10 @@ export function registerCheckoutCommand(program: Command): void {
         handleError(err);
       }
     });
+}
+
+function createPrepareFetchLogger(): (message: string) => void {
+  return (message: string) => {
+    console.log(chalk.dim(message));
+  };
 }
