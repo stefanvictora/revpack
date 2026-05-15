@@ -14,7 +14,7 @@ const program = new Command();
 program
   .name('revpack')
   .description('CLI for preparing AI-ready PR/MR review bundles and publishing review feedback.')
-  .version('0.1.1');
+  .version('0.2.0');
 
 registerPrepareCommand(program);
 registerStatusCommand(program);
