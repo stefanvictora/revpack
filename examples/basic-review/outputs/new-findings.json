@@ -1,0 +1,10 @@
+[
+  {
+    "oldPath": "src/export.ts",
+    "newPath": "src/export.ts",
+    "newLine": 112,
+    "body": "This retries failed exports but never clears the temporary file when the final attempt also fails, so repeated failures leave orphaned files on disk.",
+    "severity": "medium",
+    "category": "correctness"
+  }
+]

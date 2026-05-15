@@ -1,7 +1,7 @@
 {
   "name": "@stefanvictora/revpack",
   "version": "0.2.0",
-  "description": "CLI for preparing AI-ready PR/MR review bundles and publishing review feedback.",
+  "description": "Prepare GitHub PRs and GitLab MRs for AI code review with structured local review bundles.",
   "author": {
     "name": "Stefan Victora",
     "url": "https://github.com/stefanvictora"
@@ -37,12 +37,15 @@
   },
   "keywords": [
     "code-review",
-    "gitlab",
-    "github",
-    "merge-request",
+    "ai-code-review",
     "pull-request",
+    "merge-request",
+    "github",
+    "gitlab",
     "cli",
-    "ai"
+    "coding-agent",
+    "llm",
+    "review-automation"
   ],
   "license": "MIT",
   "repository": {

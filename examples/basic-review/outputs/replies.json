@@ -1,0 +1,7 @@
+[
+  {
+    "threadId": "T-001",
+    "body": "Verified on the current diff: this is still reachable when the provider request fails after the file is written.",
+    "resolve": false
+  }
+]

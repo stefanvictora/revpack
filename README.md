@@ -6,20 +6,100 @@
 [![license](https://img.shields.io/npm/l/%40stefanvictora%2Frevpack.svg)](https://www.npmjs.com/package/@stefanvictora/revpack)
 [![node](https://img.shields.io/node/v/%40stefanvictora%2Frevpack.svg)](https://www.npmjs.com/package/@stefanvictora/revpack)
 
-AI-ready review bundles for GitHub and GitLab.
+Prepare GitHub PRs and GitLab MRs for AI code review with structured diffs, unresolved threads, review instructions, safe output files, and publishable comments.
 
-`revpack` prepares structured PR/MR context for coding agents and publishes their review outputs back as comments, replies, summaries, and review notes.
+`revpack` does **not** review code itself. It turns a PR/MR into a local review workspace for your coding agent, then lets you inspect and explicitly publish the agent's output.
 
-It does **not** perform the review itself. It gives your agent a reliable workspace, then helps you publish the agent's output safely.
+Use it when you want an agent to review real PRs/MRs without losing unresolved-thread context, guessing line-comment positions, or posting feedback before you inspect it.
 
-## What revpack does
+```bash
+npm install -g @stefanvictora/revpack
+
+revpack config setup
+revpack prepare
+
+# Then ask your agent to follow .revpack/CONTEXT.md
+```
+
+## Why revpack?
+
+PR/MR review context is awkward for coding agents:
+
+- Provider APIs split diffs, descriptions, review threads, metadata, and valid comment anchors across different endpoints.
+- Agents need stable instructions, bounded write locations, and predictable output formats.
+- Follow-up reviews should focus on what changed since the last recorded review state.
+- Publishing should be explicit, inspectable, and separate from the agent run.
+
+`revpack` packages that context into a local `.revpack/` bundle that the agent can read from and write to without directly touching GitHub or GitLab.
+
+## 60-second workflow
+
+```bash
+# 1. Create the review bundle
+revpack prepare
+
+# 2. Ask your agent:
+# "Review this PR/MR by following .revpack/CONTEXT.md.
+#  Write only to .revpack/outputs/.
+#  Do not publish anything yourself."
+
+# 3. Inspect pending output
+revpack status
+
+# 4. Publish when ready
+revpack publish all
+```
+
+After new commits or new comments, run `revpack prepare` again to refresh the bundle. Refreshes compare the current PR/MR state with the last recorded review state and generate `incremental.patch` when there are new code changes.
+
+The quoted instruction is a condensed version of the bundled [review prompt](templates/prompts/review.prompt.md). Run `revpack setup --prompts` to install it for Copilot.
+
+Want to see the result? See [examples/basic-review/](examples/basic-review/) for a tiny generated bundle with representative output files.
+
+## What revpack creates
+
+A typical bundle contains the files your agent interacts with most:
+
+```text
+.revpack/
+  CONTEXT.md              # start here
+  AGENT_CONTRACT.md       # non-negotiable agent rules
+  INSTRUCTIONS.md         # instruction index for the current task
+  description.md          # PR/MR description
+  threads/                # unresolved review threads
+  diffs/
+    latest.patch          # full diff
+    incremental.patch     # changed since the last recorded review state
+    line-map.ndjson       # valid positional anchors
+  outputs/
+    new-findings.json     # new line comments
+    replies.json          # replies to existing threads
+    summary.md            # description summary
+    review.md             # optional review-level note
+```
+
+`AGENT_CONTRACT.md` defines the non-negotiable rules for the agent, such as where it may write output and how findings must be structured.
+
+`prepare` also writes `bundle.json`, per-file patches, changed-file metadata, output schemas, and task-specific instruction files. The generated context tells the agent where to start and which instructions apply to the current review.
+
+## Core capabilities
 
 - Finds the relevant GitHub PR or GitLab MR from your current branch, a direct URL, or a reference like `#42` or `!42`.
-- Creates a local `.revpack/` bundle with diffs, thread context, metadata, instructions, and output files.
+- Prepares a local `.revpack/` bundle with diffs, unresolved threads, metadata, instructions, schemas, and output files.
+- Works before a PR/MR exists by reviewing local branch ranges.
 - Gives coding agents one clear entry point: `.revpack/CONTEXT.md`.
-- Supports incremental refreshes after new commits or new review comments.
-- Publishes selected agent outputs back to the PR/MR.
-- Works with named configuration profiles, so different GitHub and GitLab instances can coexist.
+- Supports incremental refreshes after new commits or review comments.
+- Lets you inspect outputs before publishing findings, replies, summaries, or review notes.
+- Supports named profiles for multiple GitHub and GitLab instances.
+
+## What revpack is not
+
+- Not an AI reviewer by itself.
+- Not a hosted review bot.
+- Not tied to one specific coding agent.
+- Not a replacement for GitHub/GitLab permissions or branch protection.
+
+Use it with AI coding agents and editors such as GitHub Copilot in VS Code, Claude Code, Codex, Cursor, or any tool that can read and write local files.
 
 ## Install
 
@@ -59,15 +139,11 @@ Verify the profile before using it:
 revpack config doctor
 ```
 
-## Basic workflow
+Use the least privileged token that can read PR/MR metadata and publish review comments for your workflow.
 
-Prepare the current branch's PR/MR:
+## Local review before a PR/MR exists
 
-```bash
-revpack prepare
-```
-
-Or prepare a local review before pushing a branch:
+You do not need an open PR or MR to use `revpack`. Prepare the same agent-ready bundle against a local branch range:
 
 ```bash
 revpack prepare --local
@@ -75,37 +151,9 @@ revpack prepare --local main
 revpack prepare --local main...HEAD
 ```
 
-Then ask your coding agent to follow the generated context file:
+Local mode reviews committed branch changes against an inferred or explicit base branch. Uncommitted working-tree changes are not included.
 
-```text
-.revpack/CONTEXT.md
-```
-
-The agent writes its output files to:
-
-```text
-.revpack/outputs/
-```
-
-Check what is pending:
-
-```bash
-revpack status
-```
-
-Publish everything that is ready:
-
-```bash
-revpack publish all
-```
-
-After new commits or new comments, refresh the bundle:
-
-```bash
-revpack prepare
-```
-
-Discard the local revpack bundle when you no longer need it:
+Discard the local bundle when you no longer need it:
 
 ```bash
 revpack clean
@@ -159,7 +207,7 @@ revpack publish description --from-summary
 revpack publish review
 ```
 
-When publishing outputs individually, publish `review` last. It records the review state used for incremental refreshes.
+When publishing outputs individually, publish `review` last because it records the review state used for incremental refreshes.
 
 Useful variants:
 
@@ -173,171 +221,10 @@ revpack publish description --from custom.md
 revpack publish description --from-summary --replace
 ```
 
-## Command reference
+## More docs
 
-### `prepare [ref]`
-
-Creates or refreshes the `.revpack/` bundle for a PR/MR.
-
-```bash
-revpack prepare                             # auto-detect from current branch, or refresh existing bundle
-revpack prepare !42                         # prepare a specific GitLab MR
-revpack prepare --local                     # prepare a local branch review against the inferred base
-revpack prepare --local main                # prepare a local branch review against an explicit base
-revpack prepare --local main...HEAD         # prepare a local branch review from an explicit range
-revpack prepare --fresh                     # discard the existing bundle and start fresh
-revpack prepare --discard-outputs           # clear output files before preparing
-revpack prepare !42 --json                  # machine-readable output
-```
-
-Behavior:
-
-- If no `ref` is given and no bundle exists, `prepare` finds an open PR/MR sourced from the current git branch.
-- If a bundle already exists, `prepare` refreshes it and detects code or thread changes since the last recorded review state.
-- If the current git branch no longer matches the bundled PR/MR source branch, `prepare` stops and asks you to switch branches or run `clean`.
-- Thread IDs such as `T-001` are derived from the provider's thread creation order. They stay stable unless existing provider threads are deleted.
-
-Local mode:
-
-- `revpack prepare --local` reviews committed branch changes against an inferred base branch (`origin/main`, `main`, `origin/master`, `master`, `origin/develop`, `develop`, `origin/trunk`, or `trunk`).
-- Uncommitted working tree changes are ignored and are not included in the agent context.
-- Local findings are stored as local review threads under `.revpack/local/` and appear in the normal `.revpack/threads/T-NNN.*` files after refresh.
-- `revpack publish findings`, `revpack publish replies`, and `revpack publish review` work against the active local bundle. Publishing review records the local review state.
-
-### `checkout <ref>`
-
-Switches to a PR/MR source branch, or clones it when run outside a git repository.
-
-```bash
-revpack checkout !42
-revpack checkout !42 --prepare
-revpack checkout !42 --setup
-revpack checkout !42 --repo group/project --profile myprofile
-revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42
-```
-
-Notes:
-
-- In an existing repo, `checkout` requires a clean working tree.
-- By default, clones use HTTPS.
-- To clone with SSH, set `sshClone: true` in the profile. Git handles SSH keys and passphrase prompts as usual.
-
-### `status [ref]`
-
-Shows PR/MR state, branches, labels, dates, pending outputs, prepare summary, and published actions.
-
-```bash
-revpack status
-revpack status !42
-revpack status !42 --json
-```
-
-When a bundle exists, `status` reads from `.revpack/bundle.json`. Otherwise, it fetches from the provider API.
-
-### `publish`
-
-Publishes agent outputs back to the PR/MR.
-
-```bash
-revpack publish all
-revpack publish replies
-revpack publish findings
-revpack publish description --from-summary
-revpack publish review
-```
-
-After publishing, revpack refreshes the bundle by default so the new provider comments are reflected locally.
-
-### `clean`
-
-Deletes the local `.revpack/` directory.
-
-```bash
-revpack clean
-```
-
-The bundle is disposable local state. Run `prepare` again to recreate it.
-
-### `setup`
-
-Creates project-level files that help agents review consistently.
-
-```bash
-revpack setup
-revpack setup --prompts
-revpack setup --dry-run
-```
-
-### `config`
-
-Manages named provider profiles.
-
-```bash
-# Interactive setup
-revpack config setup
-
-# Show resolved configuration
-revpack config show
-revpack config show --profile myprofile
-revpack config show --sources
-
-# Read or change individual keys
-revpack config get <key>
-revpack config set <key> <value>
-revpack config unset <key>
-
-# Profile management
-revpack config profile list
-revpack config profile show <name>
-revpack config profile create <name>
-revpack config profile delete <name>
-revpack config profile rename <old> <new>
-
-# Health checks
-revpack config doctor
-revpack config doctor --profile myprofile
-```
-
-Use these options when changing profile-specific values:
-
-```bash
---profile <name>   # target a specific profile
---current          # resolve the profile from the current git remote
-```
-
-Configurable keys:
-
-```text
-provider, url, tokenEnv, remotePatterns, caFile, tlsVerify, sshClone
-```
-
-## Generated bundle layout
-
-`prepare` creates the following local workspace:
-
-```text
-.revpack/
-  CONTEXT.md              # agent entry point
-  INSTRUCTIONS.md         # stable review workflow and output rules
-  bundle.json             # machine-readable bundle metadata and state
-  description.md          # raw PR/MR description
-  threads/
-    T-001.md
-    T-001.json            # one pair per unresolved thread
-  diffs/
-    latest.patch          # full PR/MR diff
-    incremental.patch     # changes since the last recorded review state, on refresh
-    line-map.ndjson       # valid positional anchors
-    files.json            # changed-file index
-    patches/by-file/      # per-file patches for easier navigation
-  outputs/
-    replies.json          # agent replies to existing threads
-    new-findings.json     # agent-created findings
-    summary.md            # summary for PR/MR description updates
-    review.md             # optional review note body
-```
-
-The agent should start with `CONTEXT.md`, use the generated diff artifacts for review context, and write only to `.revpack/outputs/`.
+- [Command reference](docs/commands.md)
+- [Architecture](docs/architecture.md)
 
 ## Design principles
 
@@ -349,24 +236,9 @@ The agent should start with `CONTEXT.md`, use the generated diff artifacts for r
 - **Incremental by default** — refreshes compare new code and comments against the last recorded review state.
 - **Provider-neutral core** — GitHub and GitLab details are handled by provider adapters.
 
-## Architecture
-
-The codebase is organized into five layers:
-
-1. **Core domain** (`src/core/`) — provider-neutral types, schemas, and errors
-2. **Provider adapters** (`src/providers/`) — GitLab and GitHub integrations
-3. **Workspace** (`src/workspace/`) — git operations and bundle creation
-4. **Orchestration** (`src/orchestration/`) — workflow coordination
-5. **CLI** (`src/cli/`) — Commander-based commands with `--json` support
-
-Key implementation decisions:
-
-- `bundle.json` is the canonical local state file.
-- Description updates use marker sections so original PR/MR text is preserved.
-- `REVIEW.md` and source files are read from the repository, not copied into the bundle.
-- T-NNN thread IDs are based on provider thread order instead of a separate mapping file.
-
 ## Development
+
+See [docs/architecture.md](docs/architecture.md) for the internal structure and implementation notes.
 
 Install dependencies:
 
@@ -388,14 +260,11 @@ npm lint:fix
 npm format
 ```
 
-## Roadmap
+## Status
 
-- **Phase 0** ✅ Spike — GitLab auth, MR fetch, discussions, workspace bundle
-- **Phase 1** ✅ Read-only assistant — `status`, `prepare`
-- **Phase 2** ✅ Assisted replies — `publish`, `update-description`
-- **Phase 2.5** ✅ Unified workflow — `prepare` command, `CONTEXT.md`, incremental support
-- **Phase 2.7** ✅ Auto-detect and proactive review — branch auto-detect, sync status, `publish findings`
-- **Phase 2.8** ✅ Workflow redesign — `prepare`, `setup`, `clean`, `bundle.json`, structured context
-- **Phase 3** 🔜 Patch assistance — generate and apply patches, run checks
-- **Phase 4** 🔜 Learnings and automation — durable learnings, CI integration
-- **Phase 5** 🔜 MCP server and automation — MCP server, CI integration
+`revpack` is early but usable for local AI-assisted PR/MR reviews. Current focus:
+
+- Reliable GitHub/GitLab review bundles.
+- Safe publishing of findings, replies, summaries, and review notes.
+- Local review workflows before a PR/MR exists.
+- Future work: patch assistance, durable learnings, CI integration, and MCP support.
