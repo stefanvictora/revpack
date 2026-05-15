@@ -54,7 +54,7 @@ After new commits or new comments, run `revpack prepare` again to refresh the bu
 
 The quoted instruction is a condensed version of the bundled [review prompt](templates/prompts/review.prompt.md). Run `revpack setup --prompts` to install it for Copilot.
 
-Want to see the result? See [examples/basic-review/](examples/basic-review/) for a tiny generated bundle with representative output files.
+Want to see the result? See [examples/basic-review/](examples/basic-review) for a tiny generated bundle with representative output files.
 
 ## What revpack creates
 
@@ -64,7 +64,7 @@ A typical bundle contains the files your agent interacts with most:
 .revpack/
   CONTEXT.md              # start here
   AGENT_CONTRACT.md       # non-negotiable agent rules
-  INSTRUCTIONS.md         # instruction index for the current task
+  INSTRUCTIONS.md         # catalog of available instruction files
   description.md          # PR/MR description
   threads/                # unresolved review threads
   diffs/
@@ -78,7 +78,9 @@ A typical bundle contains the files your agent interacts with most:
     review.md             # optional review-level note
 ```
 
-`AGENT_CONTRACT.md` defines the non-negotiable rules for the agent, such as where it may write output and how findings must be structured.
+`CONTEXT.md` is the run-specific entry point. It tells the agent which review mode applies, points it to the mandatory contract, and lists only the instruction files needed for that run.
+
+`AGENT_CONTRACT.md` defines the non-negotiable rules for the agent, such as where it may write output and how findings must be structured. `INSTRUCTIONS.md` is a catalog of the available task-specific files, not another required hop in the normal reading path.
 
 `prepare` also writes `bundle.json`, per-file patches, changed-file metadata, output schemas, and task-specific instruction files. The generated context tells the agent where to start and which instructions apply to the current review.
 

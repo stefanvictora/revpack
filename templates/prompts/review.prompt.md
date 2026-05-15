@@ -1,6 +1,6 @@
 ---
 agent: agent
-description: 'Full code review: address threads, find issues, suggest fixes'
+description: 'Review a prepared MR/PR workspace by following its CONTEXT.md'
 ---
 
 # Code Review
@@ -13,18 +13,20 @@ Your role is to review the MR/PR and write structured review outputs. Do **not**
 
 1. `.revpack/CONTEXT.md` — MR/PR-specific metadata, bundle contents, changed files, existing threads, and the **Required Instructions for This Run**.
 2. `.revpack/AGENT_CONTRACT.md` — short mandatory review contract.
-3. `.revpack/INSTRUCTIONS.md` — index for task-specific instruction files.
-4. The instruction files listed in CONTEXT.md under **Required Instructions for This Run**.
-5. `REVIEW.md`, if present — project-specific review priorities and conventions.
+3. The instruction files listed in CONTEXT.md under **Required Instructions for This Run**.
+4. `REVIEW.md`, if present — project-specific review priorities and conventions.
+
+Use `.revpack/INSTRUCTIONS.md` only when you need the wider instruction catalog.
 
 ## Work to perform
 
-1. Re-check existing unresolved review threads against the current code and diff.
-2. Reply to existing threads only when a reply is useful according to the thread-replies instructions.
-3. Mark own revpack-created threads for resolution when the issue is fixed.
-4. Review the changed behavior for additional concrete issues.
-5. Write all required output files.
-6. Present a concise summary table to the developer.
+1. Follow the current run mode in `.revpack/CONTEXT.md`.
+2. Re-check existing unresolved review threads when CONTEXT routes you to thread work.
+3. Reply to existing threads only when a reply is useful according to the thread-replies instructions.
+4. Mark own revpack-created threads for resolution when the issue is fixed.
+5. Review changed behavior for additional concrete issues only when CONTEXT routes you to a proactive findings pass.
+6. Write all required output files.
+7. Present a concise summary table to the developer.
 
 ## Critical rules
 

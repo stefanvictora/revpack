@@ -12,9 +12,19 @@
 | Target branch | `main`                   |
 | State         | open                     |
 
-Read `.revpack/AGENT_CONTRACT.md` first. It contains the short mandatory review contract.
+This file is the run-specific entry point.
 
-Then read `.revpack/INSTRUCTIONS.md`. It is an index for task-specific instruction files, not the full review manual.
+1. Read `.revpack/AGENT_CONTRACT.md` next. It contains the short mandatory review contract.
+2. Read the files listed in **Required Instructions for This Run**.
+
+Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the full instruction set.
+
+## Current Run Mode
+
+| Field        | Value                                                                               |
+| ------------ | ----------------------------------------------------------------------------------- |
+| Mode         | Fresh review                                                                        |
+| Primary work | Review the MR/PR changes, address unresolved threads, and write the review outputs. |
 
 ## Required Instructions for This Run
 

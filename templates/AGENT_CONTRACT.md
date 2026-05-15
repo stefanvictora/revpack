@@ -33,6 +33,6 @@ You are reviewing an MR/PR using a prepared `.revpack/` workspace.
 
 ## Required instruction files
 
-Read `.revpack/INSTRUCTIONS.md` for the full index of task-specific instruction files.
+`.revpack/CONTEXT.md` is the run-specific router.
 
-For this run, read only the instruction files listed in `.revpack/CONTEXT.md` under **Required Instructions for This Run**.
+Read only the instruction files listed there under **Required Instructions for This Run** unless you need `.revpack/INSTRUCTIONS.md` as a catalog of the wider instruction set.

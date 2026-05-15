@@ -48,6 +48,106 @@ const OUTPUT_STATE_KEYS = {
   'review.md': 'review',
 } as const;
 
+interface InstructionRoute {
+  modeLabel: string;
+  primaryWork: string;
+  required: string[];
+  skipped: Array<{ path: string; reason: string }>;
+  proactiveReview: boolean;
+}
+
+function buildInstructionRoute(
+  prepareSummary: PrepareSummary | undefined,
+  hasUnresolvedThreads: boolean,
+): InstructionRoute {
+  const freshReview = !prepareSummary?.checkpoint;
+  const targetCodeChanged = prepareSummary?.comparison.targetCodeChangedSinceCheckpoint === true;
+  const threadsChanged = prepareSummary?.comparison.threadsChangedSinceCheckpoint === true;
+  const proactiveReview = freshReview || targetCodeChanged;
+  const required = ['`.revpack/instructions/01-review-workflow-and-outputs.md`'];
+  const skipped: Array<{ path: string; reason: string }> = [];
+
+  if (hasUnresolvedThreads && (proactiveReview || threadsChanged)) {
+    required.push('`.revpack/instructions/02-thread-replies.md`');
+  } else if (!hasUnresolvedThreads) {
+    skipped.push({
+      path: '`.revpack/instructions/02-thread-replies.md`',
+      reason: 'skip, no unresolved threads',
+    });
+  } else {
+    skipped.push({
+      path: '`.revpack/instructions/02-thread-replies.md`',
+      reason: 'skip, no thread/reply updates since the last checkpoint',
+    });
+  }
+
+  if (proactiveReview) {
+    required.push('`.revpack/instructions/03-new-findings-and-anchors.md`');
+    required.push('`.revpack/instructions/04-suggestions-and-agent-handover.md`');
+    required.push('`.revpack/instructions/05-review-note.md`');
+    required.push('`.revpack/instructions/06-summary.md`');
+  } else {
+    skipped.push({
+      path: '`.revpack/instructions/03-new-findings-and-anchors.md`',
+      reason: 'skip, no new target code to review proactively',
+    });
+    skipped.push({
+      path: '`.revpack/instructions/04-suggestions-and-agent-handover.md`',
+      reason: 'skip, no new findings pass is expected',
+    });
+    skipped.push({
+      path: '`.revpack/instructions/05-review-note.md`',
+      reason: 'skip, no MR/PR-level synthesis pass is expected',
+    });
+    skipped.push({
+      path: '`.revpack/instructions/06-summary.md`',
+      reason: 'skip, no code-change summary update is expected',
+    });
+  }
+
+  required.push('`.revpack/instructions/07-final-checks.md`');
+
+  if (freshReview) {
+    return {
+      modeLabel: 'Fresh review',
+      primaryWork: 'Review the MR/PR changes, address unresolved threads, and write the review outputs.',
+      required,
+      skipped,
+      proactiveReview,
+    };
+  }
+
+  if (targetCodeChanged) {
+    return {
+      modeLabel: 'Incremental code review',
+      primaryWork:
+        'Review what changed since the last checkpoint, re-check unresolved threads, and update the review outputs.',
+      required,
+      skipped,
+      proactiveReview,
+    };
+  }
+
+  if (threadsChanged) {
+    return {
+      modeLabel: 'Thread follow-up',
+      primaryWork:
+        'Re-check updated unresolved threads and pending outputs. Do not perform a proactive code review unless requested.',
+      required,
+      skipped,
+      proactiveReview,
+    };
+  }
+
+  return {
+    modeLabel: 'Outputs-only follow-up',
+    primaryWork: 'Inspect pending outputs, if any. Do not perform a new review unless requested.',
+    required,
+    skipped,
+    proactiveReview,
+  };
+}
+
 export class WorkspaceManager {
   private readonly workingDir: string;
   private readonly baseDir: string;
@@ -508,15 +608,12 @@ export class WorkspaceManager {
     lines.push(`| State | ${tableCell(target.state)} |`);
     if (target.webUrl) lines.push(`| URL | ${target.webUrl} |`);
     lines.push('');
-    lines.push('Read `.revpack/AGENT_CONTRACT.md` first. It contains the short mandatory review contract.');
+    lines.push('This file is the run-specific entry point.');
     lines.push('');
-    lines.push(
-      'Then read `.revpack/INSTRUCTIONS.md`. It is an index for task-specific instruction files, not the full review manual.',
-    );
+    lines.push('1. Read `.revpack/AGENT_CONTRACT.md` next. It contains the short mandatory review contract.');
+    lines.push('2. Read the files listed in **Required Instructions for This Run**.');
     lines.push('');
-    lines.push(
-      'For this run, read only the instruction files listed in **Required Instructions for This Run** unless you need additional detail.',
-    );
+    lines.push('Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the full instruction set.');
     lines.push('');
 
     // ─── Review Checkpoint Summary ──────────────────────────
@@ -574,52 +671,65 @@ export class WorkspaceManager {
     }
 
     // ─── Suggested Reading Order ──────────────────────────
+    const hasUnresolvedThreads = unresolvedThreads.length > 0;
+    const instructionRoute = buildInstructionRoute(ps, hasUnresolvedThreads);
+
+    lines.push('## Current Run Mode');
+    lines.push('');
+    lines.push('| Field | Value |');
+    lines.push('|---|---|');
+    lines.push(`| Mode | ${instructionRoute.modeLabel} |`);
+    lines.push(`| Primary work | ${instructionRoute.primaryWork} |`);
+    lines.push('');
+
     lines.push('## Suggested Reading Order');
     lines.push('');
     lines.push('1. Read this context file.');
     lines.push('2. Read `.revpack/AGENT_CONTRACT.md`.');
-    lines.push('3. Read `.revpack/INSTRUCTIONS.md` as the instruction index.');
-    lines.push('4. Read the files listed in **Required Instructions for This Run**.');
-    lines.push('5. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
-    lines.push('6. Read relevant unresolved thread files in `.revpack/threads/`.');
+    lines.push('3. Read the files listed in **Required Instructions for This Run**.');
+    lines.push('4. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
     lines.push(
-      '7. Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
+      '5. Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
     );
-    if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
+    lines.push(
+      '6. Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
+    );
+    if (instructionRoute.proactiveReview && ps?.comparison.targetCodeChangedSinceCheckpoint) {
       lines.push(
-        '8. Read `.revpack/diffs/incremental.patch` first to understand what changed since the last checkpoint, then use `.revpack/diffs/latest.patch` for full MR/PR context.',
+        '7. Read `.revpack/diffs/incremental.patch` first to understand what changed since the last checkpoint, then use `.revpack/diffs/latest.patch` for full MR/PR context.',
       );
-    } else {
-      lines.push('8. Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.');
+    } else if (instructionRoute.proactiveReview) {
+      lines.push('7. Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.');
     }
-    lines.push('9. Use `.revpack/diffs/patches/by-file/` for focused review of individual changed files.');
-    lines.push(
-      '10. Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
-    );
-    lines.push(
-      '11. Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
-    );
-    lines.push('12. Inspect checked-out source files when needed to understand the new branch state.');
-    lines.push('13. Read existing `.revpack/outputs/summary.md`, if present, before updating it.');
+    if (instructionRoute.proactiveReview) {
+      lines.push('8. Use `.revpack/diffs/patches/by-file/` for focused review of individual changed files.');
+      lines.push(
+        '9. Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
+      );
+      lines.push(
+        '10. Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
+      );
+      lines.push('11. Inspect checked-out source files when needed to understand the new branch state.');
+      lines.push('12. Read existing `.revpack/outputs/summary.md`, if present, before updating it.');
+    }
     lines.push('');
 
     // ─── Required Instructions for This Run ───────────────
-    const hasUnresolvedThreads = unresolvedThreads.length > 0;
     lines.push('## Required Instructions for This Run');
     lines.push('');
     lines.push('Read these instruction files in order:');
     lines.push('');
-    lines.push('1. `.revpack/instructions/01-review-workflow-and-outputs.md`');
-    if (hasUnresolvedThreads) {
-      lines.push('2. `.revpack/instructions/02-thread-replies.md`');
-    } else {
-      lines.push('2. ~~`.revpack/instructions/02-thread-replies.md`~~ — skip, no unresolved threads');
+    instructionRoute.required.forEach((instructionPath, index) => {
+      lines.push(`${index + 1}. ${instructionPath}`);
+    });
+    if (instructionRoute.skipped.length > 0) {
+      lines.push('');
+      lines.push('Skipped this run:');
+      lines.push('');
+      for (const skipped of instructionRoute.skipped) {
+        lines.push(`- ${skipped.path} — ${skipped.reason}`);
+      }
     }
-    lines.push('3. `.revpack/instructions/03-new-findings-and-anchors.md`');
-    lines.push('4. `.revpack/instructions/04-suggestions-and-agent-handover.md`');
-    lines.push('5. `.revpack/instructions/05-review-note.md`');
-    lines.push('6. `.revpack/instructions/06-summary.md`');
-    lines.push('7. `.revpack/instructions/07-final-checks.md`');
     lines.push('');
 
     // ─── MR/PR Description ────────────────────────────────
@@ -636,7 +746,7 @@ export class WorkspaceManager {
     lines.push('| Path | Description |');
     lines.push('|---|---|');
     lines.push('| `.revpack/AGENT_CONTRACT.md` | Short mandatory review contract |');
-    lines.push('| `.revpack/INSTRUCTIONS.md` | Index/router for task-specific instruction files |');
+    lines.push('| `.revpack/INSTRUCTIONS.md` | Catalog of task-specific instruction files |');
     lines.push('| `.revpack/instructions/` | Detailed task-specific instruction files |');
     lines.push('| `.revpack/bundle.json` | Machine-readable bundle metadata and local state |');
     lines.push('| `.revpack/description.md` | Raw MR/PR description |');

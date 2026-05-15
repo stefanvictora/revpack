@@ -591,9 +591,11 @@ describe('WorkspaceManager', () => {
       const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Current Run Mode');
+      expect(content).toContain('| Mode | Fresh review |');
       expect(content).toContain('## Suggested Reading Order');
       expect(content).toContain('REVIEW.md');
-      expect(content).toContain('INSTRUCTIONS.md');
+      expect(content).toContain('Use `.revpack/INSTRUCTIONS.md` only as a catalog');
     });
 
     it('includes Required Instructions section skipping thread-replies when no unresolved threads', async () => {
@@ -604,7 +606,8 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Required Instructions for This Run');
       expect(content).toContain('`.revpack/instructions/01-review-workflow-and-outputs.md`');
-      expect(content).toContain('~~`.revpack/instructions/02-thread-replies.md`~~ — skip, no unresolved threads');
+      expect(content).toContain('Skipped this run:');
+      expect(content).toContain('`.revpack/instructions/02-thread-replies.md` — skip, no unresolved threads');
       expect(content).toContain('`.revpack/instructions/03-new-findings-and-anchors.md`');
     });
 
@@ -618,6 +621,42 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('## Required Instructions for This Run');
       expect(content).not.toContain('skip, no unresolved threads');
       expect(content).toContain('`.revpack/instructions/02-thread-replies.md`');
+    });
+
+    it('routes thread-only refreshes away from proactive review instructions', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'note-1',
+            headSha: 'aaa',
+            baseSha: 'xxx',
+            startSha: 'xxx',
+            threadsDigest: 'old',
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { providerVersionId: 'v1', targetHeadSha: 'aaa', localHeadSha: 'aaa', threadsDigest: 'new' },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: false,
+            threadsChangedSinceCheckpoint: true,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('| Mode | Thread follow-up |');
+      expect(content).toContain('`.revpack/instructions/02-thread-replies.md`');
+      expect(content).not.toMatch(/^\d+\. `\.revpack\/instructions\/03-new-findings-and-anchors\.md`/m);
+      expect(content).toContain(
+        '`.revpack/instructions/03-new-findings-and-anchors.md` — skip, no new target code to review proactively',
+      );
     });
 
     it('shows general comments section for non-resolvable human threads', async () => {
