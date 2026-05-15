@@ -11,10 +11,15 @@ export function registerCleanCommand(program: Command): void {
     .action(async () => {
       try {
         const bundleDir = path.join(process.cwd(), '.revpack');
-        try {
+        const bundleExists = await fs
+          .access(bundleDir)
+          .then(() => true)
+          .catch(() => false);
+
+        if (bundleExists) {
           await fs.rm(bundleDir, { recursive: true, force: true });
           console.log(chalk.green('✓ Removed .revpack/'));
-        } catch {
+        } else {
           console.log(chalk.dim('Nothing to clean — .revpack/ does not exist.'));
         }
         console.log('');

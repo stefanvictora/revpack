@@ -68,7 +68,7 @@ export function registerPrepareCommand(program: Command): void {
 
           // Prepare summary — changes
           if (result.hasCheckpoint) {
-            console.log(`  ${chalk.dim('Changes since last review checkpoint:')}`);
+            console.log(`  ${chalk.dim('Changes since last recorded review state:')}`);
             console.log(`    ${chalk.dim('Target code:')}     ${result.targetCodeChanged ? 'yes' : 'no'}`);
             console.log(
               `    ${chalk.dim('Threads/replies:')} ${result.threadsChanged != null ? (result.threadsChanged ? 'yes' : 'no') : 'unknown'}`,
@@ -95,7 +95,7 @@ export function registerPrepareCommand(program: Command): void {
             }
             console.log('');
           } else if (mode !== 'fresh') {
-            console.log(`  ${chalk.dim('No review checkpoint found — treat as fresh review')}`);
+            console.log(`  ${chalk.dim('No recorded review state found — treat as fresh review')}`);
             console.log('');
           }
 

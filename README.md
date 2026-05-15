@@ -29,13 +29,15 @@ npm install -g @stefanvictora/revpack
 
 ## First-time setup
 
-Create a provider profile:
+Create a provider profile from inside an existing git repository:
 
 ```bash
 revpack config setup
 ```
 
-The setup wizard detects your git remote, pre-fills provider settings, and writes a named profile to:
+Running setup in a repository lets `revpack` inspect the git remote and suggest the matching provider settings automatically. You can run it elsewhere, but those suggestions are only available when `revpack` has a repository to reference.
+
+The setup wizard writes a named profile to:
 
 ```text
 ~/.config/revpack/config.json
@@ -157,7 +159,7 @@ revpack publish description --from-summary
 revpack publish review
 ```
 
-When publishing outputs individually, publish `review` last. It advances the review checkpoint used for incremental reviews.
+When publishing outputs individually, publish `review` last. It records the review state used for incremental refreshes.
 
 Useful variants:
 
@@ -191,7 +193,7 @@ revpack prepare !42 --json                  # machine-readable output
 Behavior:
 
 - If no `ref` is given and no bundle exists, `prepare` finds an open PR/MR sourced from the current git branch.
-- If a bundle already exists, `prepare` refreshes it and detects code or thread changes since the last prepare.
+- If a bundle already exists, `prepare` refreshes it and detects code or thread changes since the last recorded review state.
 - If the current git branch no longer matches the bundled PR/MR source branch, `prepare` stops and asks you to switch branches or run `clean`.
 - Thread IDs such as `T-001` are derived from the provider's thread creation order. They stay stable unless existing provider threads are deleted.
 
@@ -200,7 +202,7 @@ Local mode:
 - `revpack prepare --local` reviews committed branch changes against an inferred base branch (`origin/main`, `main`, `origin/master`, `master`, `origin/develop`, `develop`, `origin/trunk`, or `trunk`).
 - Uncommitted working tree changes are ignored and are not included in the agent context.
 - Local findings are stored as local review threads under `.revpack/local/` and appear in the normal `.revpack/threads/T-NNN.*` files after refresh.
-- `revpack publish findings`, `revpack publish replies`, and `revpack publish review` work against the active local bundle. Publishing review advances the local checkpoint.
+- `revpack publish findings`, `revpack publish replies`, and `revpack publish review` work against the active local bundle. Publishing review records the local review state.
 
 ### `checkout <ref>`
 
@@ -324,7 +326,7 @@ provider, url, tokenEnv, remotePatterns, caFile, tlsVerify, sshClone
     T-001.json            # one pair per unresolved thread
   diffs/
     latest.patch          # full PR/MR diff
-    incremental.patch     # changes since the last review checkpoint, on refresh
+    incremental.patch     # changes since the last recorded review state, on refresh
     line-map.ndjson       # valid positional anchors
     files.json            # changed-file index
     patches/by-file/      # per-file patches for easier navigation
@@ -332,7 +334,7 @@ provider, url, tokenEnv, remotePatterns, caFile, tlsVerify, sshClone
     replies.json          # agent replies to existing threads
     new-findings.json     # agent-created findings
     summary.md            # summary for PR/MR description updates
-    review.md             # review note and checkpoint marker
+    review.md             # optional review note body
 ```
 
 The agent should start with `CONTEXT.md`, use the generated diff artifacts for review context, and write only to `.revpack/outputs/`.
@@ -344,7 +346,7 @@ The agent should start with `CONTEXT.md`, use the generated diff artifacts for r
 - **Threads, not comments** — the core model is thread-oriented for cross-provider portability.
 - **Structured outputs** — findings, replies, summaries, and review notes have explicit output files.
 - **Read-first, write-guarded** — revpack does not auto-push or auto-post; publishing requires explicit commands.
-- **Incremental by default** — refreshes compare new code and comments against the last prepared or reviewed state.
+- **Incremental by default** — refreshes compare new code and comments against the last recorded review state.
 - **Provider-neutral core** — GitHub and GitLab details are handled by provider adapters.
 
 ## Architecture

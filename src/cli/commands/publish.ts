@@ -350,7 +350,7 @@ async function publishDescription(opts: {
 
 /**
  * GitHub-specific: load, validate, and submit findings + review.md as a single PR review batch.
- * Advances the checkpoint. Returns the number of findings published.
+ * Updates the stored review state. Returns the number of findings published.
  */
 async function publishFindingsAndReviewBatch(reviewContent: string): Promise<number> {
   const { findings, resolvedPath } = await loadAndValidateFindings(DEFAULT_FINDINGS_FILE);
@@ -397,9 +397,11 @@ async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise
 
   const result = await orchestrator.publishReview(content, defaultRepo);
   if (result.created) {
-    console.log(chalk.green('✓ Review published and checkpoint advanced'));
+    console.log(chalk.green('✓ Review published'));
+    console.log(chalk.dim('  review state updated for future refreshes'));
   } else {
-    console.log(chalk.green('✓ Checkpoint advanced (no review body to publish)'));
+    console.log(chalk.green('✓ Review state updated'));
+    console.log(chalk.dim('  no review body to publish'));
   }
 
   // Store publish hash for review tracking
@@ -412,7 +414,7 @@ async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise
     }
   }
 
-  return 1;
+  return result.created ? 1 : 0;
 }
 
 function warnPartialSuccess(occurred: boolean): void {
@@ -420,7 +422,7 @@ function warnPartialSuccess(occurred: boolean): void {
   console.error(
     chalk.yellow(
       'Publishing failed after one or more provider actions may already have succeeded.\n' +
-        'The checkpoint was not advanced and pending output files were not cleared.\n' +
+        'The review state was not updated and pending output files were not cleared.\n' +
         'Review the PR/MR before retrying to avoid duplicate comments.',
     ),
   );
@@ -462,7 +464,7 @@ export function registerPublishCommand(program: Command): void {
     console.log('  revpack publish findings      Publish findings only');
     console.log('  revpack publish replies       Publish replies only');
     console.log('  revpack publish description   Update MR description');
-    console.log('  revpack publish review        Publish review.md if non-empty and advance checkpoint');
+    console.log('  revpack publish review        Publish review.md if non-empty and record review state');
     process.exit(1);
   });
 
@@ -475,6 +477,8 @@ export function registerPublishCommand(program: Command): void {
         const parentOpts = cmd.parent?.opts();
         let total = 0;
         let partialSuccess = false;
+        let reviewPublishedInBatch = false;
+        let reviewStateUpdated = false;
 
         // Determine provider for flow branching
         const ws = new WorkspaceManager(process.cwd());
@@ -502,6 +506,7 @@ export function registerPublishCommand(program: Command): void {
           }
           try {
             batchCount = await publishFindingsAndReviewBatch(reviewContent);
+            reviewPublishedInBatch = batchCount > 0 && !!reviewContent.trim();
             if (batchCount === 0) console.log(chalk.dim('  (none pending)'));
             total += batchCount;
             if (batchCount > 0) partialSuccess = true;
@@ -531,13 +536,15 @@ export function registerPublishCommand(program: Command): void {
         // GitHub batch already advanced the checkpoint when findings were submitted.
         // For all other cases (GitLab, or GitHub with no findings), run the normal flow.
         console.log('');
-        console.log(chalk.bold('─── Review & Checkpoint ───'));
+        console.log(chalk.bold('─── Review ───'));
         if (batchCount > 0) {
-          console.log(chalk.green('✓ Checkpoint advanced (state in description)'));
-          total += 1;
+          console.log(chalk.green('✓ Review state updated'));
+          total += reviewPublishedInBatch ? 1 : 0;
+          reviewStateUpdated = true;
         } else {
           try {
             total += await publishReviewCmd({});
+            reviewStateUpdated = true;
           } catch (err) {
             warnPartialSuccess(partialSuccess);
             throw err;
@@ -547,12 +554,12 @@ export function registerPublishCommand(program: Command): void {
         // ── Summary ──────────────────────────────────────────
         console.log('');
         if (total === 0) {
-          console.log(chalk.dim('Nothing to publish.'));
+          console.log(chalk.dim('No pending outputs to publish.'));
         } else {
           console.log(chalk.green(`✓ ${total} item(s) published`));
         }
 
-        if (parentOpts?.refresh !== false && total > 0) {
+        if (parentOpts?.refresh !== false && (total > 0 || reviewStateUpdated)) {
           await autoRefresh();
         }
       } catch (err) {
@@ -622,7 +629,7 @@ export function registerPublishCommand(program: Command): void {
   // ── publish review ──────────────────────────────────────────
   publish
     .command('review')
-    .description('Publish review.md if non-empty and advance checkpoint')
+    .description('Publish review.md if non-empty and record review state')
     .option('--from <file>', `Review file (default: ${DEFAULT_REVIEW_FILE})`)
     .option('--repo <repo>', 'Repository slug')
     .action(async (opts: { from?: string; repo?: string }, cmd: Command) => {

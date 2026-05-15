@@ -87,6 +87,12 @@ export function registerConfigCommand(program: Command): void {
 
         console.log(chalk.bold('revpack — Profile Setup'));
         console.log('');
+        if (detectedProvider && suggestedUrl) {
+          console.log(
+            `Detected ${detectedProvider === 'github' ? 'GitHub' : 'GitLab'} remote: ${new URL(suggestedUrl).host}`,
+          );
+          console.log('');
+        }
 
         const name =
           (await ask(`Profile name${suggestedName ? ` [${suggestedName}]` : ''}: `)) || suggestedName || 'default';
@@ -104,7 +110,7 @@ export function registerConfigCommand(program: Command): void {
           }
         }
         const extraPatternPrompt = derivedHost
-          ? `Custom remote match pattern? (optional, leave empty to use ${derivedHost}): `
+          ? `Additional remote match pattern (optional): `
           : `Remote match pattern: `;
         const extraPattern = await ask(extraPatternPrompt);
 

@@ -151,9 +151,9 @@ export function registerStatusCommand(program: Command): void {
 
           // Next step
           console.log('');
-          if (pendingFindings > 0 || pendingReplies > 0) {
+          if (pendingFindings > 0 || pendingReplies > 0 || summaryState === 'pending' || reviewState === 'pending') {
             console.log(chalk.dim('Next:'));
-            console.log(chalk.dim('  revpack publish'));
+            console.log(chalk.dim('  revpack publish all'));
           }
         } else {
           // No bundle — fall back to fetching target from provider
