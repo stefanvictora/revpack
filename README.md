@@ -50,7 +50,8 @@ revpack status
 revpack publish all
 ```
 
-After new commits or new comments, run `revpack prepare` again to refresh the bundle. Refreshes compare the current PR/MR state with the last recorded review state and generate `incremental.patch` when there are new code changes.
+> [!TIP]
+> After new commits or new comments, run `revpack prepare` again to refresh the bundle. Refreshes compare the current PR/MR state with the last recorded review state and generate `incremental.patch` when there are new code changes.
 
 The quoted instruction is a condensed version of the bundled [review prompt](templates/prompts/review.prompt.md). Run `revpack setup --prompts` to install it for Copilot.
 
@@ -153,7 +154,8 @@ revpack prepare --local main
 revpack prepare --local main...HEAD
 ```
 
-Local mode reviews committed branch changes against an inferred or explicit base branch. Uncommitted working-tree changes are not included.
+> [!NOTE]
+> Local mode reviews committed branch changes against an inferred or explicit base branch. Uncommitted working-tree changes are not included.
 
 Discard the local bundle when you no longer need it:
 
@@ -209,7 +211,8 @@ revpack publish description --from-summary
 revpack publish review
 ```
 
-When publishing outputs individually, publish `review` last because it records the review state used for incremental refreshes.
+> [!IMPORTANT]
+> When publishing outputs individually, publish `review` last because it records the review state used for incremental refreshes.
 
 Useful variants:
 
