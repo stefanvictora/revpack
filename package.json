@@ -1,6 +1,6 @@
 {
   "name": "@stefanvictora/revpack",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Prepare GitHub PRs and GitLab MRs for AI code review with structured local review bundles.",
   "author": {
     "name": "Stefan Victora",
