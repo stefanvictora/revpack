@@ -38,7 +38,7 @@ const PROMPT_FILES: SetupFile[] = [
 export function registerSetupCommand(program: Command): void {
   program
     .command('setup')
-    .description('Optional one-time project setup — creates REVIEW.md and optionally Copilot prompts')
+    .description('Create REVIEW.md and optional Copilot prompts')
     .option('--prompts', 'Also install Copilot Chat prompt files (.github/prompts/)')
     .option('--dry-run', 'Show what would be created without writing files')
     .action(async (opts: { prompts?: boolean; dryRun?: boolean }) => {

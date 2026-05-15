@@ -453,7 +453,7 @@ async function autoRefresh(): Promise<void> {
 
 export function registerPublishCommand(program: Command): void {
   const publish = new Command('publish')
-    .description('Publish pending outputs to the MR/PR')
+    .description('Publish pending outputs to the PR/MR')
     .option('--no-refresh', 'Skip auto-refresh after publishing');
 
   // ── publish (no subcommand) → tell user to be explicit ───

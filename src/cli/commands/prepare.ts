@@ -6,7 +6,7 @@ import { createLocalOrchestrator, createOrchestrator, getRepoFromGit, handleErro
 export function registerPrepareCommand(program: Command): void {
   program
     .command('prepare [ref]')
-    .description('Fetch MR/PR data and generate/refresh the .revpack/ bundle')
+    .description('Create or refresh the .revpack/ review bundle')
     .option('--json', 'Output as JSON')
     .option('--local', 'Prepare a local Git review bundle instead of a PR/MR bundle')
     .option('--fresh', 'Delete existing bundle and prepare from scratch')
@@ -81,7 +81,7 @@ export function registerPrepareCommand(program: Command): void {
               console.log(`    ${chalk.dim('Stale replies pruned:')} ${result.prunedReplies}`);
             }
             if (result.publishedActionCount > 0) {
-              console.log(`    ${chalk.dim('Prior actions tracked:')} ${result.publishedActionCount}`);
+              console.log(`    ${chalk.dim('Published actions:')} ${result.publishedActionCount} previous`);
             }
             console.log('');
 
@@ -91,7 +91,7 @@ export function registerPrepareCommand(program: Command): void {
             } else if (result.threadsChanged) {
               console.log(`  ${chalk.dim('Focus: updated threads/replies and pending outputs')}`);
             } else {
-              console.log(`  ${chalk.dim('Focus: pending outputs, if any')}`);
+              console.log(`  ${chalk.dim('Focus: no remote changes since the last recorded review state')}`);
             }
             console.log('');
           } else if (mode !== 'fresh') {
@@ -116,7 +116,7 @@ export function registerPrepareCommand(program: Command): void {
 
           // Next steps
           console.log(chalk.dim('Next steps:'));
-          console.log(chalk.dim('  • Open .revpack/CONTEXT.md and point your agent at it'));
+          console.log(chalk.dim('  • Give your agent .revpack/CONTEXT.md'));
           console.log(chalk.dim('  • Or use a Copilot prompt: /review or /review-summarize'));
           console.log(chalk.dim('  • Re-run `revpack prepare` after changes to refresh'));
         } catch (err) {

@@ -49,7 +49,7 @@ Notes:
 
 ## `status [ref]`
 
-Shows PR/MR state, branches, labels, dates, pending outputs, prepare summary, and published actions.
+Shows PR/MR state, branches, labels, dates, output status, prepare summary, and published actions.
 
 ```bash
 revpack status

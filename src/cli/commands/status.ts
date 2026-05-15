@@ -9,7 +9,7 @@ import { createOrchestrator, getRepoFromGit, handleError, outputJson } from '../
 export function registerStatusCommand(program: Command): void {
   program
     .command('status [ref]')
-    .description('Show target state, bundle freshness, branch sync, and pending outputs')
+    .description('Show target, bundle, checkout, and output status')
     .option('--json', 'Output as JSON')
     .action(async (ref: string | undefined, opts: { json?: boolean }) => {
       try {
@@ -79,10 +79,10 @@ export function registerStatusCommand(program: Command): void {
 
           // Bundle info
           console.log(chalk.dim('─ Bundle ─'));
-          console.log(`  ${chalk.dim('Prepared:')}        ${formatDate(bundleState.preparedAt)}`);
-          console.log(`  ${chalk.dim('Target head:')}     ${t.diffRefs.headSha.slice(0, 7)}`);
+          console.log(`  ${chalk.dim('Prepared:')}    ${formatDate(bundleState.preparedAt)}`);
+          console.log(`  ${chalk.dim('Target head:')} ${t.diffRefs.headSha.slice(0, 7)}`);
           if (bundleState.local) {
-            console.log(`  ${chalk.dim('Local head then:')} ${bundleState.local.headSha.slice(0, 7)}`);
+            console.log(`  ${chalk.dim('Local head:')}  ${bundleState.local.headSha.slice(0, 7)} (at prepare)`);
           }
           console.log('');
 
@@ -134,19 +134,23 @@ export function registerStatusCommand(program: Command): void {
             );
           }
 
-          // Pending outputs
+          // Output status
           console.log('');
-          console.log(chalk.dim('─ Pending outputs ─'));
-          console.log(`  ${chalk.dim('replies:')}  ${pendingReplies > 0 ? pendingReplies : 'none'}`);
-          console.log(`  ${chalk.dim('findings:')} ${pendingFindings > 0 ? pendingFindings : 'none'}`);
-          console.log(`  ${chalk.dim('summary:')}  ${formatOutputState(summaryState)}`);
-          console.log(`  ${chalk.dim('review:')}   ${formatOutputState(reviewState)}`);
+          console.log(chalk.dim('─ Output status ─'));
+          console.log(
+            `  ${chalk.dim('Replies:')}  ${pendingReplies > 0 ? `${pendingReplies} pending` : 'none pending'}`,
+          );
+          console.log(
+            `  ${chalk.dim('Findings:')} ${pendingFindings > 0 ? `${pendingFindings} pending` : 'none pending'}`,
+          );
+          console.log(`  ${chalk.dim('Summary:')}  ${formatOutputState(summaryState)}`);
+          console.log(`  ${chalk.dim('Review:')}   ${formatOutputState(reviewState)}`);
 
           // Published actions
           if (bundleState.publishedActions.length > 0) {
             console.log('');
             console.log(chalk.dim('─ Published actions ─'));
-            console.log(`  ${bundleState.publishedActions.length} action(s) published`);
+            console.log(`  ${formatCount(bundleState.publishedActions.length, 'action')} published`);
           }
 
           // Next step
@@ -237,4 +241,8 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function formatCount(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }

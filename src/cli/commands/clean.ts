@@ -7,7 +7,7 @@ import { handleError } from '../helpers.js';
 export function registerCleanCommand(program: Command): void {
   program
     .command('clean')
-    .description('Delete local .revpack/ bundle (disposable generated state)')
+    .description('Delete the local .revpack/ bundle')
     .action(async () => {
       try {
         const bundleDir = path.join(process.cwd(), '.revpack');
