@@ -41,15 +41,34 @@ The workspace contains only the new branch state. Deleted lines do not exist in 
 
 ## Positional anchors
 
-Each finding must anchor to exactly one `line-map.ndjson` entry:
+Each finding must anchor to exactly one `line-map.ndjson` entry.
 
-| `kind`    | Use                          |
+| `kind`    | Required line fields         |
 | --------- | ---------------------------- |
 | `added`   | `newLine` only               |
 | `removed` | `oldLine` only               |
 | `context` | both `oldLine` and `newLine` |
 
-Prefer added-line anchors — they are the clearest for issues introduced by the MR/PR. Use removed-line anchors only for harmful deletions. A line in the workspace but not in `line-map.ndjson` is not valid for a finding.
+Before writing each finding:
+
+1. Find the exact `line-map.ndjson` entry you want to comment on.
+2. Copy its `oldPath` and `newPath`.
+3. Set line fields only from that entry:
+   - `added` → `newLine`
+   - `removed` → `oldLine`
+   - `context` → both `oldLine` and `newLine`
+4. Never invent, shift, approximate, or use the nearest visible workspace line as an anchor.
+5. If the issue is about deleted code, anchor to the `removed` line itself.
+
+Prefer added-line anchors — they are the clearest for issues introduced by the MR/PR. Use removed-line anchors only for harmful deletions.
+
+Do not anchor a deletion finding to the next surviving line in the new file. A nearby `context` line is only valid if the finding is about that surviving line, and then both `oldLine` and `newLine` must be provided.
+
+If the relevant `line-map.ndjson` entry has `"newLine": null`, the finding must not contain `newLine`.
+If the relevant entry has `"oldLine": null`, the finding must not contain `oldLine`.
+If the relevant entry has both line numbers, the finding must contain both.
+
+A line in the workspace but not in `line-map.ndjson` is not valid for a finding.
 
 ## Duplicate avoidance
 

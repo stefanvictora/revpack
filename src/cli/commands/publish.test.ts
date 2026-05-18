@@ -74,7 +74,32 @@ describe('publish command internals', () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), ' \n\t', 'utf-8');
 
-    await expect(__testing.publishDescription({ fromSummary: true })).rejects.toThrow('summary.md is empty');
+    await expect(__testing.publishDescription({})).rejects.toThrow('summary.md is empty');
     expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the default summary is missing', async () => {
+    await expect(__testing.publishDescription({})).rejects.toThrow('No summary found');
+    expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
+  it('uses summary.md as the default description source', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), 'Generated summary', 'utf-8');
+
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ description: 'Existing description' }),
+      updateDescription: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishDescription({})).resolves.toBe(1);
+
+    expect(orchestrator.open).toHaveBeenCalledWith(undefined, 'group/project');
+    expect(orchestrator.updateDescription).toHaveBeenCalledWith(
+      undefined,
+      expect.stringContaining('Generated summary'),
+      'group/project',
+    );
   });
 });
