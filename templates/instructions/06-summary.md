@@ -1,73 +1,115 @@
 # MR/PR summary
 
-## `outputs/summary.md`
+<hard_constraints>
+Generate `outputs/summary.md`.
 
-**This file describes what the MR/PR changes — not what the reviewer found.**
+- Describe what the MR/PR changes, not what the reviewer found.
+- Write for reviewers who have not read the diff yet.
+- Default to 3–6 bullets total across all categories.
+- Summarize reviewer-relevant outcomes, not implementation details.
+- Do not produce an exhaustive changelog, file list, commit list, or code walkthrough.
+- Omit or merge any bullet that does not help explain scope, behavior, risk, or verification.
 
-It is a human-readable changelog entry published to the MR/PR description so other developers can understand the change without reading the diff.
+</hard_constraints>
 
-Write a concise, curated summary — not a file list, commit list, or code walkthrough. Use Markdown headings for categories. Only include categories that have content.
+## Purpose
 
-## Allowed categories (in preferred order)
+`outputs/summary.md` is published to the MR/PR description so developers can quickly understand the intent, scope, and important behavior changes before reading the diff.
+
+## Categories
+
+Use only categories that have useful content.
+
+Preferred order: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`, `Performance`, `Tests`, `Documentation`, `Internal`
+
+Prefer user-facing or behavior-facing categories over `Tests`, `Documentation`, and `Internal`.
+
+Use `Internal` only when the internal change is important for understanding architecture, risk, migration, or future maintenance.
+
+## Include
+
+Include bullets for:
+
+- new capabilities or workflows
+- changed behavior
+- important fixes
+- security or performance impact
+- important documentation updates
+- meaningful test coverage at the behavior/workflow level
+
+Before writing a bullet, ask:
+
+> Would this help a reviewer understand the scope, behavior, risk, or verification of the MR/PR?
+
+If not, omit it or merge it into a broader bullet.
+
+## Granularity
+
+Summarize outcomes, not implementation parts.
+
+Prefer this:
 
 ```md
-## Added
-
-## Changed
-
-## Deprecated
-
-## Removed
-
-## Fixed
-
-## Security
-
-## Performance
-
-## Tests
-
-## Documentation
-
-## Internal
+- Adds local review mode for preparing and publishing feedback from a local Git workspace.
 ```
 
-If a change fits multiple categories, choose the one most useful to a reader of the MR/PR description. Prefer user-facing categories (`Added`, `Changed`, `Fixed`, `Security`, `Performance`) over internal ones (`Tests`, `Documentation`, `Internal`).
+Not this:
 
-**Internal** covers refactoring, cleanup, dependencies, build, CI, formatting, and configuration without direct behavior impact.
+```md
+- Adds a local Git-backed provider, target display helpers, schema validation, and Git helper utilities.
+```
 
-## Style rules
+Merge related changes aggressively:
 
-- Use present tense: "Adds", "Changes", "Fixes", "Improves".
-- One bullet per meaningful change. Merge tiny related changes into one bullet.
-- Use the project's own terminology when visible in the code or `REVIEW.md`.
-- Prefer plain language over implementation jargon unless the implementation detail is the important change.
-- Write for someone who has not read the diff.
+- group helper/type/schema/refactor changes under the behavior they support
+- group related fixes when they affect the same workflow
+- group tests into one bullet unless separate test areas are independently important
+- omit internal details that only explain how the change was built
+
+## Style
+
+- Use present tense: `Adds`, `Changes`, `Fixes`, `Improves`.
+- Prefer plain language over implementation jargon.
+- Use project terminology when visible in the code or `REVIEW.md`.
+- Mention implementation details only when needed to understand behavior, risk, or maintainability.
+- If behavior is ambiguous, summarize the safest observable codebase-level change.
+
+## Do not include
+
+- review findings, suspected bugs, approval status, or quality judgments
+- unresolved thread information
+- internal bundle file references
+- version headings, dates, or `Unreleased` headings
+- empty categories
+- file-by-file summaries
+- commit-by-commit summaries
+- code walkthroughs
+- separate bullets for helper functions, type definitions, schema changes, fallback branches, or individual test cases
+- exhaustive test inventories
+- motivation, testing instructions, deployment steps, risks, or open questions unless explicitly present in the existing MR/PR description, commit messages, or `REVIEW.md`
 
 <example>
 
 ```md
+## Added
+
+- Adds local review mode for preparing, reviewing, and publishing feedback from a local Git workspace before pushing.
+
 ## Changed
 
-- Simplifies mass-registration submission handling by moving repeated validation into the service layer.
+- Updates CLI output and target resolution to distinguish MR, PR, and local review targets more clearly.
 
 ## Fixed
 
-- Corrects selectable-year calculation for mass-registration requests with boundary-year data.
+- Handles rewritten history and ambiguous branch matches more gracefully during incremental and local review flows.
 
 ## Tests
 
-- Adds regression coverage for selectable-year calculation in mass-registration requests.
+- Adds unit and integration coverage for local review workflows and related edge cases.
+
+## Documentation
+
+- Documents local mode usage, options, and workflow examples.
 ```
 
 </example>
-
-## Do not include
-
-- Review findings, suspected bugs, risks, approval status, or quality judgments.
-- Unresolved thread information or internal bundle file references.
-- Version headings, dates, or `Unreleased` headings.
-- File lists, empty categories, or code walkthroughs.
-- Weak bullets like "Changed `Controller.java`" or "Refactored code".
-
-If the diff is too ambiguous to determine user-facing behavior, summarize the safest observable codebase-level change.
