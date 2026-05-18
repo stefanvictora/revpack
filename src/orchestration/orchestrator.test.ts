@@ -938,6 +938,22 @@ describe('ReviewOrchestrator', () => {
       await expect(fs.readFile(summaryPath, 'utf-8')).resolves.toBe('## Changed\n\n- Local draft.');
     });
 
+    it('can refresh while preserving pending outputs', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+      const pendingReplies = [{ threadId: 'T-001', body: 'Still pending.', resolve: false }];
+      await fs.writeFile(repliesPath, JSON.stringify(pendingReplies, null, 2), 'utf-8');
+
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([{ ...mockThread, resolved: true }]);
+
+      const refreshed = await orchestrator.prepare('!42', 'group/project', { preservePendingOutputs: true });
+
+      expect(refreshed.prunedReplies).toBe(0);
+      await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual(pendingReplies);
+    });
+
     it('review without publish hash shows as pending', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');

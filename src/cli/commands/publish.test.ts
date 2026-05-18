@@ -102,4 +102,17 @@ describe('publish command internals', () => {
       'group/project',
     );
   });
+
+  it('auto-refreshes after publish without mutating unrelated pending outputs', async () => {
+    const orchestrator = {
+      prepare: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await __testing.autoRefresh();
+
+    expect(orchestrator.prepare).toHaveBeenCalledWith(undefined, 'group/project', {
+      preservePendingOutputs: true,
+    });
+  });
 });

@@ -427,6 +427,7 @@ export const __testing = {
   publishReplies,
   publishDescription,
   requirePublishableContent,
+  autoRefresh,
 };
 
 // ─── Auto-refresh helper ─────────────────────────────────
@@ -435,7 +436,7 @@ async function autoRefresh(): Promise<void> {
   try {
     const orchestrator = await createOrchestrator();
     const defaultRepo = await getRepoFromGit();
-    await orchestrator.prepare(undefined, defaultRepo);
+    await orchestrator.prepare(undefined, defaultRepo, { preservePendingOutputs: true });
     console.log(chalk.dim('Bundle refreshed.'));
   } catch {
     console.log(chalk.dim('(could not auto-refresh bundle)'));

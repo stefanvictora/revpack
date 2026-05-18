@@ -72,6 +72,7 @@ revpack publish review
 ```
 
 After publishing, revpack refreshes the bundle by default so the new provider comments are reflected locally.
+This publish-triggered refresh preserves other pending output files; run `revpack prepare` explicitly when you want stale replies pruned against the latest thread state.
 
 ## `clean`
 

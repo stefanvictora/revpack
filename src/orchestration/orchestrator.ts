@@ -39,6 +39,13 @@ export interface OrchestratorOptions {
 
 export type PrepareProgress = (message: string) => void;
 
+export interface PrepareOptions {
+  fresh?: boolean;
+  discardOutputs?: boolean;
+  preservePendingOutputs?: boolean;
+  onProgress?: PrepareProgress;
+}
+
 export interface PrepareResult {
   bundle: WorkspaceBundle;
   bundleState: BundleState;
@@ -82,11 +89,7 @@ export class ReviewOrchestrator {
    * Fetches MR data, generates/refreshes the .revpack/ bundle.
    * Does NOT perform a review or create findings.
    */
-  async prepare(
-    ref?: string,
-    defaultRepo?: string,
-    options?: { fresh?: boolean; discardOutputs?: boolean; onProgress?: PrepareProgress },
-  ): Promise<PrepareResult> {
+  async prepare(ref?: string, defaultRepo?: string, options?: PrepareOptions): Promise<PrepareResult> {
     const existingBundle = await this.workspace.loadBundleState();
     const progress = options?.onProgress;
 
@@ -303,7 +306,7 @@ export class ReviewOrchestrator {
 
     // Prune stale replies
     let prunedReplies = 0;
-    if (previousBundle) {
+    if (previousBundle && !options?.preservePendingOutputs) {
       const activeIds = new Set(activeThreads.map((t) => t.threadId));
       prunedReplies = await this.workspace.pruneStaleReplies(activeIds, threadIndex);
     }

@@ -213,6 +213,7 @@ revpack publish review
 
 > [!IMPORTANT]
 > When publishing outputs individually, publish `review` last because it records the review state used for incremental refreshes.
+> Publish-triggered refreshes preserve other pending output files. Run `revpack prepare` explicitly when you want stale replies pruned against the latest thread state.
 
 Useful variants:
 
