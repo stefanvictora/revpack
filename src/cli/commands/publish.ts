@@ -308,8 +308,7 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
     try {
       content = await fs.readFile(workspacePath(DEFAULT_SUMMARY_FILE), 'utf-8');
     } catch {
-      console.error(chalk.red('No summary found. Run `revpack prepare` first.'));
-      process.exit(1);
+      throw new Error('No summary found. Run `revpack prepare` first.');
     }
   }
   requirePublishableContent(content, usedSummary ? DEFAULT_SUMMARY_FILE : (opts.from ?? 'description content'));
