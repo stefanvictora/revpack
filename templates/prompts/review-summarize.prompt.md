@@ -42,7 +42,7 @@ Do not mention review findings, suspected issues, approval status, unresolved th
 After the developer approves, they may run:
 
 ```bash
-revpack publish description --from-summary
+revpack publish description
 ```
 
 Do not run publishing commands unless explicitly asked.

@@ -298,27 +298,21 @@ async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefres
   return published;
 }
 
-async function publishDescription(opts: {
-  from?: string;
-  fromSummary?: boolean;
-  replace?: boolean;
-  repo?: string;
-}): Promise<number> {
+async function publishDescription(opts: { from?: string; replace?: boolean; repo?: string }): Promise<number> {
   let content: string;
+  let usedSummary = false;
   if (opts.from) {
     content = await fs.readFile(workspacePath(opts.from), 'utf-8');
-  } else if (opts.fromSummary) {
+  } else {
+    usedSummary = true;
     try {
       content = await fs.readFile(workspacePath(DEFAULT_SUMMARY_FILE), 'utf-8');
     } catch {
       console.error(chalk.red('No summary found. Run `revpack prepare` first.'));
       process.exit(1);
     }
-  } else {
-    console.error(chalk.red('Provide --from <file> or --from-summary'));
-    process.exit(1);
   }
-  requirePublishableContent(content, opts.fromSummary ? DEFAULT_SUMMARY_FILE : (opts.from ?? 'description content'));
+  requirePublishableContent(content, usedSummary ? DEFAULT_SUMMARY_FILE : (opts.from ?? 'description content'));
 
   const orchestrator = await createOrchestrator();
   const defaultRepo = opts.repo ?? (await getRepoFromGit());
@@ -335,7 +329,7 @@ async function publishDescription(opts: {
   console.log(chalk.green(`✓ Description updated${opts.replace ? '' : ' (marked section)'}`));
 
   // Store publish hash for summary tracking
-  if (opts.fromSummary) {
+  if (usedSummary) {
     const ws = new WorkspaceManager(process.cwd());
     const bundleState = await ws.loadBundleState();
     if (bundleState) {
@@ -526,7 +520,7 @@ export function registerPublishCommand(program: Command): void {
         console.log('');
         console.log(chalk.bold('─── Description ───'));
         try {
-          total += await publishDescription({ fromSummary: true });
+          total += await publishDescription({});
           partialSuccess = true;
         } catch {
           console.log(chalk.dim('  (no summary to publish)'));
@@ -611,10 +605,9 @@ export function registerPublishCommand(program: Command): void {
     .command('description')
     .description('Update the MR/PR description with a revpack section')
     .option('--from <file>', 'Read content from a file')
-    .option('--from-summary', 'Use the generated summary.md')
     .option('--replace', 'Replace entire description')
     .option('--repo <repo>', 'Repository slug')
-    .action(async (opts: { from?: string; fromSummary?: boolean; replace?: boolean; repo?: string }, cmd: Command) => {
+    .action(async (opts: { from?: string; replace?: boolean; repo?: string }, cmd: Command) => {
       try {
         const parentOpts = cmd.parent?.opts();
         await publishDescription(opts);

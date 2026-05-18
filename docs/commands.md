@@ -67,7 +67,7 @@ Publishes agent outputs back to the PR/MR.
 revpack publish all
 revpack publish replies
 revpack publish findings
-revpack publish description --from-summary
+revpack publish description
 revpack publish review
 ```
 

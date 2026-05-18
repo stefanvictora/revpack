@@ -207,7 +207,7 @@ Inside an existing git repository, `checkout` fetches and switches to the source
 ```bash
 revpack publish findings
 revpack publish replies
-revpack publish description --from-summary
+revpack publish description
 revpack publish review
 ```
 
@@ -223,7 +223,7 @@ revpack publish replies T-001
 revpack publish replies T-001 --body "Fixed!"
 revpack publish replies T-001 --resolve
 revpack publish description --from custom.md
-revpack publish description --from-summary --replace
+revpack publish description --replace
 ```
 
 ## More docs
