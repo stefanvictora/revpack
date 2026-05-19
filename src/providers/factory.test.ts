@@ -9,10 +9,12 @@ describe('createProvider', () => {
       provider: 'gitlab',
       url: 'https://gitlab.example.com',
       token: 'glpat-xxx',
+      sshClone: true,
       tlsVerify: true,
     };
     const provider = createProvider(config);
     expect(provider.providerType).toBe('gitlab');
+    expect(provider.getCloneUrl('group/project')).toBe('git@gitlab.example.com:group/project.git');
   });
 
   it('throws on missing url', () => {
@@ -22,6 +24,7 @@ describe('createProvider', () => {
       tlsVerify: true,
     };
     expect(() => createProvider(config)).toThrow(ConfigError);
+    expect(() => createProvider(config)).toThrow('url is required for GitLab provider');
   });
 
   it('throws on missing token', () => {
@@ -31,6 +34,7 @@ describe('createProvider', () => {
       tlsVerify: true,
     };
     expect(() => createProvider(config)).toThrow(ConfigError);
+    expect(() => createProvider(config)).toThrow('token is required for GitLab provider');
   });
 
   it('creates a GitHub provider', () => {
@@ -38,10 +42,12 @@ describe('createProvider', () => {
       provider: 'github',
       url: 'https://github.com',
       token: 'ghp-xxx',
+      sshClone: true,
       tlsVerify: true,
     };
     const provider = createProvider(config);
     expect(provider.providerType).toBe('github');
+    expect(provider.getCloneUrl('owner/repo')).toBe('git@github.com:owner/repo.git');
   });
 
   it('creates a GitHub provider with the default GitHub URL', () => {
@@ -60,5 +66,16 @@ describe('createProvider', () => {
       tlsVerify: true,
     };
     expect(() => createProvider(config)).toThrow('token is required for GitHub provider');
+  });
+
+  it('throws on unknown providers', () => {
+    const config = {
+      provider: 'bitbucket',
+      token: 'token',
+      tlsVerify: true,
+    } as unknown as ResolvedAppConfig;
+
+    expect(() => createProvider(config)).toThrow(ConfigError);
+    expect(() => createProvider(config)).toThrow('Unknown provider: bitbucket');
   });
 });
