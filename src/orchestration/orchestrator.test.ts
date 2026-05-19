@@ -245,7 +245,7 @@ describe('ReviewOrchestrator', () => {
       expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
     });
 
-    it('creates bundle, bundle.json, and CONTEXT.md', async () => {
+    it('creates bundle files and persists expected bundle metadata', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
 
@@ -254,21 +254,6 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundle.diffs).toHaveLength(1);
       expect(result.contextPath).toContain('CONTEXT.md');
       expect(result.mode).toBe('fresh');
-    });
-
-    it('writes outputs to disk', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
-
-      const bundleDir = path.join(tmpDir, '.revpack');
-      const contextMd = await fs.readFile(path.join(bundleDir, 'CONTEXT.md'), 'utf-8');
-
-      expect(contextMd).toContain('Test MR');
-    });
-
-    it('saves bundle.json with correct structure', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
 
       const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
       const bundleState = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
@@ -278,7 +263,12 @@ describe('ReviewOrchestrator', () => {
       expect(bundleState.threads.items.map((i: { providerThreadId: string }) => i.providerThreadId)).toContain(
         'thread-1',
       );
+      expect(bundleState.outputs.summary.path).toBe('.revpack/outputs/summary.md');
+      expect(bundleState.outputs.review.path).toBe('.revpack/outputs/review.md');
       expect(bundleState.prepare.mode).toBe('fresh');
+
+      const contextMd = await fs.readFile(path.join(tmpDir, '.revpack', 'CONTEXT.md'), 'utf-8');
+      expect(contextMd).toContain('Test MR');
     });
 
     it('detects refresh mode from existing bundle.json', async () => {
@@ -825,7 +815,7 @@ describe('ReviewOrchestrator', () => {
   // ─── Prepare comparison fields ─────────────────────────
 
   describe('prepare comparison fields', () => {
-    it('uses checkpoint-based comparison fields', async () => {
+    it('uses checkpoint-based comparison fields and tracks current digests', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
 
@@ -834,12 +824,6 @@ describe('ReviewOrchestrator', () => {
       expect(ps.comparison).toHaveProperty('targetCodeChangedSinceCheckpoint');
       expect(ps.comparison).toHaveProperty('threadsChangedSinceCheckpoint');
       expect(ps.comparison).toHaveProperty('descriptionChangedSinceCheckpoint');
-    });
-
-    it('tracks thread digest in prepare.current', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      const result = await orchestrator.prepare('!42', 'group/project');
-
       expect(result.bundleState.prepare.current.threadsDigest).toBeTruthy();
       expect(result.bundleState.prepare.current.localHeadSha).toBe('bbb');
       expect(result.bundleState.prepare.current.targetHeadSha).toBe('bbb');
@@ -849,57 +833,36 @@ describe('ReviewOrchestrator', () => {
   // ─── Output publish state ──────────────────────────────
 
   describe('output publish state', () => {
-    it('summary without publish hash shows as pending', async () => {
+    it('tracks pending, published, modified, and empty output states', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
-
-      // Write some content to summary
-      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), '# Summary\nThis is a test', 'utf-8');
-
       const ws = new WorkspaceManager(tmpDir);
-      const state = await ws.getOutputState('summary');
-      expect(state).toBe('pending');
-    });
 
-    it('summary with matching publish hash shows as published', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
+      const summaryPath = path.join(tmpDir, '.revpack', 'outputs', 'summary.md');
+      const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
 
-      const content = '# Summary\nThis is a test';
-      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), content, 'utf-8');
+      expect(await ws.getOutputState('summary')).toBe('empty');
+      expect(await ws.getOutputState('review')).toBe('empty');
 
-      // Simulate publish by storing hash
-      const ws = new WorkspaceManager(tmpDir);
-      await ws.updateOutputPublishState('summary', computeContentHash(content), 'bbb');
+      const summary = '# Summary\nThis is a test';
+      await fs.writeFile(summaryPath, summary, 'utf-8');
+      expect(await ws.getOutputState('summary')).toBe('pending');
 
-      const state = await ws.getOutputState('summary');
-      expect(state).toBe('published');
-    });
+      await ws.updateOutputPublishState('summary', computeContentHash(summary), 'bbb');
+      expect(await ws.getOutputState('summary')).toBe('published');
 
-    it('edited summary after publish shows as modified since publish', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
+      await fs.writeFile(summaryPath, '# Summary\nEdited', 'utf-8');
+      expect(await ws.getOutputState('summary')).toBe('modified since publish');
 
-      const original = '# Summary\nOriginal';
-      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), original, 'utf-8');
+      const review = '## Notes\nReview notes';
+      await fs.writeFile(reviewPath, review, 'utf-8');
+      expect(await ws.getOutputState('review')).toBe('pending');
 
-      const ws = new WorkspaceManager(tmpDir);
-      await ws.updateOutputPublishState('summary', computeContentHash(original), 'bbb');
+      await ws.updateOutputPublishState('review', computeContentHash(review), 'bbb');
+      expect(await ws.getOutputState('review')).toBe('published');
 
-      // Edit the file
-      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), '# Summary\nEdited', 'utf-8');
-
-      const state = await ws.getOutputState('summary');
-      expect(state).toBe('modified since publish');
-    });
-
-    it('empty summary shows as empty', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
-
-      const ws = new WorkspaceManager(tmpDir);
-      const state = await ws.getOutputState('summary');
-      expect(state).toBe('empty');
+      await fs.writeFile(reviewPath, '## Notes\nEdited', 'utf-8');
+      expect(await ws.getOutputState('review')).toBe('modified since publish');
     });
 
     it('prefills summary from published description marker and marks it as published', async () => {
@@ -953,62 +916,12 @@ describe('ReviewOrchestrator', () => {
       expect(refreshed.prunedReplies).toBe(0);
       await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual(pendingReplies);
     });
-
-    it('review without publish hash shows as pending', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
-
-      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), '## Notes\nSome notes', 'utf-8');
-
-      const ws = new WorkspaceManager(tmpDir);
-      const state = await ws.getOutputState('review');
-      expect(state).toBe('pending');
-    });
-
-    it('review with matching publish hash shows as published', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
-
-      const content = '## Notes\nReview notes';
-      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), content, 'utf-8');
-
-      const ws = new WorkspaceManager(tmpDir);
-      await ws.updateOutputPublishState('review', computeContentHash(content), 'bbb');
-
-      const state = await ws.getOutputState('review');
-      expect(state).toBe('published');
-    });
-
-    it('edited review after publish shows as modified since publish', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
-
-      const original = '## Notes\nOriginal review notes';
-      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), original, 'utf-8');
-
-      const ws = new WorkspaceManager(tmpDir);
-      await ws.updateOutputPublishState('review', computeContentHash(original), 'bbb');
-
-      await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), '## Notes\nEdited', 'utf-8');
-
-      const state = await ws.getOutputState('review');
-      expect(state).toBe('modified since publish');
-    });
-
-    it('bundle.json includes outputs section', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      const result = await orchestrator.prepare('!42', 'group/project');
-
-      expect(result.bundleState.outputs).toBeDefined();
-      expect(result.bundleState.outputs.summary.path).toBe('.revpack/outputs/summary.md');
-      expect(result.bundleState.outputs.review.path).toBe('.revpack/outputs/review.md');
-    });
   });
 
   // ─── Thread items in bundle.json ───────────────────────
 
   describe('thread items in bundle', () => {
-    it('includes thread items with digests', async () => {
+    it('includes thread items and aggregate digest', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
 
@@ -1016,12 +929,6 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundleState.threads.items[0].providerThreadId).toBe('thread-1');
       expect(result.bundleState.threads.items[0].digest).toBeTruthy();
       expect(result.bundleState.threads.items[0].shortId).toBe('T-001');
-    });
-
-    it('includes aggregate threads digest', async () => {
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      const result = await orchestrator.prepare('!42', 'group/project');
-
       expect(result.bundleState.threads.digest).toBeTruthy();
       expect(result.bundleState.threads.digestVersion).toBe(2);
     });
@@ -1163,12 +1070,11 @@ describe('ReviewOrchestrator', () => {
   // ─── Publish review tests ──────────────────────────────
 
   describe('publishReview', () => {
-    it('creates visible comment when review content is non-empty', async () => {
+    it('creates visible comment and advances checkpoint when review content is non-empty', async () => {
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
       (mockProvider.createNote as ReturnType<typeof vi.fn>).mockResolvedValue('new-note-id');
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      // Need a bundle for resolveRef
       await orchestrator.prepare('!42', 'group/project');
 
       const result = await orchestrator.publishReview('## Review\nLooks good overall.', 'group/project');
@@ -1184,24 +1090,12 @@ describe('ReviewOrchestrator', () => {
       const noteBody = (mockProvider.createNote as ReturnType<typeof vi.fn>).mock.calls[0][1];
       expect(noteBody).not.toContain('<!-- revpack:state');
       expect(noteBody).toContain(REVIEW_NOTE_MARKER);
-    });
 
-    it('advances checkpoint via description state block', async () => {
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-      (mockProvider.createNote as ReturnType<typeof vi.fn>).mockResolvedValue('note-id');
-
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
-
-      await orchestrator.publishReview('Review notes.', 'group/project');
-
-      // updateDescription should have been called with the state block
       expect(mockProvider.updateDescription).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
         expect.stringContaining('<!-- revpack:state'),
       );
 
-      // Parse the description to verify the state
       const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
       const state = parseDescriptionState(updatedDesc);
       expect(state).not.toBeNull();
@@ -1226,21 +1120,6 @@ describe('ReviewOrchestrator', () => {
         expect.objectContaining({ targetId: '42' }),
         expect.stringContaining('<!-- revpack:state'),
       );
-    });
-
-    it('published review comments do not contain hidden state', async () => {
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-      (mockProvider.createNote as ReturnType<typeof vi.fn>).mockResolvedValue('new-note-id');
-
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
-
-      await orchestrator.publishReview('Some review body text.', 'group/project');
-
-      const noteBody = (mockProvider.createNote as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      expect(noteBody).not.toContain('<!-- revpack:state');
-      expect(noteBody).toContain('Some review body text.');
-      expect(noteBody).toContain('Generated by ');
     });
   });
 

@@ -34,6 +34,16 @@ interface ParsedReviewRange {
   targetId: string;
 }
 
+interface LocalGitAdapter {
+  currentBranch(): Promise<string>;
+  mergeBase(leftRef: string, rightRef: string): Promise<string>;
+  revParse(ref: string): Promise<string>;
+  refExists(ref: string): Promise<boolean>;
+  deriveRepoSlug(remote?: string): Promise<string>;
+  repositoryRoot(): Promise<string>;
+  configValue(key: string): Promise<string | undefined>;
+}
+
 const DEFAULT_STATE: LocalReviewState = {
   schemaVersion: 1,
   description: '',
@@ -55,14 +65,15 @@ const COMMON_BASE_REFS = [
 export class LocalGitProvider implements ReviewProvider {
   readonly providerType = 'local' as const;
 
-  private readonly git: GitHelper;
+  private readonly git: LocalGitAdapter;
   private readonly statePath: string;
 
   constructor(
     workingDir: string,
     private readonly baseOrRange?: string,
+    options: { git?: LocalGitAdapter } = {},
   ) {
-    this.git = new GitHelper(workingDir);
+    this.git = options.git ?? new GitHelper(workingDir);
     this.statePath = path.join(workingDir, '.revpack', 'local', 'state.json');
   }
 

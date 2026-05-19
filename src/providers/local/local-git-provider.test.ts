@@ -3,9 +3,10 @@ import { promisify } from 'node:util';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { describe, expect, it, afterEach, beforeEach } from 'vitest';
+import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 import { ReviewOrchestrator } from '../../orchestration/orchestrator.js';
 import { parseDescriptionState } from '../../workspace/checkpoint.js';
+import { GitHelper } from '../../workspace/git-helper.js';
 import type { BundleState } from '../../core/types.js';
 import { LocalGitProvider } from './local-git-provider.js';
 
@@ -23,6 +24,134 @@ async function commitFile(cwd: string, filePath: string, content: string, messag
   await git(cwd, ['add', filePath]);
   await git(cwd, ['commit', '-m', message]);
 }
+
+interface MockGit {
+  currentBranch(): Promise<string>;
+  mergeBase(leftRef: string, rightRef: string): Promise<string>;
+  revParse(ref: string): Promise<string>;
+  refExists(ref: string): Promise<boolean>;
+  deriveRepoSlug(remote?: string): Promise<string>;
+  repositoryRoot(): Promise<string>;
+  configValue(key: string): Promise<string | undefined>;
+}
+
+function createMockGit(overrides: Partial<MockGit> = {}): MockGit {
+  return {
+    currentBranch: () => Promise.resolve('feature/local-review'),
+    mergeBase: (leftRef: string, rightRef: string) => Promise.resolve(`merge-base:${leftRef}:${rightRef}`),
+    revParse: (ref: string) => {
+      const shas: Record<string, string> = {
+        HEAD: 'head-sha',
+        main: 'base-sha',
+        'feature/local-review': 'feature-sha',
+      };
+      return Promise.resolve(shas[ref] ?? `sha:${ref}`);
+    },
+    refExists: (ref: string) => Promise.resolve(ref === 'main'),
+    deriveRepoSlug: () => Promise.resolve('owner/repo'),
+    repositoryRoot: () => Promise.resolve(path.join('workspace', 'repo')),
+    configValue: (key: string) => Promise.resolve(key === 'user.name' ? 'Local Tester' : undefined),
+    ...overrides,
+  };
+}
+
+function localPatch(): string {
+  return [
+    'diff --git a/src/app.ts b/src/app.ts',
+    'index 1111111..2222222 100644',
+    '--- a/src/app.ts',
+    '+++ b/src/app.ts',
+    '@@ -1 +1 @@',
+    '-old',
+    '+new',
+    '',
+  ].join('\n');
+}
+
+describe('LocalGitProvider unit', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revpack-local-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('computes and persists a target snapshot using an explicit local range', async () => {
+    const provider = new LocalGitProvider(tmpDir, 'main..HEAD', { git: createMockGit() });
+
+    const target = await provider.getTargetSnapshot(provider.resolveTarget('main..HEAD'));
+
+    expect(target.provider).toBe('local');
+    expect(target.repository).toBe('owner/repo');
+    expect(target.targetType).toBe('local_review');
+    expect(target.targetId).toBe('main...feature/local-review');
+    expect(target.title).toBe('Local review: feature/local-review into main');
+    expect(target.author).toBe('Local Tester');
+    expect(target.sourceBranch).toBe('feature/local-review');
+    expect(target.targetBranch).toBe('main');
+    expect(target.diffRefs).toEqual({
+      baseSha: 'base-sha',
+      startSha: 'base-sha',
+      headSha: 'head-sha',
+    });
+  });
+
+  it('persists local threads, replies, resolution, description, and review notes', async () => {
+    const provider = new LocalGitProvider(tmpDir, 'main', { git: createMockGit() });
+    const ref = provider.resolveTarget('main');
+
+    const threadId = await provider.createThread(ref, 'Local finding body', {
+      oldPath: 'src/app.ts',
+      newPath: 'src/app.ts',
+      newLine: 1,
+    });
+    await provider.createThread(ref, 'Second finding');
+    await provider.postReply(ref, threadId, 'Fixed locally.');
+    await provider.resolveThread(ref, threadId);
+    await provider.updateDescription(ref, 'Review description');
+    const noteId = await provider.createNote(ref, '<!-- marker -->\nVisible review note');
+
+    const allThreads = await provider.listAllThreads(ref);
+    expect(allThreads.map((thread) => thread.threadId)).toEqual(['L-001', 'L-002']);
+    expect(allThreads[0].comments.map((comment) => comment.body)).toEqual(['Local finding body', 'Fixed locally.']);
+    expect(allThreads[0].resolved).toBe(true);
+    expect(allThreads[0].resolvedBy).toBe('local');
+    expect(allThreads[0].position).toMatchObject({
+      filePath: 'src/app.ts',
+      newLine: 1,
+      baseSha: 'merge-base:main:HEAD',
+      startSha: 'merge-base:main:HEAD',
+      headSha: 'head-sha',
+    });
+
+    const unresolvedThreads = await provider.listUnresolvedThreads(ref);
+    expect(unresolvedThreads.map((thread) => thread.threadId)).toEqual(['L-002']);
+
+    const target = await provider.getTargetSnapshot(ref);
+    expect(target.description).toBe('Review description');
+    await expect(provider.findNoteByMarker(ref, '<!-- marker -->')).resolves.toEqual({
+      id: noteId,
+      body: '<!-- marker -->\nVisible review note',
+    });
+  });
+
+  it('fails clearly instead of resetting malformed local state', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'local'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'local', 'state.json'), '{ this is not json', 'utf-8');
+
+    const provider = new LocalGitProvider(tmpDir, undefined, { git: createMockGit() });
+
+    await expect(provider.getTargetSnapshot(provider.resolveTarget('local'))).rejects.toThrow(
+      'Failed to load local review state',
+    );
+
+    const stateRaw = await fs.readFile(path.join(tmpDir, '.revpack', 'local', 'state.json'), 'utf-8');
+    expect(stateRaw).toBe('{ this is not json');
+  });
+});
 
 describe('LocalGitProvider integration', () => {
   let tmpDir: string;
@@ -42,7 +171,7 @@ describe('LocalGitProvider integration', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('prepares, persists local threads, resolves replies, and advances a local checkpoint', async () => {
+  it('prepares, advances a checkpoint, and refreshes after HEAD changes', async () => {
     const provider = new LocalGitProvider(tmpDir);
     const orchestrator = new ReviewOrchestrator({ provider, workingDir: tmpDir });
 
@@ -53,41 +182,13 @@ describe('LocalGitProvider integration', () => {
     expect(first.bundle.target.targetBranch).toBe('main');
     expect(first.bundle.diffs).toHaveLength(1);
 
-    const createdThreadId = await orchestrator.publishFinding({
-      oldPath: 'src/app.ts',
-      newPath: 'src/app.ts',
-      newLine: 1,
-      body: 'Local finding body',
-      severity: 'medium',
-      category: 'correctness',
-    });
-    expect(createdThreadId).toBe('L-001');
-
-    const second = await orchestrator.prepare();
-    expect(second.bundle.threads.map((thread) => thread.threadId)).toEqual(['L-001']);
-    await expect(fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8')).resolves.toContain(
-      'Local finding body',
-    );
-
-    await orchestrator.publishReply(undefined, 'T-001', 'Fixed locally.');
-    await orchestrator.resolveThread(undefined, 'T-001');
-    const third = await orchestrator.prepare();
-    expect(third.bundle.threads).toHaveLength(0);
-
     await orchestrator.publishReview('');
     const stateRaw = await fs.readFile(path.join(tmpDir, '.revpack', 'local', 'state.json'), 'utf-8');
     const state = JSON.parse(stateRaw) as { description: string };
     const checkpoint = parseDescriptionState(state.description);
     expect(checkpoint?.target.provider).toBe('local');
     expect(checkpoint?.checkpoint.headSha).toBe(first.bundle.target.diffRefs.headSha);
-  }, 20000);
 
-  it('writes an incremental patch from the local checkpoint when HEAD advances', async () => {
-    const provider = new LocalGitProvider(tmpDir);
-    const orchestrator = new ReviewOrchestrator({ provider, workingDir: tmpDir });
-
-    await orchestrator.prepare();
-    await orchestrator.publishReview('');
     await commitFile(tmpDir, 'src/app.ts', 'export const value = 3;\n', 'second feature change');
 
     const refreshed = await orchestrator.prepare();
@@ -96,6 +197,19 @@ describe('LocalGitProvider integration', () => {
     const incrementalPatch = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'incremental.patch'), 'utf-8');
     expect(incrementalPatch).toContain('+export const value = 3;');
   }, 20000);
+});
+
+describe('LocalGitProvider orchestrator boundary', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revpack-local-mocked-'));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 
   it('ignores a stale remote bundle when preparing a local review', async () => {
     const staleBundle: BundleState = {
@@ -177,31 +291,26 @@ describe('LocalGitProvider integration', () => {
       },
     };
 
+    vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/local-review');
+    vi.spyOn(GitHelper.prototype, 'headSha').mockResolvedValue('head-sha');
+    vi.spyOn(GitHelper.prototype, 'repositoryRoot').mockResolvedValue(tmpDir);
+    vi.spyOn(GitHelper.prototype, 'isClean').mockResolvedValue(true);
+    vi.spyOn(GitHelper.prototype, 'hasCommit').mockResolvedValue(true);
+    vi.spyOn(GitHelper.prototype, 'diffForReview').mockResolvedValue(localPatch());
+
     await fs.mkdir(path.join(tmpDir, '.revpack'), { recursive: true });
     await fs.writeFile(path.join(tmpDir, '.revpack', 'bundle.json'), JSON.stringify(staleBundle, null, 2), 'utf-8');
 
-    const provider = new LocalGitProvider(tmpDir);
+    const provider = new LocalGitProvider(tmpDir, undefined, { git: createMockGit() });
     const orchestrator = new ReviewOrchestrator({ provider, workingDir: tmpDir });
     const result = await orchestrator.prepare();
 
     expect(result.mode).toBe('fresh');
     expect(result.bundle.target.provider).toBe('local');
     expect(result.bundle.target.sourceBranch).toBe('feature/local-review');
+    expect(result.bundle.target.diffRefs.headSha).toBe('head-sha');
     expect(result.bundleState.publishedActions).toEqual([]);
     expect(result.bundleState.outputs.summary.lastPublishedHash).toBeUndefined();
     expect(result.bundleState.outputs.review.lastPublishedHash).toBeUndefined();
-  }, 20000);
-
-  it('fails clearly instead of resetting malformed local state', async () => {
-    await fs.mkdir(path.join(tmpDir, '.revpack', 'local'), { recursive: true });
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'local', 'state.json'), '{ this is not json', 'utf-8');
-
-    const provider = new LocalGitProvider(tmpDir);
-    const orchestrator = new ReviewOrchestrator({ provider, workingDir: tmpDir });
-
-    await expect(orchestrator.prepare()).rejects.toThrow('Failed to load local review state');
-
-    const stateRaw = await fs.readFile(path.join(tmpDir, '.revpack', 'local', 'state.json'), 'utf-8');
-    expect(stateRaw).toBe('{ this is not json');
-  }, 20000);
+  });
 });
