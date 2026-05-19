@@ -19,7 +19,7 @@ describe('getProfileRemotePatterns', () => {
     const profile: RevpackProfile = {
       provider: 'gitlab',
       url: 'https://gitlab.work.com',
-      remotePatterns: ['gitlab.work.com', 'extra.host.com'],
+      remotePatterns: ['gitlab.work.com', ' extra.host.com '],
     };
     const patterns = getProfileRemotePatterns(profile);
     expect(patterns).toEqual([
@@ -59,7 +59,22 @@ describe('ProfileResolver', () => {
       const config: RevpackConfig = {
         profiles: { work: { provider: 'gitlab' } },
       };
-      expect(() => resolver.resolve(config, [], 'nope')).toThrow(/not found/);
+      expect(() => resolver.resolve(config, [], 'nope')).toThrow('Profile "nope" not found. Available: work');
+    });
+
+    it('includes a none hint when no profiles are configured', () => {
+      expect(() => resolver.resolve({}, [], 'nope')).toThrow('Profile "nope" not found. Available: (none)');
+    });
+
+    it('lists all available profiles when an explicit profile is missing', () => {
+      const config: RevpackConfig = {
+        profiles: {
+          work: { provider: 'gitlab' },
+          oss: { provider: 'github' },
+        },
+      };
+
+      expect(() => resolver.resolve(config, [], 'nope')).toThrow('Profile "nope" not found. Available: work, oss');
     });
   });
 
@@ -86,6 +101,20 @@ describe('ProfileResolver', () => {
       const result = resolver.resolve(config, ['https://gitlab.example.org/team/repo.git']);
       expect(result.matchedPattern).toBe('gitlab.example.org');
       expect(result.matchSource).toBe('url-derived');
+    });
+
+    it('matches when only one of multiple remotes includes a candidate pattern', () => {
+      const config: RevpackConfig = {
+        profiles: {
+          work: { provider: 'gitlab', url: 'https://gitlab.work.com' },
+        },
+      };
+      const result = resolver.resolve(config, [
+        'git@unrelated.example.com:team/other.git',
+        'git@gitlab.work.com:team/repo.git',
+      ]);
+
+      expect(result.profileName).toBe('work');
     });
   });
 
@@ -143,7 +172,9 @@ describe('ProfileResolver', () => {
           b: { provider: 'github', remotePatterns: ['shared.host.com'] },
         },
       };
-      expect(() => resolver.resolve(config, ['git@shared.host.com:team/repo.git'])).toThrow(/Multiple profiles match/);
+      expect(() => resolver.resolve(config, ['git@shared.host.com:team/repo.git'])).toThrow(
+        'Multiple profiles match the current repository remote: a, b. Use --profile to select one.',
+      );
     });
   });
 });

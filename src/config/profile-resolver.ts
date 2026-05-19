@@ -5,12 +5,8 @@ import type { RevpackConfig, RevpackProfile, ProfileResolutionResult } from './t
  * Extract the host from a URL. Returns undefined if parsing fails.
  */
 function tryExtractHost(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  try {
-    return new URL(url).host;
-  } catch {
-    return undefined;
-  }
+  const candidate = String(url);
+  return URL.canParse(candidate) ? new URL(candidate).host : undefined;
 }
 
 /**
@@ -66,26 +62,26 @@ export class ProfileResolver {
     }
 
     // 2. Match by candidate patterns (URL host + remotePatterns)
-    if (remoteUrls.length > 0) {
-      const matches: {
-        name: string;
-        profile: RevpackProfile;
-        pattern: string;
-        source: 'url-derived' | 'remote-pattern';
-      }[] = [];
+    const matches: {
+      name: string;
+      profile: RevpackProfile;
+      pattern: string;
+      source: 'url-derived' | 'remote-pattern';
+    }[] = [];
 
-      for (const [name, profile] of Object.entries(profiles)) {
-        const candidates = getProfileRemotePatterns(profile);
-        for (const { pattern, source } of candidates) {
-          const matched = remoteUrls.some((url) => url.includes(pattern));
-          if (matched) {
-            matches.push({ name, profile, pattern, source });
-            break;
-          }
+    for (const [name, profile] of Object.entries(profiles)) {
+      const candidates = getProfileRemotePatterns(profile);
+      for (const { pattern, source } of candidates) {
+        const matched = remoteUrls.some((url) => url.includes(pattern));
+        if (matched) {
+          matches.push({ name, profile, pattern, source });
+          break;
         }
       }
+    }
 
-      if (matches.length === 1) {
+    switch (matches.length) {
+      case 1:
         return {
           profile: matches[0].profile,
           profileName: matches[0].name,
@@ -93,9 +89,9 @@ export class ProfileResolver {
           matchedPattern: matches[0].pattern,
           matchSource: matches[0].source,
         };
-      }
-
-      if (matches.length > 1) {
+      case 0:
+        break;
+      default: {
         const names = matches.map((m) => m.name).join(', ');
         throw new ConfigError(
           `Multiple profiles match the current repository remote: ${names}. Use --profile to select one.`,
