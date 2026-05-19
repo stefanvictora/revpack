@@ -15,6 +15,9 @@
     "dev": "tsx src/cli/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:mutation": "stryker run",
+    "test:mutation:file": "stryker run --mutate",
+    "test:mutation:dry": "stryker run --dryRunOnly",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write .",
@@ -59,8 +62,10 @@
   "packageManager": "npm@11.14.1",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^20.19.39",
-    "@vitest/eslint-plugin": "^1.6.16",
+    "@vitest/eslint-plugin": "^1.6.17",
     "eslint": "^10.2.1",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.3",
@@ -68,7 +73,7 @@
     "tsx": "^4.7.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.1",
-    "vitest": "^1.2.0"
+    "vitest": "^4.1.6"
   },
   "dependencies": {
     "chalk": "^5.3.0",

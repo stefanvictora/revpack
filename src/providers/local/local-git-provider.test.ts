@@ -153,7 +153,9 @@ describe('LocalGitProvider unit', () => {
   });
 });
 
-describe('LocalGitProvider integration', () => {
+const describeRealGit = process.env.REVPACK_MUTATION_TEST === '1' ? describe.skip : describe;
+
+describeRealGit('LocalGitProvider integration', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
