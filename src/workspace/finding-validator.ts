@@ -105,7 +105,7 @@ function validateFindingPosition(finding: NewFinding, index: number, lineMap: Li
           `If this line is outside the visible diff, move the issue to review.md or anchor it to the closest visible changed/context line.`,
       };
     }
-  } else if (hasOldLine && hasNewLine) {
+  } else {
     // Must match a context line
     const match = fileEntry.lines.find(
       (l) => l.type === 'context' && l.oldLine === finding.oldLine && l.newLine === finding.newLine,
