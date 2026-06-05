@@ -1,0 +1,202 @@
+# Review Context
+
+## Target
+
+| Field | Value |
+|---|---|
+| Type | {{target.typeLabel}} |
+| {{target.kind}} | {{target.displayId}} — {{target.title}} |
+| Repository | `{{target.repository}}` |
+| Author | {{target.author}} |
+| Source branch | `{{target.sourceBranch}}` |
+| Target branch | `{{target.targetBranch}}` |
+| State | {{target.state}} |
+{{#if target.webUrl}}
+| URL | {{target.webUrl}} |
+{{/if}}
+
+This file is the run-specific entry point.
+
+1. Read `.revpack/AGENT_CONTRACT.md` next. It contains the short mandatory review contract.
+2. Read the files listed in **Required Instructions for This Run**.
+
+Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the full instruction set.
+
+{{#if checkpoint}}
+## Review Checkpoint Summary
+
+{{#if checkpoint.hasCheckpoint}}
+| Field | Value |
+|---|---|
+| Last review checkpoint | {{checkpoint.createdAt}} |
+| Last reviewed head SHA | `{{checkpoint.headSha}}` |
+| Current target head SHA | `{{checkpoint.currentTargetHeadSha}}` |
+| Target code changed since checkpoint | {{checkpoint.targetCodeChanged}} |
+| Threads/replies changed since checkpoint | {{checkpoint.threadsChanged}} |
+| Description changed since checkpoint | {{checkpoint.descriptionChanged}} |
+| Local HEAD at prepare | `{{checkpoint.localHeadSha}}` |
+| Local checkout verified | yes |
+
+{{/if}}
+{{#each checkpoint.guidance}}
+{{this}}
+
+{{/each}}
+{{/if}}
+## Current Run Mode
+
+| Field | Value |
+|---|---|
+| Mode | {{runMode.modeLabel}} |
+| Primary work | {{runMode.primaryWork}} |
+
+{{#if incremental}}
+## Incremental Review Rules
+
+This is an incremental run.
+
+Use `.revpack/diffs/incremental.patch` as the primary review surface. It shows what changed since the last review checkpoint.
+
+Use `.revpack/diffs/latest.patch`, `.revpack/diffs/patches/by-file/`, checked-out source files, and repository context only when needed to understand, verify, or anchor issues found while reviewing the incremental change.
+
+Incremental mode limits required review effort. It does not limit valid reporting.
+
+Report a finding when all of these are true:
+
+1. The issue is introduced, exposed, or made worse by the current MR/PR as a whole.
+2. The issue is concrete and actionable.
+3. The issue is not already covered by an unresolved thread, Previous Action, or another new finding.
+4. The issue can be anchored to a valid current MR/PR diff position.
+
+Do not remove or suppress a valid finding solely because the relevant line is outside `.revpack/diffs/incremental.patch`.
+
+A previous review pass that missed an issue is not duplicate coverage.
+
+{{/if}}
+## Suggested Reading Order
+
+{{#each readingOrder}}
+{{inc @index}}. {{this}}
+{{/each}}
+
+## Required Instructions for This Run
+
+Read these instruction files in order:
+
+{{#each requiredInstructions}}
+{{inc @index}}. {{this}}
+{{/each}}
+{{#if skippedInstructions}}
+
+Skipped this run:
+
+{{#each skippedInstructions}}
+- {{path}} — {{reason}}
+{{/each}}
+{{/if}}
+
+## MR/PR Description
+
+The raw MR/PR description is available at `.revpack/description.md`.
+
+Treat it as context only. Verify behavior against the diff and source code.
+
+## Bundle Contents
+
+| Path | Description |
+|---|---|
+| `.revpack/AGENT_CONTRACT.md` | Short mandatory review contract |
+| `.revpack/INSTRUCTIONS.md` | Catalog of task-specific instruction files |
+| `.revpack/instructions/` | Detailed task-specific instruction files |
+| `.revpack/bundle.json` | Machine-readable bundle metadata and local state |
+| `.revpack/description.md` | Raw MR/PR description |
+{{#if hasThreadFiles}}
+| `.revpack/threads/` | {{threadFileCount}} thread(s) — read the `.md` files |
+{{/if}}
+| `.revpack/diffs/latest.patch` | Canonical full unified diff for the whole MR/PR |
+| `.revpack/diffs/patches/by-file/` | Canonical per-file unified diffs in standard patch format |
+| `.revpack/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and diff artifact paths |
+| `.revpack/diffs/line-map.ndjson` | Canonical per-line map for valid positional review anchors in the current MR/PR diff |
+| `.revpack/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |
+{{#if incremental}}
+| `.revpack/diffs/incremental.patch` | Code changes since last review checkpoint |
+{{/if}}
+| `.revpack/outputs/` | Agent output files |
+
+{{#if incremental}}
+`.revpack/diffs/line-map.ndjson` contains valid positional anchors for the current MR/PR diff, not only the checkpoint delta.
+
+{{#if incrementalChangedFiles}}
+## Files Changed Since Last Checkpoint
+
+These files appear in `.revpack/diffs/incremental.patch` and are the primary review focus.
+
+| File | Status |
+|---|---|
+{{#each incrementalChangedFiles}}
+| `{{path}}` | {{status}} |
+{{/each}}
+
+{{/if}}
+{{/if}}
+## {{changedFilesTitle}}
+{{#if changedFilesIntro}}
+
+{{changedFilesIntro}}
+{{/if}}
+
+| File | Status |
+|---|---|
+{{#each changedFiles}}
+| `{{path}}` | {{status}} |
+{{/each}}
+
+{{#if changedThreads}}
+## {{changedThreads.title}}
+
+{{changedThreads.intro}}
+
+| Thread | Status | Location | Summary |
+|---|---|---|---|
+{{#each changedThreads.rows}}
+| {{shortId}} | {{status}} | {{location}} | {{summary}} |
+{{/each}}
+
+{{/if}}
+{{#if unresolvedThreads}}
+{{#if incremental}}
+## Unresolved Threads Requiring Attention
+
+These unresolved threads may need replies or resolution.
+{{else}}
+## Unresolved Threads
+{{/if}}
+
+| Thread | Flags | Author | Location | Summary |
+|---|---|---|---|---|
+{{#each unresolvedThreads}}
+| {{shortId}} | {{flags}} | @{{author}} | {{location}} | {{summary}} |
+{{/each}}
+
+{{/if}}
+{{#if generalComments}}
+## General Comments
+
+{{#each generalComments}}
+- **{{shortId}}** (@{{author}}): {{summary}}
+{{/each}}
+
+{{/if}}
+{{#if previousActions}}
+## Previous Actions
+
+These actions were published by `revpack` in prior iterations. Do not re-raise the same issues.
+
+Do not treat the absence of a previous action as proof that no issue exists. If a concrete MR/PR issue was missed by an earlier review pass, it may still be reported now.
+
+| Action | Location | Severity | Category | Title |
+|---|---|---|---|---|
+{{#each previousActions}}
+| {{actionLabel}} | {{location}} | {{severity}} | {{category}} | {{title}} |
+{{/each}}
+{{/if}}
