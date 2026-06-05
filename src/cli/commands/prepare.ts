@@ -117,7 +117,7 @@ export function registerPrepareCommand(program: Command): void {
           // Next steps
           console.log(chalk.dim('Next steps:'));
           console.log(chalk.dim('  • Give your agent .revpack/CONTEXT.md'));
-          console.log(chalk.dim('  • Or use a Copilot prompt: /review or /review-summarize'));
+          console.log(chalk.dim('  • Or use a Copilot prompt: /revpack-review'));
           console.log(chalk.dim('  • Re-run `revpack prepare` after changes to refresh'));
         } catch (err) {
           handleError(err);

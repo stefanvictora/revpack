@@ -53,7 +53,7 @@ revpack publish all
 > [!TIP]
 > After new commits or new comments, run `revpack prepare` again to refresh the bundle. Refreshes compare the current PR/MR state with the last recorded review state and generate `incremental.patch` when there are new code changes.
 
-The quoted instruction is a condensed version of the bundled [review prompt](templates/prompts/review.prompt.md). Run `revpack setup --prompts` to install it for Copilot.
+The quoted instruction is a condensed version of the bundled Copilot prompt. Run `revpack setup agent copilot` to install it.
 
 Want to see the result? See [examples/basic-review/](examples/basic-review) for a tiny generated bundle with representative output files.
 
@@ -171,11 +171,18 @@ Create a `REVIEW.md` file for project-specific review guidance:
 revpack setup
 ```
 
-Also generate Copilot prompt files:
+Install an agent harness adapter:
 
 ```bash
-revpack setup --prompts
+revpack setup agent claude
+revpack setup agent codex
+revpack setup agent cursor
+revpack setup agent copilot
 ```
+
+`setup agent` installs one adapter at a time. Claude and Copilot expose `/revpack-review`, Cursor installs an agent-requested project rule, and Codex appends or updates a revpack-managed block in `AGENTS.md` without touching other instructions.
+
+The older `revpack setup --prompts` flag still works, but is deprecated. It creates `REVIEW.md` and installs the Copilot `/revpack-review` prompt.
 
 Use `--dry-run` to preview the files without writing them:
 
