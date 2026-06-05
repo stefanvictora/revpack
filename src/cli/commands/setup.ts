@@ -173,7 +173,7 @@ async function installCodexBlock(cwd: string, templatesDir: string, dryRun = fal
 
   if (begin === -1 && end === -1) {
     const nextContent = ensureTrailingNewline(`${content.trimEnd()}\n\n${block.trimEnd()}`);
-
+    if (!dryRun) {
       await fs.writeFile(targetPath, nextContent, 'utf-8');
     }
     return { target: CODEX_FILE.target, label: CODEX_FILE.label, status: 'updated' };
