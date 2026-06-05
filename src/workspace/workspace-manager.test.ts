@@ -132,6 +132,16 @@ describe('WorkspaceManager', () => {
     expect(instrEntries).toContain('01-review-workflow-and-outputs.md');
     expect(instrEntries).toContain('02-thread-replies.md');
     expect(instrEntries).toContain('07-final-checks.md');
+
+    const contract = await fs.readFile(path.join(bundleDir, 'AGENT_CONTRACT.md'), 'utf-8');
+    const findingsInstructions = await fs.readFile(
+      path.join(bundleDir, 'instructions', '03-new-findings-and-anchors.md'),
+      'utf-8',
+    );
+    const finalChecks = await fs.readFile(path.join(bundleDir, 'instructions', '07-final-checks.md'), 'utf-8');
+    expect(contract).toContain('do not discard a valid, non-duplicate issue');
+    expect(findingsInstructions).toContain('## Incremental review scope');
+    expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
   });
 
   it('writes description.md with MR description', async () => {
@@ -583,6 +593,132 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('Last review checkpoint');
       expect(content).toContain('Target code changed since checkpoint');
       expect(content).toContain('yes');
+    });
+
+    it('writes incremental CONTEXT.md with checkpoint delta rules and scoped navigation', async () => {
+      const incrementalDiff: ReviewDiff = {
+        ...makeStructuredDiff(),
+        oldPath: 'src/incremental.ts',
+        newPath: 'src/incremental.ts',
+      };
+      const fullDiffs = [makeDiff(), incrementalDiff];
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads, fullDiffs);
+      await manager.writeIncrementalDiff([incrementalDiff]);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, fullDiffs, threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'note-1',
+            headSha: 'aaa',
+            baseSha: 'xxx',
+            startSha: 'xxx',
+            threadsDigest: null,
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: true,
+            threadsChangedSinceCheckpoint: false,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+        publishedActions: [
+          {
+            type: 'finding',
+            location: { oldPath: 'src/app.ts', newPath: 'src/app.ts', newLine: 2 },
+            severity: 'medium',
+            category: 'correctness',
+            title: 'Earlier finding',
+            publishedAt: '2026-01-01T12:00:00Z',
+          },
+        ],
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Incremental Review Rules');
+      expect(content).toContain('Incremental mode limits required review effort. It does not limit valid reporting.');
+      expect(content).toContain(
+        'Do not remove or suppress a valid finding solely because the relevant line is outside `.revpack/diffs/incremental.patch`.',
+      );
+      expect(content).not.toContain('## Changed Files');
+      expect(content).toContain('## Files Changed Since Last Checkpoint');
+      expect(content).toContain('| `src/incremental.ts` | modified |');
+      expect(content).toContain('## Files Changed in Current MR/PR');
+      expect(content).toContain('`src/app.ts`');
+      expect(content).toContain(
+        '`.revpack/diffs/line-map.ndjson` contains valid positional anchors for the current MR/PR diff, not only the checkpoint delta.',
+      );
+      expect(content).toContain(
+        'Do not treat the absence of a previous action as proof that no issue exists. If a concrete MR/PR issue was missed by an earlier review pass, it may still be reported now.',
+      );
+
+      const incrementalIndex = content.indexOf('5. Read `.revpack/diffs/incremental.patch`');
+      const filesJsonIndex = content.indexOf('8. Use `.revpack/diffs/files.json`');
+      const byFileIndex = content.indexOf('`.revpack/diffs/patches/by-file/`', incrementalIndex);
+      expect(incrementalIndex).toBeGreaterThan(-1);
+      expect(filesJsonIndex).toBeGreaterThan(incrementalIndex);
+      expect(byFileIndex).toBeGreaterThan(incrementalIndex);
+    });
+
+    it('distinguishes incremental thread updates from unresolved threads requiring attention', async () => {
+      const activeThread = makeThread();
+      const resolvedThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'thread-resolved',
+        resolved: true,
+        comments: [
+          {
+            id: 'resolved-note',
+            body: 'Resolved in the newest push',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const allThreads = [activeThread, resolvedThread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
+      await manager.createBundle(makeTarget(), [activeThread], [makeDiff()], [], threadIndex);
+      await manager.writeIncrementalDiff([makeDiff()]);
+
+      const contextPath = await manager.writeContext(makeTarget(), [activeThread], [makeDiff()], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'note-1',
+            headSha: 'aaa',
+            baseSha: 'xxx',
+            startSha: 'xxx',
+            threadsDigest: null,
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: true,
+            threadsChangedSinceCheckpoint: true,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+        changedThreadIds: new Set(['thread-resolved']),
+        allThreads,
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Thread Updates Since Last Checkpoint');
+      expect(content).toContain('These threads changed since the last checkpoint.');
+      expect(content).toContain('| T-002 | resolved |');
+      expect(content).toContain('## Unresolved Threads Requiring Attention');
+      expect(content).toContain('These unresolved threads may need replies or resolution.');
     });
 
     it('includes workflow instructions', async () => {

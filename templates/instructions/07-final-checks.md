@@ -13,6 +13,7 @@ Check from your current work that:
 - every finding is anchored to a line in `.revpack/diffs/line-map.ndjson`
 - there are no duplicate findings from existing threads or Previous Actions
 - findings are concise, concrete, and actionable
+- in incremental mode, no valid finding was removed solely because it is outside the checkpoint delta; remove it only if it is not MR/PR-caused, is already covered, is not concrete/actionable, or has no valid positional anchor
 - `summary.md` describes MR/PR changes, not review findings
 - `review.md` does not reference internal revpack files
 

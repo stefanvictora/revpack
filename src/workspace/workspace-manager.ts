@@ -121,7 +121,7 @@ function buildInstructionRoute(
     return {
       modeLabel: 'Incremental code review',
       primaryWork:
-        'Review what changed since the last checkpoint, re-check unresolved threads, and update the review outputs.',
+        'Review changes since the last checkpoint first, re-check relevant thread updates, and update the review outputs. Valid MR/PR findings found outside the checkpoint delta may still be reported when they are concrete, non-duplicate, and anchorable.',
       required,
       skipped,
       proactiveReview,
@@ -546,6 +546,7 @@ export class WorkspaceManager {
   ): Promise<string> {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
     const generalComments = threads.filter((t) => !t.resolvable && !isSystemOnlyThread(t));
+    const isIncrementalCodeReview = options?.prepareSummary?.comparison.targetCodeChangedSinceCheckpoint === true;
 
     const tableCell = (value: string): string => value.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
 
@@ -567,6 +568,19 @@ export class WorkspaceManager {
         return !/^_[^_]+_(\s*\|\s*_[^_]+_)*\s*$/.test(trimmed);
       });
       return tableCell(meaningful?.trim().slice(0, maxLen) ?? '');
+    };
+
+    const diffStatus = (d: ReviewDiff): string =>
+      d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
+
+    const incrementalFiles = async (): Promise<Array<{ path: string; status: string }>> => {
+      try {
+        const patch = await fs.readFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), 'utf-8');
+        const parsed = parsePatch(patch);
+        return parsed.files.map((f) => ({ path: f.newPath || f.oldPath, status: f.status }));
+      } catch {
+        return [];
+      }
     };
 
     // Derive SELF/REPLIED from comment origins (marker-based)
@@ -645,7 +659,13 @@ export class WorkspaceManager {
         if (ps.comparison.targetCodeChangedSinceCheckpoint) {
           lines.push('Target code has changed since the last review checkpoint.');
           lines.push('');
-          lines.push('Focus proactive review on the updated diff and unresolved thread updates.');
+          lines.push(
+            'Focus proactive review on the code changes since the last checkpoint and on relevant thread updates.',
+          );
+          lines.push('');
+          lines.push(
+            'Important: incremental mode limits where you should spend most of your review effort; it does not limit what you may report. If you discover a concrete, non-duplicate issue introduced, exposed, or made worse by the current MR/PR, report it even when the relevant line is outside the checkpoint delta.',
+          );
           lines.push('');
         } else if (ps.comparison.threadsChangedSinceCheckpoint) {
           lines.push(
@@ -682,27 +702,51 @@ export class WorkspaceManager {
     lines.push(`| Primary work | ${instructionRoute.primaryWork} |`);
     lines.push('');
 
+    if (isIncrementalCodeReview) {
+      lines.push('## Incremental Review Rules');
+      lines.push('');
+      lines.push('This is an incremental run.');
+      lines.push('');
+      lines.push(
+        'Use `.revpack/diffs/incremental.patch` as the primary review surface. It shows what changed since the last review checkpoint.',
+      );
+      lines.push('');
+      lines.push(
+        'Use `.revpack/diffs/latest.patch`, `.revpack/diffs/patches/by-file/`, checked-out source files, and repository context only when needed to understand, verify, or anchor issues found while reviewing the incremental change.',
+      );
+      lines.push('');
+      lines.push('Incremental mode limits required review effort. It does not limit valid reporting.');
+      lines.push('');
+      lines.push('Report a finding when all of these are true:');
+      lines.push('');
+      lines.push('1. The issue is introduced, exposed, or made worse by the current MR/PR as a whole.');
+      lines.push('2. The issue is concrete and actionable.');
+      lines.push(
+        '3. The issue is not already covered by an unresolved thread, Previous Action, or another new finding.',
+      );
+      lines.push('4. The issue can be anchored to a valid current MR/PR diff position.');
+      lines.push('');
+      lines.push(
+        'Do not remove or suppress a valid finding solely because the relevant line is outside `.revpack/diffs/incremental.patch`.',
+      );
+      lines.push('');
+      lines.push('A previous review pass that missed an issue is not duplicate coverage.');
+      lines.push('');
+    }
+
     lines.push('## Suggested Reading Order');
     lines.push('');
-    lines.push('1. Read this context file.');
-    lines.push('2. Read `.revpack/AGENT_CONTRACT.md`.');
-    lines.push('3. Read the files listed in **Required Instructions for This Run**.');
-    lines.push('4. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
-    lines.push(
-      '5. Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
-    );
-    lines.push(
-      '6. Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
-    );
-    if (instructionRoute.proactiveReview && ps?.comparison.targetCodeChangedSinceCheckpoint) {
+    if (isIncrementalCodeReview) {
+      lines.push('1. Read this context file.');
+      lines.push('2. Read `.revpack/AGENT_CONTRACT.md`.');
+      lines.push('3. Read the files listed in **Required Instructions for This Run**.');
+      lines.push('4. Read `REVIEW.md` in the repository root if present.');
+      lines.push('5. Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.');
+      lines.push('6. Read relevant changed or unresolved thread files in `.revpack/threads/`.');
+      lines.push('7. Use `.revpack/diffs/latest.patch` only for full MR/PR context when needed.');
       lines.push(
-        '7. Read `.revpack/diffs/incremental.patch` first to understand what changed since the last checkpoint, then use `.revpack/diffs/latest.patch` for full MR/PR context.',
+        '8. Use `.revpack/diffs/files.json` and `.revpack/diffs/patches/by-file/` only to inspect files relevant to the incremental change, thread updates, or a concrete concern you are verifying.',
       );
-    } else if (instructionRoute.proactiveReview) {
-      lines.push('7. Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.');
-    }
-    if (instructionRoute.proactiveReview) {
-      lines.push('8. Use `.revpack/diffs/patches/by-file/` for focused review of individual changed files.');
       lines.push(
         '9. Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
       );
@@ -711,6 +755,29 @@ export class WorkspaceManager {
       );
       lines.push('11. Inspect checked-out source files when needed to understand the new branch state.');
       lines.push('12. Read existing `.revpack/outputs/summary.md`, if present, before updating it.');
+    } else {
+      lines.push('1. Read this context file.');
+      lines.push('2. Read `.revpack/AGENT_CONTRACT.md`.');
+      lines.push('3. Read the files listed in **Required Instructions for This Run**.');
+      lines.push('4. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
+      lines.push(
+        '5. Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
+      );
+      lines.push(
+        '6. Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
+      );
+      if (instructionRoute.proactiveReview) {
+        lines.push('7. Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.');
+        lines.push('8. Use `.revpack/diffs/patches/by-file/` for focused review of individual changed files.');
+        lines.push(
+          '9. Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
+        );
+        lines.push(
+          '10. Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
+        );
+        lines.push('11. Inspect checked-out source files when needed to understand the new branch state.');
+        lines.push('12. Read existing `.revpack/outputs/summary.md`, if present, before updating it.');
+      }
     }
     lines.push('');
 
@@ -759,7 +826,9 @@ export class WorkspaceManager {
     lines.push(
       '| `.revpack/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and diff artifact paths |',
     );
-    lines.push('| `.revpack/diffs/line-map.ndjson` | Canonical per-line map for valid positional review anchors |');
+    lines.push(
+      '| `.revpack/diffs/line-map.ndjson` | Canonical per-line map for valid positional review anchors in the current MR/PR diff |',
+    );
     lines.push(
       '| `.revpack/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |',
     );
@@ -768,15 +837,42 @@ export class WorkspaceManager {
     }
     lines.push('| `.revpack/outputs/` | Agent output files |');
     lines.push('');
+    if (isIncrementalCodeReview) {
+      lines.push(
+        '`.revpack/diffs/line-map.ndjson` contains valid positional anchors for the current MR/PR diff, not only the checkpoint delta.',
+      );
+      lines.push('');
+    }
 
     // ─── Changed Files ────────────────────────────────────
-    lines.push('## Changed Files');
+    if (isIncrementalCodeReview) {
+      const incrementalChangedFiles = await incrementalFiles();
+      if (incrementalChangedFiles.length > 0) {
+        lines.push('## Files Changed Since Last Checkpoint');
+        lines.push('');
+        lines.push('These files appear in `.revpack/diffs/incremental.patch` and are the primary review focus.');
+        lines.push('');
+        lines.push('| File | Status |');
+        lines.push('|---|---|');
+        for (const f of incrementalChangedFiles) {
+          lines.push(`| \`${tableCell(f.path)}\` | ${f.status} |`);
+        }
+        lines.push('');
+      }
+
+      lines.push('## Files Changed in Current MR/PR');
+      lines.push('');
+      lines.push(
+        'These files are part of the full MR/PR diff. Use them for context, anchoring, duplicate checks, and verification when needed.',
+      );
+    } else {
+      lines.push('## Changed Files');
+    }
     lines.push('');
     lines.push('| File | Status |');
     lines.push('|---|---|');
     for (const d of diffs) {
-      const tag = d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
-      lines.push(`| \`${tableCell(d.newPath || d.oldPath)}\` | ${tag} |`);
+      lines.push(`| \`${tableCell(d.newPath || d.oldPath)}\` | ${diffStatus(d)} |`);
     }
     lines.push('');
 
@@ -788,9 +884,19 @@ export class WorkspaceManager {
       const changedResolved = changedThreads.filter((t) => t.resolved);
 
       if (changedUnresolved.length > 0 || changedResolved.length > 0) {
-        lines.push('## Changed Threads Since Last Checkpoint');
+        lines.push(
+          isIncrementalCodeReview
+            ? '## Thread Updates Since Last Checkpoint'
+            : '## Changed Threads Since Last Checkpoint',
+        );
         lines.push('');
-        lines.push('These threads have been updated since the last review checkpoint. Prioritize reviewing them.');
+        if (isIncrementalCodeReview) {
+          lines.push(
+            'These threads changed since the last checkpoint. Read them when they affect duplicate checks, scope, or verification.',
+          );
+        } else {
+          lines.push('These threads have been updated since the last review checkpoint. Prioritize reviewing them.');
+        }
         lines.push('');
         lines.push('| Thread | Status | Location | Summary |');
         lines.push('|---|---|---|---|');
@@ -808,7 +914,11 @@ export class WorkspaceManager {
 
     // ─── Unresolved Threads ───────────────────────────────
     if (unresolvedThreads.length > 0) {
-      lines.push('## Unresolved Threads');
+      lines.push(isIncrementalCodeReview ? '## Unresolved Threads Requiring Attention' : '## Unresolved Threads');
+      if (isIncrementalCodeReview) {
+        lines.push('');
+        lines.push('These unresolved threads may need replies or resolution.');
+      }
       lines.push('');
       lines.push('| Thread | Flags | Author | Location | Summary |');
       lines.push('|---|---|---|---|---|');
@@ -848,6 +958,10 @@ export class WorkspaceManager {
       lines.push('## Previous Actions');
       lines.push('');
       lines.push('These actions were published by `revpack` in prior iterations. Do not re-raise the same issues.');
+      lines.push('');
+      lines.push(
+        'Do not treat the absence of a previous action as proof that no issue exists. If a concrete MR/PR issue was missed by an earlier review pass, it may still be reported now.',
+      );
       lines.push('');
       lines.push('| Action | Location | Severity | Category | Title |');
       lines.push('|---|---|---|---|---|');
