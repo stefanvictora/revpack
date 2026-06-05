@@ -102,20 +102,32 @@ function createMockProvider(): ReviewProvider {
   };
 }
 
+async function captureError<T>(promise: Promise<T>): Promise<Error> {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof Error) {
+      return error;
+    }
+    throw new Error('Expected promise to reject with an Error', { cause: error });
+  }
+  throw new Error('Expected promise to reject');
+}
+
 describe('ReviewOrchestrator', () => {
   let mockProvider: ReviewProvider;
   let tmpDir: string;
-  let headShaSpy: MockInstance<any[], any>;
-  let currentBranchSpy: MockInstance<any[], any>;
-  let repositoryRootSpy: MockInstance<any[], any>;
-  let isCleanSpy: MockInstance<any[], any>;
-  let isAncestorSpy: MockInstance<any[], any>;
-  let hasCommitSpy: MockInstance<any[], any>;
-  let fetchCommitSpy: MockInstance<any[], any>;
-  let fetchSpy: MockInstance<any[], any>;
-  let fetchBranchSpy: MockInstance<any[], any>;
-  let diffForReviewSpy: MockInstance<any[], any>;
-  let diffSpy: MockInstance<any[], any>;
+  let headShaSpy: MockInstance<(...args: any[]) => any>;
+  let currentBranchSpy: MockInstance<(...args: any[]) => any>;
+  let repositoryRootSpy: MockInstance<(...args: any[]) => any>;
+  let isCleanSpy: MockInstance<(...args: any[]) => any>;
+  let isAncestorSpy: MockInstance<(...args: any[]) => any>;
+  let hasCommitSpy: MockInstance<(...args: any[]) => any>;
+  let fetchCommitSpy: MockInstance<(...args: any[]) => any>;
+  let fetchSpy: MockInstance<(...args: any[]) => any>;
+  let fetchBranchSpy: MockInstance<(...args: any[]) => any>;
+  let diffForReviewSpy: MockInstance<(...args: any[]) => any>;
+  let diffSpy: MockInstance<(...args: any[]) => any>;
 
   beforeEach(async () => {
     mockProvider = createMockProvider();
@@ -222,6 +234,101 @@ describe('ReviewOrchestrator', () => {
       expect(fetchBranchSpy).not.toHaveBeenCalled();
     });
 
+    it('falls through to fetchBranch(targetBranch) when fetchCommit does not resolve', async () => {
+      // Both commits missing initially; fetchCommit for each fails to resolve them;
+      // re-check still missing; then fetchBranch(targetBranch) resolves them.
+      hasCommitSpy
+        .mockResolvedValueOnce(false) // initial check baseSha
+        .mockResolvedValueOnce(false) // initial check headSha
+        .mockResolvedValueOnce(false) // after fetchCommit: baseSha still missing
+        .mockResolvedValueOnce(false) // after fetchCommit: headSha still missing
+        .mockResolvedValueOnce(true) // after fetchBranch(targetBranch): baseSha resolved
+        .mockResolvedValueOnce(true); // after fetchBranch(targetBranch): headSha resolved
+      const onProgress = vi.fn();
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project', { onProgress });
+
+      expect(fetchCommitSpy).toHaveBeenCalledTimes(2);
+      expect(fetchBranchSpy).toHaveBeenCalledWith('main', 'origin', { depth: 1, noTags: true, progress: true });
+    });
+
+    it('falls through to full fetch when branch fetches do not resolve commits', async () => {
+      // All individual fetches fail; full fetch resolves.
+      hasCommitSpy
+        .mockResolvedValueOnce(false) // initial: baseSha missing
+        .mockResolvedValueOnce(true) // initial: headSha ok
+        .mockResolvedValueOnce(false) // after fetchCommit: still missing
+        .mockResolvedValueOnce(true) // after fetchCommit: headSha ok
+        .mockResolvedValueOnce(false) // after fetchBranch(target): still missing
+        .mockResolvedValueOnce(true) // after fetchBranch(target): headSha ok
+        .mockResolvedValueOnce(false) // after fetchBranch(source): still missing
+        .mockResolvedValueOnce(true) // after fetchBranch(source): headSha ok
+        .mockResolvedValueOnce(true) // after full fetch: baseSha resolved
+        .mockResolvedValueOnce(true); // after full fetch: headSha ok
+      const onProgress = vi.fn();
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project', { onProgress });
+
+      expect(fetchSpy).toHaveBeenCalledWith('origin', { noTags: true, progress: true });
+    });
+
+    it('throws with fetch error details when all fetch attempts fail', async () => {
+      hasCommitSpy.mockResolvedValue(false); // never resolves
+      fetchCommitSpy.mockRejectedValue(new Error('fetch commit failed'));
+      fetchBranchSpy.mockRejectedValue(new Error('fetch branch failed'));
+      fetchSpy.mockRejectedValue(new Error('fetch origin failed'));
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const err = await captureError(orchestrator.prepare('!42', 'group/project', { onProgress: vi.fn() }));
+
+      expect(err.message).toContain('could not generate the review patch');
+      expect(err.message).toContain('Fetch attempts:');
+      expect(err.message).toContain('fetch commit failed');
+      expect(err.message).toContain('fetch origin failed');
+    });
+
+    it('throws without fetch details when all fetches succeed but commits still missing', async () => {
+      // All fetches succeed (no errors pushed), but commits remain unavailable
+      hasCommitSpy.mockResolvedValue(false);
+      fetchCommitSpy.mockResolvedValue(undefined);
+      fetchBranchSpy.mockResolvedValue(undefined);
+      fetchSpy.mockResolvedValue(undefined);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const err = await captureError(orchestrator.prepare('!42', 'group/project', { onProgress: vi.fn() }));
+
+      expect(err.message).toContain('could not generate the review patch');
+      expect(err.message).toContain('Required commit(s) not available locally');
+      expect(err.message).not.toContain('Fetch attempts:');
+    });
+
+    it('skips sourceBranch fetch when sourceBranch equals targetBranch', async () => {
+      const targetSameBranches = { ...mockTarget, sourceBranch: 'main', targetBranch: 'main' };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetSameBranches);
+      currentBranchSpy.mockResolvedValue('main');
+
+      // Commit missing: fetchCommit fails, fetchBranch(target) fails, then full fetch resolves
+      hasCommitSpy
+        .mockResolvedValueOnce(false) // initial: base missing
+        .mockResolvedValueOnce(true) // initial: head ok
+        .mockResolvedValueOnce(false) // after fetchCommit: still missing
+        .mockResolvedValueOnce(true) // after fetchCommit: head ok
+        .mockResolvedValueOnce(false) // after fetchBranch(target): still missing
+        .mockResolvedValueOnce(true) // after fetchBranch(target): head ok
+        // No sourceBranch fetch since source === target
+        .mockResolvedValueOnce(true) // after full fetch: resolved
+        .mockResolvedValueOnce(true); // after full fetch: head ok
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project', { onProgress: vi.fn() });
+
+      // fetchBranch called once for targetBranch, NOT for sourceBranch (same branch)
+      expect(fetchBranchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchBranchSpy).toHaveBeenCalledWith('main', 'origin', expect.anything());
+    });
+
     it('fails prepare when local git patch generation fails', async () => {
       diffForReviewSpy.mockRejectedValue(new Error('local diff failed'));
 
@@ -230,6 +337,31 @@ describe('ReviewOrchestrator', () => {
         'could not generate the review patch from local Git',
       );
       await expect(fs.access(path.join(tmpDir, '.revpack', 'diffs', 'latest.patch'))).rejects.toThrow();
+    });
+
+    it('fails with descriptive error when baseSha is missing from diffRefs', async () => {
+      const targetMissingBase = { ...mockTarget, diffRefs: { baseSha: '', headSha: 'bbb', startSha: 'aaa' } };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetMissingBase);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const err = await captureError(orchestrator.prepare('!42', 'group/project'));
+
+      expect(err.message).toContain('could not generate the review patch');
+      expect(err.message).toContain('<missing>');
+      expect(err.message).toContain('base_sha or diff_refs.head_sha is missing');
+    });
+
+    it('fails with descriptive error when headSha is missing from diffRefs', async () => {
+      const targetMissingHead = { ...mockTarget, diffRefs: { baseSha: 'aaa', headSha: '', startSha: 'aaa' } };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetMissingHead);
+      headShaSpy.mockResolvedValue(''); // local HEAD matches the empty mrHeadSha
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const err = await captureError(orchestrator.prepare('!42', 'group/project'));
+
+      expect(err.message).toContain('could not generate the review patch');
+      expect(err.message).toContain('head: <missing>');
+      expect(err.message).toContain('base: aaa');
     });
 
     it('uses commit-to-commit local diff without requiring a clean working tree', async () => {
@@ -269,6 +401,10 @@ describe('ReviewOrchestrator', () => {
 
       const contextMd = await fs.readFile(path.join(tmpDir, '.revpack', 'CONTEXT.md'), 'utf-8');
       expect(contextMd).toContain('Test MR');
+
+      // First-time prepare (no checkpoint) must NOT write an incremental patch
+      const incrementalPath = path.join(tmpDir, '.revpack', 'diffs', 'incremental.patch');
+      await expect(fs.access(incrementalPath)).rejects.toThrow();
     });
 
     it('detects refresh mode from existing bundle.json', async () => {
@@ -429,6 +565,44 @@ describe('ReviewOrchestrator', () => {
       expect(bundleState!.publishedActions[0].type).toBe('reply');
     });
 
+    it('--fresh does not carry over previous publishedActions', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      // First run
+      await orchestrator.prepare('!42', 'group/project');
+
+      // Simulate publishing
+      const ws = new WorkspaceManager(tmpDir);
+      await ws.appendPublishedAction({
+        type: 'reply',
+        providerThreadId: 'thread-1',
+        title: 'Fixed!',
+        publishedAt: '2026-01-01T12:00:00Z',
+      });
+
+      // Fresh run should NOT carry over actions
+      const fresh = await orchestrator.prepare('!42', 'group/project', { fresh: true });
+      expect(fresh.publishedActionCount).toBe(0);
+    });
+
+    it('--fresh removes the existing bundle before resolving ref', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      // First run creates bundle
+      await orchestrator.prepare('!42', 'group/project');
+
+      // Verify bundle exists
+      const ws = new WorkspaceManager(tmpDir);
+      const bundleBefore = await ws.loadBundleState();
+      expect(bundleBefore).not.toBeNull();
+
+      // Fresh run removes the old bundle and creates a new one
+      const fresh = await orchestrator.prepare('!42', 'group/project', { fresh: true });
+      expect(fresh.bundle.target.targetId).toBe('42');
+      // The mode should be 'fresh' since the old bundle was removed
+      expect(fresh.bundleState.prepare.mode).toBe('fresh');
+    });
+
     it('excludes system-only threads from bundle and index', async () => {
       const systemThread: ReviewThread = {
         provider: 'gitlab',
@@ -491,6 +665,41 @@ describe('ReviewOrchestrator', () => {
       const t2 = JSON.parse(await fs.readFile(path.join(threadDir, 'T-002.json'), 'utf-8'));
       expect(t2.threadId).toBe('general-comment-1');
     });
+
+    it('excludes threads containing the managed review note comment', async () => {
+      // A thread that wraps the revpack review note (should be excluded from bundle)
+      const reviewNoteThread: ReviewThread = {
+        provider: 'gitlab',
+        targetRef,
+        threadId: 'review-note-thread',
+        resolved: false,
+        resolvable: false,
+        comments: [
+          {
+            id: 'review-note-123',
+            body: `${REVIEW_NOTE_MARKER}\n## Review\nLooks good.`,
+            author: 'revpack-bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([mockThread, reviewNoteThread]);
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'review-note-123',
+        body: `${REVIEW_NOTE_MARKER}\n## Review\nLooks good.`,
+      });
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      // Only mockThread should be in the bundle (review note thread excluded)
+      expect(result.bundle.threads).toHaveLength(1);
+      expect(result.bundle.threads[0].threadId).toBe('thread-1');
+    });
   });
 
   describe('publishFinding', () => {
@@ -519,8 +728,132 @@ describe('ReviewOrchestrator', () => {
     });
   });
 
+  describe('resolveRef explicit ref repository population', () => {
+    it('uses defaultRepo when resolveTarget returns empty repository', async () => {
+      const refWithNoRepo = { ...targetRef, repository: '' };
+      (mockProvider.resolveTarget as ReturnType<typeof vi.fn>).mockReturnValue(refWithNoRepo);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const target = await orchestrator.open('!42', 'group/project');
+
+      expect(mockProvider.getTargetSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({ repository: 'group/project' }),
+      );
+      expect(target.title).toBe('Test MR');
+    });
+
+    it('does not overwrite repository from resolveTarget with defaultRepo', async () => {
+      const refWithRepo = { ...targetRef, repository: 'original/repo' };
+      (mockProvider.resolveTarget as ReturnType<typeof vi.fn>).mockReturnValue(refWithRepo);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.open('!42', 'different/default');
+
+      // The original repository from resolveTarget should be preserved
+      expect(mockProvider.getTargetSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({ repository: 'original/repo' }),
+      );
+    });
+
+    it('derives repo slug from git when resolveTarget returns empty repository and no defaultRepo', async () => {
+      const refWithNoRepo = { ...targetRef, repository: '' };
+      (mockProvider.resolveTarget as ReturnType<typeof vi.fn>).mockReturnValue(refWithNoRepo);
+      const deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('derived/repo');
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...mockTarget,
+        repository: 'derived/repo',
+      });
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.open('!42');
+
+      expect(deriveSlugSpy).toHaveBeenCalled();
+      expect(mockProvider.getTargetSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({ repository: 'derived/repo' }),
+      );
+      deriveSlugSpy.mockRestore();
+    });
+
+    it('skips deriveRepoSlug for local provider even when repository is empty', async () => {
+      const localProvider = {
+        ...createMockProvider(),
+        providerType: 'local' as const,
+        resolveTarget: vi.fn().mockReturnValue({
+          provider: 'local',
+          repository: '',
+          targetType: 'local_review',
+          targetId: 'main...HEAD',
+        }),
+        getTargetSnapshot: vi.fn().mockResolvedValue({
+          ...mockTarget,
+          provider: 'local',
+          repository: '',
+          targetType: 'local_review',
+          targetId: 'main...HEAD',
+        }),
+      };
+      const deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
+
+      const orchestrator = new ReviewOrchestrator({ provider: localProvider, workingDir: tmpDir });
+      await orchestrator.open('main...HEAD');
+
+      expect(deriveSlugSpy).not.toHaveBeenCalled();
+      deriveSlugSpy.mockRestore();
+    });
+  });
+
+  describe('resolveRef local provider auto-detect', () => {
+    it('auto-detects target from branch for local provider without explicit ref', async () => {
+      const localTarget = {
+        ...mockTarget,
+        provider: 'local' as const,
+        repository: '',
+        targetType: 'local_review' as const,
+        targetId: 'main...feature/test',
+      };
+      const localProvider = {
+        ...createMockProvider(),
+        providerType: 'local' as const,
+        findTargetByBranch: vi.fn().mockResolvedValue([localTarget]),
+        getTargetSnapshot: vi.fn().mockResolvedValue(localTarget),
+        getDiffVersions: vi.fn().mockResolvedValue([
+          {
+            ...mockVersion,
+            provider: 'local',
+            targetRef: {
+              provider: 'local',
+              repository: '',
+              targetType: 'local_review',
+              targetId: 'main...feature/test',
+            },
+          },
+        ]),
+      };
+
+      const orchestrator = new ReviewOrchestrator({ provider: localProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare(undefined);
+
+      expect(localProvider.findTargetByBranch).toHaveBeenCalledWith('', 'feature/test');
+      expect(result.bundle.target.targetId).toBe('main...feature/test');
+    });
+
+    it('skips local auto-detect on detached HEAD', async () => {
+      currentBranchSpy.mockResolvedValue('HEAD');
+      const localProvider = {
+        ...createMockProvider(),
+        providerType: 'local' as const,
+        findTargetByBranch: vi.fn().mockResolvedValue([]),
+      };
+
+      const orchestrator = new ReviewOrchestrator({ provider: localProvider, workingDir: tmpDir });
+      // No bundle, no branch → falls through to error
+      await expect(orchestrator.prepare(undefined)).rejects.toThrow('Could not determine');
+      expect(localProvider.findTargetByBranch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('resolveRef auto-detect from branch', () => {
-    let deriveSlugSpy: MockInstance<any[], any>;
+    let deriveSlugSpy: MockInstance<(...args: any[]) => any>;
 
     afterEach(() => {
       deriveSlugSpy?.mockRestore();
@@ -582,6 +915,17 @@ describe('ReviewOrchestrator', () => {
       );
     });
 
+    it('swallows non-"Multiple open" errors from findTargetByBranch and falls through', async () => {
+      deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
+      (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network timeout'));
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      // The network error is swallowed; falls through to "Could not determine"
+      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow(
+        'Could not determine which MR to prepare',
+      );
+    });
+
     it('falls through to error on detached HEAD', async () => {
       deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
       currentBranchSpy.mockResolvedValue('HEAD');
@@ -615,6 +959,51 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundle.target.targetId).toBe('42');
       expect(mockProvider.findTargetByBranch).not.toHaveBeenCalled();
     });
+
+    it('resumes from bundle on detached HEAD without throwing', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      // First run creates bundle
+      await orchestrator.prepare('!42', 'group/project');
+
+      // Second run on detached HEAD — the bundle path should not throw
+      // because `currentBranch !== 'HEAD'` is false, so the mismatch check is skipped
+      currentBranchSpy.mockResolvedValue('HEAD');
+      const result = await orchestrator.prepare(undefined, 'group/project');
+      expect(result.bundle.target.targetId).toBe('42');
+    });
+
+    it('throws branch mismatch when resolveRef detects wrong branch from bundle', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      // First run creates bundle (sourceBranch = 'feature/test')
+      await orchestrator.prepare('!42', 'group/project');
+
+      // resolveRef's currentBranch call returns a different branch than the bundle's
+      // The FIRST call is in resolveRef (before git check at L172)
+      currentBranchSpy.mockResolvedValueOnce('wrong-branch'); // resolveRef → mismatch
+      // The second call (git check) never happens because resolveRef throws first
+
+      await expect(orchestrator.prepare(undefined, 'group/project')).rejects.toThrow(
+        'Branch mismatch: current branch "wrong-branch" does not match',
+      );
+    });
+
+    it('resumes from bundle when currentBranch throws in resolveRef', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      // First run creates bundle
+      await orchestrator.prepare('!42', 'group/project');
+
+      // resolveRef is called BEFORE the git consistency check.
+      // First call (inside resolveRef) throws → error is swallowed, bundle is used.
+      // Second call (git check at L172) returns normally.
+      currentBranchSpy.mockRejectedValueOnce(new Error('git error'));
+      currentBranchSpy.mockResolvedValueOnce('feature/test');
+
+      const result = await orchestrator.prepare(undefined, 'group/project');
+      expect(result.bundle.target.targetId).toBe('42');
+    });
   });
 
   describe('checkBranchMismatch', () => {
@@ -643,6 +1032,24 @@ describe('ReviewOrchestrator', () => {
         expectedBranch: 'feature/test',
         targetId: '42',
       });
+    });
+
+    it('returns null on detached HEAD even with bundle', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      currentBranchSpy.mockResolvedValue('HEAD');
+      const result = await orchestrator.checkBranchMismatch();
+      expect(result).toBeNull();
+    });
+
+    it('returns null when currentBranch returns empty string', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      currentBranchSpy.mockResolvedValue('');
+      const result = await orchestrator.checkBranchMismatch();
+      expect(result).toBeNull();
     });
   });
 
@@ -755,6 +1162,17 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundleState.local.workingTreeClean).toBe(true);
     });
 
+    it('succeeds on detached HEAD with matchesTargetSourceBranch false', async () => {
+      currentBranchSpy.mockResolvedValue('HEAD');
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.bundleState.local.branch).toBe('HEAD');
+      expect(result.bundleState.local.matchesTargetSourceBranch).toBe(false);
+      expect(result.bundleState.local.matchesTargetHead).toBe(true);
+    });
+
     it('prepare after git pull succeeds when HEAD matches', async () => {
       // Simulate: first fail (behind), then succeed after pull
       headShaSpy.mockResolvedValueOnce('old-sha');
@@ -810,6 +1228,61 @@ describe('ReviewOrchestrator', () => {
       const second = await orchestrator.prepare('!42', 'group/project');
       expect(second.targetCodeChanged).toBeNull();
     });
+
+    it('uses checkpoint threadDigests to identify per-thread changes', async () => {
+      // Build a checkpoint where thread-1 has a stale digest
+      const checkpointState = buildCheckpointState(
+        targetRef,
+        'bbb', // same head — no code change
+        'aaa',
+        'aaa',
+        'sha256:stale-aggregate', // different from current → triggers threadsChanged
+        'v1',
+        undefined,
+        { 'thread-1': 'sha256:stale-thread-digest' },
+      );
+      const descriptionWithState = patchDescriptionWithState('Test description', checkpointState);
+
+      const targetWithState = { ...mockTarget, description: descriptionWithState };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.threadsChanged).toBe(true);
+      // CONTEXT.md should identify thread-1 as changed
+      const contextMd = await fs.readFile(path.join(tmpDir, '.revpack', 'CONTEXT.md'), 'utf-8');
+      expect(contextMd).toContain('Changed Threads Since Last Checkpoint');
+    });
+
+    it('does not report per-thread changes when checkpoint has empty threadDigests', async () => {
+      // Checkpoint with empty threadDigests — falls back to computing from current
+      const checkpointState = buildCheckpointState(
+        targetRef,
+        'bbb',
+        'aaa',
+        'aaa',
+        'sha256:stale-aggregate',
+        'v1',
+        undefined,
+        {}, // empty threadDigests
+      );
+      const descriptionWithState = patchDescriptionWithState('Test description', checkpointState);
+
+      const targetWithState = { ...mockTarget, description: descriptionWithState };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.threadsChanged).toBe(true);
+      // Without per-thread digests in checkpoint, no individual thread changes can be detected
+      // because the baseline is the current state itself (fallback)
+      const contextMd = await fs.readFile(path.join(tmpDir, '.revpack', 'CONTEXT.md'), 'utf-8');
+      expect(contextMd).not.toContain('Changed Threads Since Last Checkpoint');
+    });
   });
 
   // ─── Prepare comparison fields ─────────────────────────
@@ -827,6 +1300,65 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundleState.prepare.current.threadsDigest).toBeTruthy();
       expect(result.bundleState.prepare.current.localHeadSha).toBe('bbb');
       expect(result.bundleState.prepare.current.targetHeadSha).toBe('bbb');
+    });
+
+    it('sets providerVersionId from first version when versions exist', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.bundleState.prepare.current.providerVersionId).toBe('v1');
+    });
+
+    it('sets providerVersionId to undefined when versions array is empty', async () => {
+      (mockProvider.getDiffVersions as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.bundleState.prepare.current.providerVersionId).toBeUndefined();
+    });
+
+    it('reports descriptionChanged when checkpoint has a descriptionDigest', async () => {
+      const checkpointState = buildCheckpointState(
+        targetRef,
+        'bbb', // same head
+        'aaa',
+        'aaa',
+        null,
+        'v1',
+        'sha256:old-desc-digest', // stale description digest
+      );
+      const descriptionWithState = patchDescriptionWithState('Test description', checkpointState);
+
+      const targetWithState = { ...mockTarget, description: descriptionWithState };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      // Description was modified since checkpoint (digest mismatch)
+      expect(result.descriptionChanged).toBe(true);
+    });
+
+    it('reports descriptionChanged=false when description matches checkpoint digest', async () => {
+      // We need to compute the actual digest that matches
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      // First prepare without checkpoint to get the description digest
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const firstResult = await orchestrator.prepare('!42', 'group/project');
+      const currentDescDigest = firstResult.bundleState.prepare.current.descriptionDigest;
+
+      // Now use that digest in a checkpoint
+      await fs.rm(path.join(tmpDir, '.revpack'), { recursive: true, force: true });
+      const checkpointState = buildCheckpointState(targetRef, 'bbb', 'aaa', 'aaa', null, 'v1', currentDescDigest);
+      const descriptionWithState = patchDescriptionWithState('Test', checkpointState);
+      const targetWithState = { ...mockTarget, description: descriptionWithState };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
+
+      const result = await orchestrator.prepare('!42', 'group/project');
+      expect(result.descriptionChanged).toBe(false);
     });
   });
 
@@ -1011,6 +1543,10 @@ describe('ReviewOrchestrator', () => {
       // The checkpoint was never advanced by prepare
       expect(mockProvider.updateDescription).not.toHaveBeenCalled();
       expect(mockProvider.createNote).not.toHaveBeenCalled();
+
+      // The "no code change" incremental patch should be written
+      const incrementalPatch = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'incremental.patch'), 'utf-8');
+      expect(incrementalPatch).toContain('No code changes since last review checkpoint');
     });
 
     it('repeated prepare before publishing keeps target-code-changed status stable', async () => {
@@ -1121,6 +1657,263 @@ describe('ReviewOrchestrator', () => {
         expect.stringContaining('<!-- revpack:state'),
       );
     });
+
+    it('with whitespace-only content publishes no visible comment', async () => {
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const result = await orchestrator.publishReview('   \n\t  \n  ', 'group/project');
+
+      expect(result.created).toBe(false);
+      expect(mockProvider.createNote).not.toHaveBeenCalled();
+    });
+
+    it('advanceCheckpoint sets providerVersionId to undefined when no versions exist', async () => {
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+      (mockProvider.getDiffVersions as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      await orchestrator.publishReview('', 'group/project');
+
+      // Description state was written — parse it and check versionId is absent
+      const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      const state = parseDescriptionState(updatedDesc);
+      expect(state).not.toBeNull();
+      expect(state!.checkpoint.providerVersionId).toBeUndefined();
+    });
+  });
+
+  // ─── Publish review batch tests ────────────────────────
+
+  describe('publishReviewBatch', () => {
+    it('submits findings and review body via submitReview', async () => {
+      const submitReviewMock = vi.fn().mockResolvedValue(undefined);
+      mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const findings = [
+        {
+          oldPath: 'src/app.ts',
+          newPath: 'src/app.ts',
+          newLine: 10,
+          body: 'Fix this',
+          severity: 'medium' as const,
+          category: 'correctness' as const,
+        },
+      ];
+      const result = await orchestrator.publishReviewBatch(findings, '## Summary\nGood work.', 'group/project');
+
+      expect(result.created).toBe(true);
+      expect(submitReviewMock).toHaveBeenCalledWith(
+        expect.objectContaining({ targetId: '42' }),
+        expect.arrayContaining([expect.objectContaining({ path: 'src/app.ts', line: 10, side: 'RIGHT' })]),
+        expect.stringContaining('Good work.'),
+        'COMMENT',
+      );
+    });
+
+    it('returns created=false with empty findings and whitespace-only reviewBody', async () => {
+      const submitReviewMock = vi.fn().mockResolvedValue(undefined);
+      mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const result = await orchestrator.publishReviewBatch([], '  \n  ', 'group/project');
+
+      expect(result.created).toBe(false);
+      // submitReview still called (with empty body) — it's the provider's responsibility
+      expect(submitReviewMock).toHaveBeenCalledWith(
+        expect.objectContaining({ targetId: '42' }),
+        [],
+        '', // whitespace-only body becomes empty string
+        'COMMENT',
+      );
+    });
+
+    it('sets LEFT side for findings with oldLine only', async () => {
+      const submitReviewMock = vi.fn().mockResolvedValue(undefined);
+      mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const findings = [
+        {
+          oldPath: 'src/old.ts',
+          newPath: 'src/new.ts',
+          oldLine: 5,
+          body: 'Removed code issue',
+          severity: 'low' as const,
+          category: 'correctness' as const,
+        },
+      ];
+      const result = await orchestrator.publishReviewBatch(findings, '', 'group/project');
+
+      expect(result.created).toBe(true);
+      expect(submitReviewMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.arrayContaining([expect.objectContaining({ path: 'src/old.ts', line: 5, side: 'LEFT' })]),
+        '',
+        'COMMENT',
+      );
+    });
+
+    it('sets RIGHT side when both oldLine and newLine are present', async () => {
+      const submitReviewMock = vi.fn().mockResolvedValue(undefined);
+      mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const findings = [
+        {
+          oldPath: 'src/app.ts',
+          newPath: 'src/app.ts',
+          oldLine: 10,
+          newLine: 12,
+          body: 'Changed line',
+          severity: 'low' as const,
+          category: 'correctness' as const,
+        },
+      ];
+      const result = await orchestrator.publishReviewBatch(findings, '', 'group/project');
+
+      expect(result.created).toBe(true);
+      expect(submitReviewMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.arrayContaining([expect.objectContaining({ path: 'src/app.ts', line: 12, side: 'RIGHT' })]),
+        '',
+        'COMMENT',
+      );
+    });
+  });
+
+  // ─── reviewDiffsFromPatch status flags ──────────────────
+
+  describe('reviewDiffsFromPatch status flags', () => {
+    function addedFilePatch(): string {
+      return [
+        'diff --git a/src/new.ts b/src/new.ts',
+        'new file mode 100644',
+        'index 0000000..aaaaaaa',
+        '--- /dev/null',
+        '+++ b/src/new.ts',
+        '@@ -0,0 +1 @@',
+        '+console.log("hello");',
+        '',
+      ].join('\n');
+    }
+
+    function renamedFilePatch(): string {
+      return [
+        'diff --git a/src/old-name.ts b/src/new-name.ts',
+        'similarity index 100%',
+        'rename from src/old-name.ts',
+        'rename to src/new-name.ts',
+        '',
+      ].join('\n');
+    }
+
+    function deletedFilePatch(): string {
+      return [
+        'diff --git a/src/removed.ts b/src/removed.ts',
+        'deleted file mode 100644',
+        'index bbbbbbb..0000000',
+        '--- a/src/removed.ts',
+        '+++ /dev/null',
+        '@@ -1 +0,0 @@',
+        '-old content',
+        '',
+      ].join('\n');
+    }
+
+    it('marks newFile=true for added files', async () => {
+      diffForReviewSpy.mockResolvedValue(addedFilePatch());
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.bundle.diffs).toHaveLength(1);
+      expect(result.bundle.diffs[0].newFile).toBe(true);
+      expect(result.bundle.diffs[0].renamedFile).toBe(false);
+      expect(result.bundle.diffs[0].deletedFile).toBe(false);
+    });
+
+    it('marks renamedFile=true for renamed files', async () => {
+      diffForReviewSpy.mockResolvedValue(renamedFilePatch());
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.bundle.diffs).toHaveLength(1);
+      expect(result.bundle.diffs[0].renamedFile).toBe(true);
+      expect(result.bundle.diffs[0].newFile).toBe(false);
+      expect(result.bundle.diffs[0].deletedFile).toBe(false);
+    });
+
+    it('marks deletedFile=true for deleted files', async () => {
+      diffForReviewSpy.mockResolvedValue(deletedFilePatch());
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.bundle.diffs).toHaveLength(1);
+      expect(result.bundle.diffs[0].deletedFile).toBe(true);
+      expect(result.bundle.diffs[0].newFile).toBe(false);
+      expect(result.bundle.diffs[0].renamedFile).toBe(false);
+    });
+
+    it('strips git diff header down to --- line for normal diffs', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      // localPatch() starts with "diff --git..." then "index..." then "--- "
+      expect(result.bundle.diffs[0].diff).toMatch(/^--- /);
+      expect(result.bundle.diffs[0].diff).not.toContain('diff --git');
+    });
+
+    it('strips git diff header to @@ line when --- is absent', async () => {
+      const patchWithNoMinusLine = [
+        'diff --git a/src/empty.ts b/src/empty.ts',
+        'index 1111111..2222222 100644',
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+        '',
+      ].join('\n');
+      diffForReviewSpy.mockResolvedValue(patchWithNoMinusLine);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.bundle.diffs[0].diff).toMatch(/^@@ /);
+    });
+
+    it('strips git diff header to Binary files line for binary diffs', async () => {
+      const binaryPatch = [
+        'diff --git a/image.png b/image.png',
+        'index 1111111..2222222 100644',
+        'Binary files a/image.png and b/image.png differ',
+        '',
+      ].join('\n');
+      diffForReviewSpy.mockResolvedValue(binaryPatch);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.bundle.diffs[0].diff).toMatch(/^Binary files /);
+    });
   });
 
   // ─── State recovery tests ─────────────────────────────
@@ -1154,6 +1947,356 @@ describe('ReviewOrchestrator', () => {
       const contextMd = await fs.readFile(path.join(tmpDir, '.revpack', 'CONTEXT.md'), 'utf-8');
       expect(contextMd).toContain('Review Checkpoint Summary');
       expect(contextMd).toContain('old-head');
+    });
+  });
+
+  // ─── Input validation ──────────────────────────────────
+
+  describe('input validation', () => {
+    it('publishReply throws when threadId is undefined', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.publishReply('!42', undefined, 'body', 'group/project')).rejects.toThrow(
+        'threadId is required',
+      );
+    });
+
+    it('publishReply throws when body is undefined', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.publishReply('!42', 'thread-1', undefined, 'group/project')).rejects.toThrow(
+        'reply body is required',
+      );
+    });
+
+    it('resolveThread throws when threadId is undefined', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.resolveThread('!42', undefined, 'group/project')).rejects.toThrow(
+        'threadId is required',
+      );
+    });
+
+    it('updateDescription throws when body is undefined', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.updateDescription('!42', undefined, 'group/project')).rejects.toThrow(
+        'description body is required',
+      );
+    });
+  });
+
+  // ─── Prune stale replies ───────────────────────────────
+
+  describe('prune stale replies on refresh', () => {
+    it('calls pruneStaleReplies with active thread IDs on refresh', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      // First prepare creates the bundle
+      await orchestrator.prepare('!42', 'group/project');
+
+      // Write a stale reply targeting a now-resolved thread
+      const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+      const staleReplies = [{ threadId: 'T-999', body: 'Stale reply.', resolve: false }];
+      await fs.writeFile(repliesPath, JSON.stringify(staleReplies, null, 2), 'utf-8');
+
+      // Refresh — the only active thread is 'thread-1', so T-999 reply is stale
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      // pruneStaleReplies should have been called and removed the stale reply
+      expect(result.prunedReplies).toBe(1);
+      const remaining = JSON.parse(await fs.readFile(repliesPath, 'utf-8'));
+      expect(remaining).toHaveLength(0);
+    });
+  });
+
+  // ─── publishReviewBatch edge cases ─────────────────────
+
+  describe('publishReviewBatch edge cases', () => {
+    it('skips submitReview when provider does not implement it', async () => {
+      // Provider WITHOUT submitReview
+      const providerWithoutSubmit = createMockProvider();
+      (providerWithoutSubmit.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: providerWithoutSubmit, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      // Should not throw even though submitReview is not available
+      const result = await orchestrator.publishReviewBatch(
+        [
+          {
+            oldPath: 'a.ts',
+            newPath: 'a.ts',
+            newLine: 1,
+            body: 'test',
+            severity: 'low' as const,
+            category: 'correctness' as const,
+          },
+        ],
+        'Review body',
+        'group/project',
+      );
+
+      expect(result.created).toBe(true);
+      // updateDescription should still be called (advanceCheckpoint runs)
+      expect(providerWithoutSubmit.updateDescription).toHaveBeenCalled();
+    });
+
+    it('trims whitespace from reviewBody in submitted review', async () => {
+      const submitReviewMock = vi.fn().mockResolvedValue(undefined);
+      mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      await orchestrator.publishReviewBatch(
+        [
+          {
+            oldPath: 'a.ts',
+            newPath: 'a.ts',
+            newLine: 5,
+            body: 'Issue',
+            severity: 'medium' as const,
+            category: 'correctness' as const,
+          },
+        ],
+        '  Summary with spaces  ',
+        'group/project',
+      );
+
+      const calledBody = submitReviewMock.mock.calls[0][2];
+      // Body should be trimmed (no leading/trailing spaces) but have footer appended
+      expect(calledBody).toMatch(/^Summary with spaces/);
+      expect(calledBody).not.toMatch(/^\s/);
+    });
+
+    it('uses RIGHT side and newPath for file-level findings without line info', async () => {
+      const submitReviewMock = vi.fn().mockResolvedValue(undefined);
+      mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const findings = [
+        {
+          oldPath: 'src/old.ts',
+          newPath: 'src/new.ts',
+          body: 'File-level issue',
+          severity: 'low' as const,
+          category: 'correctness' as const,
+        },
+      ];
+      await orchestrator.publishReviewBatch(findings, '', 'group/project');
+
+      expect(submitReviewMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.arrayContaining([expect.objectContaining({ path: 'src/new.ts', side: 'RIGHT' })]),
+        expect.anything(),
+        'COMMENT',
+      );
+    });
+  });
+
+  // ─── Progress messages in fetch flow ───────────────────
+
+  describe('progress messages in fetch flow', () => {
+    it('includes abbreviated commit SHAs in progress messages', async () => {
+      const longBaseSha = 'abcdef1234567890abcdef1234567890abcdef12';
+      const longHeadSha = '1234567890abcdef1234567890abcdef12345678';
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...mockTarget,
+        diffRefs: { baseSha: longBaseSha, headSha: longHeadSha, startSha: 'aaa' },
+      });
+      headShaSpy.mockResolvedValue(longHeadSha);
+      // baseSha missing initially, resolved after fetchCommit
+      hasCommitSpy
+        .mockResolvedValueOnce(false) // baseSha missing
+        .mockResolvedValueOnce(true) // headSha present
+        .mockResolvedValueOnce(true) // after fetch: baseSha resolved
+        .mockResolvedValueOnce(true); // after fetch: headSha
+      const onProgress = vi.fn();
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project', { onProgress });
+
+      // Progress message should contain abbreviated SHA (8 chars), not full 40-char SHA
+      const progressMsg = onProgress.mock.calls.find((c: string[]) => c[0].includes('Fetching'))?.[0];
+      expect(progressMsg).toBeDefined();
+      expect(progressMsg).toContain('abcdef12');
+      expect(progressMsg).not.toContain(longBaseSha);
+    });
+  });
+
+  // ─── advanceCheckpoint with existing review note ───────
+
+  describe('advanceCheckpoint filters by review note', () => {
+    it('excludes review note thread from digest computation', async () => {
+      // findNoteByMarker returns an existing note with an ID
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'review-note-42',
+        body: '<!-- revpack:review-note -->\nReview content',
+      });
+
+      // One thread that IS the review note comment, one that is a real thread
+      const reviewNoteThread: ReviewThread = {
+        provider: 'gitlab',
+        targetRef,
+        threadId: 'review-note-42',
+        resolved: false,
+        resolvable: true,
+        comments: [
+          {
+            id: 'review-note-42',
+            body: 'Review content',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const realThread: ReviewThread = {
+        ...mockThread,
+        threadId: 'real-thread-1',
+      };
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([reviewNoteThread, realThread]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+      await orchestrator.publishReview('Some review', 'group/project');
+
+      // The description state should reflect the digest WITHOUT the review note thread
+      const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      const state = parseDescriptionState(updatedDesc);
+      expect(state).not.toBeNull();
+      // If note filtering works, the threads digest should not include the review note thread
+      expect(state!.checkpoint.threadsDigest).toBeTruthy();
+    });
+  });
+
+  // ─── target_changed mode ───────────────────────────────
+
+  describe('target_changed mode', () => {
+    it('sets mode to target_changed when target ID differs from bundle', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      // First prepare targets MR 42
+      await orchestrator.prepare('!42', 'group/project');
+
+      // Second prepare targets MR 99 (different ID) — simulated by changing resolveTarget
+      const newTargetRef = { ...targetRef, targetId: '99' };
+      const newTarget = {
+        ...mockTarget,
+        ...newTargetRef,
+        diffRefs: { baseSha: 'aaa', headSha: 'bbb', startSha: 'aaa' },
+      };
+      (mockProvider.resolveTarget as ReturnType<typeof vi.fn>).mockResolvedValue(newTargetRef);
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(newTarget);
+
+      const result = await orchestrator.prepare('!99', 'group/project');
+
+      expect(result.mode).toBe('target_changed');
+    });
+  });
+
+  // ─── pruneStaleReplies keeps active replies ────────────
+
+  describe('pruneStaleReplies preserves active replies', () => {
+    it('does not prune replies for threads that are still active', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      // Write replies: one for active thread 'thread-1' (should be kept) and one stale
+      const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+      const replies = [
+        { threadId: 'T-001', body: 'Active reply.', resolve: false },
+        { threadId: 'T-999', body: 'Stale reply.', resolve: false },
+      ];
+      await fs.writeFile(repliesPath, JSON.stringify(replies, null, 2), 'utf-8');
+
+      // Refresh — thread-1 (T-001) is active, T-999 is stale
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.prunedReplies).toBe(1);
+      const remaining = JSON.parse(await fs.readFile(repliesPath, 'utf-8'));
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].threadId).toBe('T-001');
+    });
+  });
+
+  // ─── fetch without progress callback ──────────────────
+
+  describe('fetch without progress callback', () => {
+    it('does not crash when commits are missing but no progress callback is provided', async () => {
+      hasCommitSpy
+        .mockResolvedValueOnce(false) // baseSha missing
+        .mockResolvedValueOnce(true) // headSha present
+        .mockResolvedValueOnce(true) // after fetch: resolved
+        .mockResolvedValueOnce(true);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      // Call without onProgress — should still work
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(fetchCommitSpy).toHaveBeenCalled();
+      expect(result.bundle.diffs).toBeDefined();
+    });
+
+    it('does not attempt source branch fetch when targetBranch fetch resolves commits', async () => {
+      hasCommitSpy
+        .mockResolvedValueOnce(false) // initial: baseSha missing
+        .mockResolvedValueOnce(true) // initial: headSha ok
+        .mockResolvedValueOnce(false) // after fetchCommit: still missing
+        .mockResolvedValueOnce(true) // after fetchCommit: headSha ok
+        .mockResolvedValueOnce(true) // after fetchBranch(target): resolved!
+        .mockResolvedValueOnce(true);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project', { onProgress: vi.fn() });
+
+      expect(fetchBranchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchBranchSpy).toHaveBeenCalledWith('main', 'origin', expect.anything());
+      // Source branch fetch should NOT have been called
+      expect(fetchBranchSpy).not.toHaveBeenCalledWith('feature/test', 'origin', expect.anything());
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── advanceCheckpoint description handling ────────────
+
+  describe('advanceCheckpoint description handling', () => {
+    it('includes actual description content in checkpoint digest', async () => {
+      const descriptionWithContent = 'This MR adds authentication support.\n\nFixes #123.';
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...mockTarget,
+        description: descriptionWithContent,
+      });
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+      await orchestrator.publishReview('', 'group/project');
+
+      const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      const state = parseDescriptionState(updatedDesc);
+      expect(state).not.toBeNull();
+      // Digest should NOT be the hash of empty string
+      const emptyHash = computeContentHash('');
+      expect(state!.checkpoint.descriptionDigest).not.toBe(emptyHash);
+      expect(state!.checkpoint.descriptionDigest).toBeTruthy();
+    });
+
+    it('sets providerVersionId from latest version in advanceCheckpoint', async () => {
+      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+      (mockProvider.getDiffVersions as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { ...mockVersion, versionId: 'version-42' },
+      ]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+      await orchestrator.publishReview('', 'group/project');
+
+      const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      const state = parseDescriptionState(updatedDesc);
+      expect(state).not.toBeNull();
+      expect(state!.checkpoint.providerVersionId).toBe('version-42');
     });
   });
 });

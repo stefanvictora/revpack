@@ -50,9 +50,36 @@ export function stripReviewNoteFooter(content: string): string {
 // ─── Parser ──────────────────────────────────────────────
 
 /**
+ * Decode and validate an encoded checkpoint state string (base64url or raw JSON).
+ * Returns the validated CheckpointState or null if decoding/validation fails.
+ */
+function decodeAndValidateState(encoded: string): CheckpointState | null {
+  if (!encoded) return null;
+
+  let state: CheckpointState;
+  try {
+    const decoded = Buffer.from(encoded, 'base64url').toString('utf-8');
+    state = JSON.parse(decoded) as CheckpointState;
+  } catch {
+    try {
+      state = JSON.parse(encoded) as CheckpointState;
+    } catch {
+      return null;
+    }
+  }
+
+  if (!state || typeof state !== 'object') return null;
+  if (!state.checkpoint || typeof state.checkpoint.headSha !== 'string') return null;
+  state.checkpoint.threadDigests ??= {};
+
+  return state;
+}
+
+/**
  * Parse the hidden revpack:state marker from a managed review note body.
  * Returns the decoded CheckpointState and the visible (human-readable) content, or null if no marker found.
  */
+// todo: remove
 export function parseCheckpointMarker(noteBody: string): { state: CheckpointState; visibleContent: string } | null {
   const startIdx = noteBody.indexOf(CHECKPOINT_MARKER_START);
   if (startIdx === -1) return null;
@@ -62,28 +89,9 @@ export function parseCheckpointMarker(noteBody: string): { state: CheckpointStat
   if (endIdx === -1) return null;
 
   const encoded = noteBody.slice(afterStart, endIdx).trim();
-  if (!encoded) return null;
+  const state = decodeAndValidateState(encoded);
+  if (!state) return null;
 
-  let state: CheckpointState;
-  try {
-    // Try base64url-decoded JSON first
-    const decoded = Buffer.from(encoded, 'base64url').toString('utf-8');
-    state = JSON.parse(decoded) as CheckpointState;
-  } catch {
-    try {
-      // Fallback: raw JSON inside the comment
-      state = JSON.parse(encoded) as CheckpointState;
-    } catch {
-      return null;
-    }
-  }
-
-  // Validate minimum required fields
-  if (!state || typeof state !== 'object') return null;
-  if (!state.checkpoint || typeof state.checkpoint.headSha !== 'string') return null;
-  state.checkpoint.threadDigests ??= {};
-
-  // Extract visible content (everything outside the marker block)
   const markerBlock = noteBody.slice(startIdx, endIdx + CHECKPOINT_MARKER_END.length);
   const visibleContent = noteBody.replace(markerBlock, '').replace(REVIEW_NOTE_MARKER, '').trim();
 
@@ -138,6 +146,7 @@ export function encodeCheckpointState(state: CheckpointState): string {
 /**
  * Build the full managed review note body with visible content and hidden checkpoint marker.
  */
+// todo: remove
 export function buildReviewNoteBody(visibleContent: string, state: CheckpointState): string {
   const encoded = encodeCheckpointState(state);
   const parts: string[] = [];
@@ -161,6 +170,7 @@ export function buildReviewNoteBody(visibleContent: string, state: CheckpointSta
  * Update an existing note body: replace only the checkpoint marker, preserve visible content.
  * If `newVisibleContent` is provided and non-empty, use it; otherwise preserve existing visible content.
  */
+// todo: remove
 export function updateReviewNoteBody(
   existingBody: string,
   newState: CheckpointState,
@@ -196,25 +206,7 @@ export function parseDescriptionState(description: string): CheckpointState | nu
   if (endIdx === -1) return null;
 
   const encoded = block.slice(afterStart, endIdx).trim();
-  if (!encoded) return null;
-
-  let state: CheckpointState;
-  try {
-    const decoded = Buffer.from(encoded, 'base64url').toString('utf-8');
-    state = JSON.parse(decoded) as CheckpointState;
-  } catch {
-    try {
-      state = JSON.parse(encoded) as CheckpointState;
-    } catch {
-      return null;
-    }
-  }
-
-  if (!state || typeof state !== 'object') return null;
-  if (!state.checkpoint || typeof state.checkpoint.headSha !== 'string') return null;
-  state.checkpoint.threadDigests ??= {};
-
-  return state;
+  return decodeAndValidateState(encoded);
 }
 
 /**
@@ -273,5 +265,5 @@ export function sanitizeDescriptionForAgent(description: string): string {
     }
   }
 
-  return result.replace(/\n{3,}$/g, '\n').trimEnd();
+  return result.trimEnd();
 }

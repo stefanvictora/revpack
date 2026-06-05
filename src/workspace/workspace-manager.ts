@@ -578,14 +578,18 @@ export class WorkspaceManager {
 
     // Fallback: read the thread JSON file from disk
     const jsonPath = path.join(this.baseDir, 'threads', `${normalised}.json`);
+    let threadId: string | undefined;
     try {
       const data = await fs.readFile(jsonPath, 'utf-8');
-      const thread = JSON.parse(data) as { threadId: string };
-      if (!thread.threadId) throw new Error('threadId field missing');
-      return thread.threadId;
+      const thread = JSON.parse(data) as { threadId?: string };
+      threadId = thread.threadId;
     } catch {
+      // File not found or invalid JSON
+    }
+    if (!threadId) {
       throw new Error(`Cannot resolve thread reference "${ref}" — not found in thread index or threads/ folder`);
     }
+    return threadId;
   }
 
   /**
@@ -1141,7 +1145,7 @@ export class WorkspaceManager {
         file.newPath
           .split('/')
           .pop()
-          ?.replace(/\.[^.]+$/, '') ?? file.fileId;
+          ?.replace(/\.[^.]+$/, '') || file.fileId;
       const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
       const fileName = `${file.fileId}-${safeName}.patch`;
       const content = patchSections[idx] ?? '';
@@ -1351,7 +1355,7 @@ export class WorkspaceManager {
     lines.push(`- **Resolvable**: ${thread.resolvable}`);
     if (thread.position) {
       lines.push(`- **File**: \`${thread.position.filePath}\``);
-      const lineNum = thread.position?.newLine ?? thread.position?.oldLine;
+      const lineNum = thread.position.newLine ?? thread.position.oldLine;
       if (lineNum) lines.push(`- **Line**: ${lineNum}`);
     }
     lines.push('');

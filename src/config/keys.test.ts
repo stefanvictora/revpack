@@ -4,14 +4,24 @@ import { CONFIG_KEYS, VALID_CONFIG_KEYS } from './keys.js';
 
 describe('CONFIG_KEYS', () => {
   it('lists every supported config key', () => {
-    expect(VALID_CONFIG_KEYS).toEqual(['provider', 'url', 'tokenEnv', 'remotePatterns', 'caFile', 'tlsVerify', 'sshClone']);
+    expect(VALID_CONFIG_KEYS).toEqual([
+      'provider',
+      'url',
+      'tokenEnv',
+      'remotePatterns',
+      'caFile',
+      'tlsVerify',
+      'sshClone',
+    ]);
   });
 
   it('parses provider values', () => {
     expect(CONFIG_KEYS.provider.parse('gitlab')).toBe('gitlab');
     expect(CONFIG_KEYS.provider.parse('github')).toBe('github');
     expect(() => CONFIG_KEYS.provider.parse('local')).toThrow(ConfigError);
-    expect(() => CONFIG_KEYS.provider.parse('local')).toThrow('Invalid provider: "local". Must be "gitlab" or "github".');
+    expect(() => CONFIG_KEYS.provider.parse('local')).toThrow(
+      'Invalid provider: "local". Must be "gitlab" or "github".',
+    );
   });
 
   it('validates URL values', () => {

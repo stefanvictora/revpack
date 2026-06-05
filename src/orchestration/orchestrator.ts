@@ -312,8 +312,8 @@ export class ReviewOrchestrator {
     }
 
     // Carry over published actions and output state from previous bundle
-    const previousActions = previousBundle && mode !== 'fresh' ? previousBundle.publishedActions : [];
-    const previousOutputs = previousBundle && mode !== 'fresh' ? previousBundle.outputs : undefined;
+    const previousActions = previousBundle ? previousBundle.publishedActions : [];
+    const previousOutputs = previousBundle ? previousBundle.outputs : undefined;
 
     // Compute per-thread changes since the last checkpoint.
     // The baseline comes directly from the remote checkpoint's per-thread digests.

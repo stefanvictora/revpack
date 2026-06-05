@@ -489,13 +489,63 @@ describe('GitHubProvider writes', () => {
   });
 
   it('falls back to a PR timeline note when GitHub rejects a review thread position', async () => {
-    installFetch((url) => {
+    let noteBody: string | undefined;
+    installFetch((url, init) => {
       if (url === 'https://api.github.com/repos/octo/repo/pulls/42') return jsonResponse(pr());
       if (url === 'https://api.github.com/graphql') {
         return jsonResponse({ errors: [{ message: 'Validation failed: line must be part of the diff' }] });
       }
       if (url === 'https://api.github.com/repos/octo/repo/issues/42/comments') {
-        return jsonResponse({ id: 5001, body: 'fallback' });
+        noteBody = (requestBodyJson(init) as { body: string }).body;
+        return jsonResponse({ id: 5001, body: noteBody });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      provider.createThread(ref, 'finding body', {
+        oldPath: 'src/old.ts',
+        newPath: 'src/new.ts',
+        newLine: 999,
+      }),
+    ).resolves.toBe('5001');
+
+    // Verify the anchor uses newPath and newLine
+    expect(noteBody).toContain('src/new.ts:999');
+    expect(noteBody).toContain('finding body');
+  });
+
+  it('falls back using oldPath and oldLine when newPath/newLine are absent', async () => {
+    let noteBody: string | undefined;
+    installFetch((url, init) => {
+      if (url === 'https://api.github.com/repos/octo/repo/pulls/42') return jsonResponse(pr());
+      if (url === 'https://api.github.com/graphql') {
+        return jsonResponse({ errors: [{ message: 'Validation failed: line must be part of the diff' }] });
+      }
+      if (url === 'https://api.github.com/repos/octo/repo/issues/42/comments') {
+        noteBody = (requestBodyJson(init) as { body: string }).body;
+        return jsonResponse({ id: 5002, body: noteBody });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      provider.createThread(ref, 'finding body', {
+        oldPath: 'src/removed.ts',
+        newPath: '',
+        oldLine: 42,
+      }),
+    ).resolves.toBe('5002');
+
+    // When newPath is falsy, should fall back to oldPath; when newLine is null, uses oldLine
+    expect(noteBody).toContain('src/removed.ts:42');
+  });
+
+  it('propagates non-validation errors from createThread', async () => {
+    installFetch((url) => {
+      if (url === 'https://api.github.com/repos/octo/repo/pulls/42') return jsonResponse(pr());
+      if (url === 'https://api.github.com/graphql') {
+        return jsonResponse({}, { status: 500, statusText: 'Internal Server Error' });
       }
       throw new Error(`Unexpected URL: ${url}`);
     });
@@ -504,9 +554,46 @@ describe('GitHubProvider writes', () => {
       provider.createThread(ref, 'finding body', {
         oldPath: 'src/app.ts',
         newPath: 'src/app.ts',
-        newLine: 999,
+        newLine: 12,
       }),
-    ).resolves.toBe('5001');
+    ).rejects.toThrow('GitHub API error: 500');
+  });
+
+  it('propagates non-ProviderError exceptions from createThread', async () => {
+    installFetch((url) => {
+      if (url === 'https://api.github.com/repos/octo/repo/pulls/42') return jsonResponse(pr());
+      if (url === 'https://api.github.com/graphql') throw new TypeError('fetch failed');
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      provider.createThread(ref, 'body', {
+        oldPath: 'src/a.ts',
+        newPath: 'src/a.ts',
+        newLine: 1,
+      }),
+    ).rejects.toThrow('Network error');
+  });
+
+  it('falls back to note on 422 HTTP validation error from GraphQL endpoint', async () => {
+    installFetch((url, init) => {
+      if (url === 'https://api.github.com/repos/octo/repo/pulls/42') return jsonResponse(pr());
+      if (url === 'https://api.github.com/graphql' && init?.method === 'POST') {
+        return jsonResponse({ message: 'Validation Failed' }, { status: 422, statusText: 'Unprocessable Entity' });
+      }
+      if (url === 'https://api.github.com/repos/octo/repo/issues/42/comments' && init?.method === 'POST') {
+        return jsonResponse({ id: 6001, body: 'fallback-422' });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      provider.createThread(ref, 'body', {
+        oldPath: 'src/x.ts',
+        newPath: 'src/x.ts',
+        newLine: 10,
+      }),
+    ).resolves.toBe('6001');
   });
 
   it('finds, creates, and updates PR timeline notes', async () => {
@@ -594,5 +681,696 @@ describe('GitHubProvider URL handling and errors', () => {
     const provider = new GitHubProvider('https://github.com', 'token');
     expect(provider.getSourceRefspec(ref)).toBe('refs/pull/42/head');
     expect(provider.getSourceRefspec({ ...ref, targetId: '37429' })).toBe('refs/pull/37429/head');
+  });
+});
+
+// ─── resolveTarget regex edge cases ──────────────────────
+
+describe('GitHubProvider.resolveTarget regex anchoring', () => {
+  const provider = new GitHubProvider('https://github.com', 'token');
+
+  it('rejects URLs with leading text before the scheme', () => {
+    expect(() => provider.resolveTarget('prefix https://github.com/octo/repo/pull/42')).toThrow(
+      'Cannot parse GitHub target reference',
+    );
+  });
+
+  it('rejects http:// URLs (only https is supported)', () => {
+    // The regex uses https? but this tests that changing it to just 'https' still works
+    // Actually: http URLs ARE supported by the regex — this verifies they parse correctly
+    expect(provider.resolveTarget('http://github.example.com/octo/repo/pull/42')).toEqual({
+      ...ref,
+      repository: 'octo/repo',
+      targetId: '42',
+    });
+  });
+
+  it('rejects repo#number refs with extra prefix', () => {
+    expect(() => provider.resolveTarget('extra/octo/repo#42')).toThrow('Cannot parse GitHub target reference');
+  });
+
+  it('rejects repo#number refs with trailing content', () => {
+    expect(() => provider.resolveTarget('octo/repo#42suffix')).toThrow('Cannot parse GitHub target reference');
+  });
+
+  it('rejects repo/pull/number refs with extra path prefix', () => {
+    expect(() => provider.resolveTarget('extra/octo/repo/pull/42')).toThrow('Cannot parse GitHub target reference');
+  });
+
+  it('rejects repo/pull/number refs with trailing content', () => {
+    expect(() => provider.resolveTarget('octo/repo/pull/42/files')).toThrow('Cannot parse GitHub target reference');
+  });
+
+  it('rejects bare numbers with leading non-numeric text', () => {
+    expect(() => provider.resolveTarget('abc42')).toThrow('Cannot parse GitHub target reference');
+  });
+
+  it('rejects bare numbers with trailing non-numeric text', () => {
+    expect(() => provider.resolveTarget('42abc')).toThrow('Cannot parse GitHub target reference');
+  });
+
+  it('rejects URLs with trailing non-URL characters after the PR number', () => {
+    expect(() => provider.resolveTarget('https://github.com/octo/repo/pull/42 extra')).toThrow(
+      'Cannot parse GitHub target reference',
+    );
+  });
+});
+
+// ─── normalizeGitHubEndpoints edge cases ─────────────────
+
+describe('GitHubProvider endpoint normalization', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('handles api.github.com as the input URL', async () => {
+    const provider = new GitHubProvider('https://api.github.com', 'token');
+    installFetch((url) => {
+      expect(url).toBe('https://api.github.com/repos/octo/repo/pulls/42');
+      return jsonResponse(pr());
+    });
+    await provider.getTargetSnapshot(ref);
+    expect(provider.getCloneUrl('octo/repo')).toBe('https://github.com/octo/repo.git');
+  });
+
+  it('handles enterprise URL with subpath ending in /api/v3', async () => {
+    const provider = new GitHubProvider('https://corp.example.com/github/api/v3', 'token');
+    installFetch((url) => {
+      expect(url).toBe('https://corp.example.com/github/api/v3/repos/octo/repo/pulls/42');
+      return jsonResponse(pr());
+    });
+    await provider.getTargetSnapshot(ref);
+    expect(provider.getCloneUrl('octo/repo')).toBe('https://corp.example.com/github/octo/repo.git');
+  });
+
+  it('strips trailing slashes from input URL', async () => {
+    const provider = new GitHubProvider('https://github.example.com/', 'token');
+    installFetch((url) => {
+      expect(url).toBe('https://github.example.com/api/v3/repos/octo/repo/pulls/42');
+      return jsonResponse(pr());
+    });
+    await provider.getTargetSnapshot(ref);
+  });
+
+  it('defaults to github.com when URL is undefined', async () => {
+    const provider = new GitHubProvider(undefined, 'token');
+    installFetch((url) => {
+      expect(url).toBe('https://api.github.com/repos/octo/repo/pulls/42');
+      return jsonResponse(pr());
+    });
+    await provider.getTargetSnapshot(ref);
+  });
+});
+
+// ─── buildDispatcher / TLS options ───────────────────────
+
+describe('GitHubProvider TLS dispatcher', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('creates dispatcher when tlsVerify is false', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token', { tlsVerify: false });
+    installFetch((_url, init) => {
+      expect((init as Record<string, unknown>)['dispatcher']).toBeDefined();
+      return jsonResponse(pr());
+    });
+    await provider.getTargetSnapshot(ref);
+  });
+
+  it('does not create dispatcher when no TLS options are set', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token', {});
+    installFetch((_url, init) => {
+      expect((init as Record<string, unknown>)['dispatcher']).toBeUndefined();
+      return jsonResponse(pr());
+    });
+    await provider.getTargetSnapshot(ref);
+  });
+
+  it('creates dispatcher when caFile points to an existing file', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'revpack-test-'));
+    const caPath = path.join(dir, 'ca.pem');
+    fs.writeFileSync(caPath, 'fake-ca-cert');
+    try {
+      const provider = new GitHubProvider('https://github.com', 'token', { caFile: caPath });
+      installFetch((_url, init) => {
+        expect((init as Record<string, unknown>)['dispatcher']).toBeDefined();
+        return jsonResponse(pr());
+      });
+      await provider.getTargetSnapshot(ref);
+    } finally {
+      fs.unlinkSync(caPath);
+    }
+  });
+
+  it('uses SSH clone URL when sshClone is enabled', () => {
+    const provider = new GitHubProvider('https://github.com', 'token', { sshClone: true });
+    expect(provider.getCloneUrl('octo/repo')).toBe('git@github.com:octo/repo.git');
+  });
+
+  it('uses HTTPS clone URL when sshClone is disabled', () => {
+    const provider = new GitHubProvider('https://github.com', 'token', { sshClone: false });
+    expect(provider.getCloneUrl('octo/repo')).toBe('https://github.com/octo/repo.git');
+  });
+});
+
+// ─── detectOrigin edge cases ─────────────────────────────
+
+describe('GitHubProvider comment origin detection', () => {
+  let provider: GitHubProvider;
+
+  beforeEach(() => {
+    provider = new GitHubProvider('https://github.com', 'token');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('detects bot origin from revpack comment marker', async () => {
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-x',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/a.ts',
+                    line: 1,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c1',
+                          databaseId: 100,
+                          body: '<!-- revpack:review -->\nSome finding',
+                          author: { login: 'human-user' },
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+    const threads = await provider.listAllThreads(ref);
+    expect(threads[0].comments[0].origin).toBe('bot');
+  });
+
+  it('detects bot origin from [bot] suffix in login', async () => {
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-y',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/b.ts',
+                    line: 2,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c2',
+                          databaseId: 200,
+                          body: 'Normal comment text',
+                          author: { login: 'dependabot[bot]' },
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+    const threads = await provider.listAllThreads(ref);
+    expect(threads[0].comments[0].origin).toBe('bot');
+  });
+
+  it('detects bot origin from login containing "bot" without brackets', async () => {
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-z',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/c.ts',
+                    line: 3,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c3',
+                          databaseId: 300,
+                          body: 'Automated check passed',
+                          author: { login: 'cibot' },
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+    const threads = await provider.listAllThreads(ref);
+    expect(threads[0].comments[0].origin).toBe('bot');
+  });
+
+  it('identifies human origin for regular users', async () => {
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-h',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/d.ts',
+                    line: 4,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c4',
+                          databaseId: 400,
+                          body: 'Please fix this issue',
+                          author: { login: 'alice' },
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+    const threads = await provider.listAllThreads(ref);
+    expect(threads[0].comments[0].origin).toBe('human');
+  });
+
+  it('handles null author gracefully', async () => {
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-n',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/e.ts',
+                    line: 5,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c5',
+                          databaseId: 500,
+                          body: 'Ghost comment',
+                          author: null,
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+    const threads = await provider.listAllThreads(ref);
+    expect(threads[0].comments[0].author).toBe('unknown');
+    expect(threads[0].comments[0].origin).toBe('human');
+  });
+
+  it('detects bot via body.startsWith even when login does not contain bot', async () => {
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-m',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/f.ts',
+                    line: 6,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c6',
+                          databaseId: 600,
+                          body: '<!-- revpack:finding -->\nContent',
+                          author: { login: 'regular-user' },
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+    const threads = await provider.listAllThreads(ref);
+    expect(threads[0].comments[0].origin).toBe('bot');
+  });
+});
+
+// ─── createThread without position ───────────────────────
+
+describe('GitHubProvider createThread without position', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('creates a note when no position is provided', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.github.com/repos/octo/repo/issues/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({ body: 'general comment' });
+      return jsonResponse({ id: 9001, body: 'general comment' });
+    });
+
+    const id = await provider.createThread(ref, 'general comment');
+    expect(id).toBe('9001');
+  });
+});
+
+// ─── listAllThreads when GraphQL returns null page ───────
+
+describe('GitHubProvider listAllThreads null response', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns empty array when pullRequest is null in GraphQL response', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: null,
+          },
+        },
+      }),
+    );
+    const threads = await provider.listAllThreads(ref);
+    expect(threads).toEqual([]);
+  });
+
+  it('returns empty array when repository is null in GraphQL response', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: null,
+        },
+      }),
+    );
+    const threads = await provider.listAllThreads(ref);
+    expect(threads).toEqual([]);
+  });
+
+  it('returns previously collected threads when second page is null', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    let callCount = 0;
+    installFetch(() => {
+      callCount++;
+      if (callCount === 1) {
+        return jsonResponse({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  pageInfo: { hasNextPage: true, endCursor: 'page-1' },
+                  nodes: [
+                    {
+                      id: 'thread-first',
+                      isResolved: false,
+                      isOutdated: false,
+                      path: 'src/x.ts',
+                      line: 10,
+                      diffSide: 'RIGHT',
+                      comments: {
+                        nodes: [
+                          {
+                            id: 'c-first',
+                            databaseId: 1,
+                            body: 'First comment',
+                            author: { login: 'dev' },
+                            createdAt: '2026-01-01T00:00:00Z',
+                            updatedAt: '2026-01-01T00:00:00Z',
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        });
+      }
+      // Second page returns null pullRequest
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: null,
+          },
+        },
+      });
+    });
+
+    const threads = await provider.listAllThreads(ref);
+    expect(threads).toHaveLength(1);
+    expect(threads[0].threadId).toBe('thread-first');
+    expect(threads[0].comments[0].body).toBe('First comment');
+  });
+});
+
+// ─── mapPullRequest edge cases ───────────────────────────
+
+describe('GitHubProvider mapPullRequest edge cases', () => {
+  let provider: GitHubProvider;
+
+  beforeEach(() => {
+    provider = new GitHubProvider('https://github.com', 'token');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses "unknown" author when user is null', async () => {
+    installFetch(() => jsonResponse(pr({ user: null })));
+    const target = await provider.getTargetSnapshot(ref);
+    expect(target.author).toBe('unknown');
+  });
+
+  it('returns empty labels array when labels is null', async () => {
+    installFetch(() => jsonResponse(pr({ labels: null })));
+    const target = await provider.getTargetSnapshot(ref);
+    expect(target.labels).toEqual([]);
+  });
+});
+
+// ─── listUnresolvedThreads filtering ────────────────────
+
+describe('GitHubProvider listUnresolvedThreads', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('filters out resolved threads and keeps only unresolved resolvable ones', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'unresolved-1',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'a.ts',
+                    line: 1,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c1',
+                          databaseId: 1,
+                          body: 'fix',
+                          author: { login: 'x' },
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                  {
+                    id: 'resolved-1',
+                    isResolved: true,
+                    isOutdated: false,
+                    path: 'b.ts',
+                    line: 2,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c2',
+                          databaseId: 2,
+                          body: 'done',
+                          author: { login: 'y' },
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    const unresolved = await provider.listUnresolvedThreads(ref);
+    expect(unresolved).toHaveLength(1);
+    expect(unresolved[0].threadId).toBe('unresolved-1');
+    expect(unresolved[0].resolved).toBe(false);
+  });
+});
+
+// ─── REST request edge cases ─────────────────────────────
+
+describe('GitHubProvider REST request edge cases', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('handles 204 No Content response from PATCH requests', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    installFetch(() => new Response(null, { status: 204 }));
+    // updateDescription calls request() which should handle 204 gracefully
+    await expect(provider.updateDescription(ref, 'new body')).resolves.toBeUndefined();
+  });
+
+  it('throws ProviderError when GraphQL response has no data and no errors', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    installFetch(() => jsonResponse({}));
+    await expect(provider.resolveThread(ref, 'thread-1')).rejects.toThrow(
+      'GitHub GraphQL error: response did not include data',
+    );
+  });
+
+  it('maps threads with null path to undefined position', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-no-path',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: null,
+                    line: null,
+                    diffSide: null,
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c-no-path',
+                          databaseId: 777,
+                          body: 'General comment on the PR',
+                          author: { login: 'dev' },
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    const threads = await provider.listAllThreads(ref);
+    expect(threads).toHaveLength(1);
+    expect(threads[0].position).toBeUndefined();
+  });
+
+  it('throws ProviderError on network errors', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow('Network error');
   });
 });

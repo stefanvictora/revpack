@@ -169,9 +169,11 @@ describe('thread digest', () => {
         headSha: null,
         startSha: null,
       },
-    } as unknown as ReviewThread;
+    };
 
-    expect(computeThreadDigest(omitted)).toBe(computeThreadDigest(explicitNulls));
+    expect(computeThreadDigest(omitted as unknown as ReviewThread)).toBe(
+      computeThreadDigest(explicitNulls as unknown as ReviewThread),
+    );
   });
 
   it('sorts aggregate digest inputs by provider thread ID', () => {
