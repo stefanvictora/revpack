@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Handlebars from 'handlebars';
 import type {
   BundleLocal,
   BundleOutputs,
@@ -54,6 +55,66 @@ interface InstructionRoute {
   required: string[];
   skipped: Array<{ path: string; reason: string }>;
   proactiveReview: boolean;
+}
+
+interface ContextTemplateView {
+  target: {
+    typeLabel: string;
+    kind: string;
+    displayId: string;
+    title: string;
+    repository: string;
+    author: string;
+    sourceBranch: string;
+    targetBranch: string;
+    state: string;
+    webUrl?: string;
+  };
+  checkpoint?: {
+    hasCheckpoint: boolean;
+    createdAt?: string;
+    headSha?: string;
+    currentTargetHeadSha?: string;
+    targetCodeChanged: string;
+    threadsChanged: string;
+    descriptionChanged: string;
+    localHeadSha?: string;
+    guidance: string[];
+  };
+  runMode: {
+    modeLabel: string;
+    primaryWork: string;
+  };
+  incremental: boolean;
+  readingOrder: string[];
+  requiredInstructions: string[];
+  skippedInstructions: Array<{ path: string; reason: string }>;
+  threadFileCount: number;
+  hasThreadFiles: boolean;
+  changedFilesTitle: string;
+  changedFilesIntro?: string;
+  changedFiles: Array<{ path: string; status: string }>;
+  incrementalChangedFiles: Array<{ path: string; status: string }>;
+  changedThreads?: {
+    title: string;
+    intro: string;
+    rows: Array<{ shortId: string; status: string; location: string; summary: string }>;
+  };
+  unresolvedThreads: Array<{
+    shortId: string;
+    flags: string;
+    author: string;
+    location: string;
+    summary: string;
+  }>;
+  generalComments: Array<{ shortId: string; author: string; summary: string }>;
+  previousActions: Array<{
+    actionLabel: string;
+    location: string;
+    severity: string;
+    category: string;
+    title: string;
+  }>;
 }
 
 function buildInstructionRoute(
@@ -121,7 +182,7 @@ function buildInstructionRoute(
     return {
       modeLabel: 'Incremental code review',
       primaryWork:
-        'Review what changed since the last checkpoint, re-check unresolved threads, and update the review outputs.',
+        'Review changes since the last checkpoint first, re-check relevant thread updates, and update the review outputs. Valid MR/PR findings found outside the checkpoint delta may still be reported when they are concrete, non-duplicate, and anchorable.',
       required,
       skipped,
       proactiveReview,
@@ -528,7 +589,7 @@ export class WorkspaceManager {
   }
 
   /**
-   * Write CONTEXT.md — the agent-readable context file.
+   * Write CONTEXT.md - the agent-readable context file.
    * Contains MR/PR summary, prepare state, bundle contents, threads, and actions.
    * Does NOT contain output schemas, severity definitions, or positional tutorials.
    */
@@ -544,8 +605,31 @@ export class WorkspaceManager {
       allThreads?: ReviewThread[];
     },
   ): Promise<string> {
+    const view = await this.buildContextTemplateView(target, threads, diffs, threadIndex, options);
+    const content = await this.renderContextTemplate(view);
+    const contextPath = path.join(this.baseDir, 'CONTEXT.md');
+    await fs.writeFile(contextPath, content, 'utf-8');
+
+    // Also write instruction files (INSTRUCTIONS.md, AGENT_CONTRACT.md, instructions/*.md)
+    await this.writeInstructions();
+    return contextPath;
+  }
+
+  private async buildContextTemplateView(
+    target: ReviewTarget,
+    threads: ReviewThread[],
+    diffs: ReviewDiff[],
+    threadIndex: ThreadIndex,
+    options?: {
+      prepareSummary?: PrepareSummary;
+      publishedActions?: BundlePublishedAction[];
+      changedThreadIds?: Set<string>;
+      allThreads?: ReviewThread[];
+    },
+  ): Promise<ContextTemplateView> {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
     const generalComments = threads.filter((t) => !t.resolvable && !isSystemOnlyThread(t));
+    const isIncrementalCodeReview = options?.prepareSummary?.comparison.targetCodeChangedSinceCheckpoint === true;
 
     const tableCell = (value: string): string => value.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
 
@@ -569,6 +653,19 @@ export class WorkspaceManager {
       return tableCell(meaningful?.trim().slice(0, maxLen) ?? '');
     };
 
+    const diffStatus = (d: ReviewDiff): string =>
+      d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
+
+    const incrementalFiles = async (): Promise<Array<{ path: string; status: string }>> => {
+      try {
+        const patch = await fs.readFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), 'utf-8');
+        const parsed = parsePatch(patch);
+        return parsed.files.map((f) => ({ path: f.newPath || f.oldPath, status: f.status }));
+      } catch {
+        return [];
+      }
+    };
+
     // Derive SELF/REPLIED from comment origins (marker-based)
     const selfThreadIds = new Set<string>();
     const repliedThreadIds = new Set<string>();
@@ -581,7 +678,6 @@ export class WorkspaceManager {
       }
     }
 
-    const lines: string[] = [];
     const isLocal = target.provider === 'local';
     const targetKind = formatTargetKind(target);
     const targetDisplayId = formatTargetDisplayId(target);
@@ -592,287 +688,241 @@ export class WorkspaceManager {
           ? 'GitHub pull request'
           : 'Local Git review';
 
-    // ─── Target table ─────────────────────────────────────
-    lines.push('# Review Context');
-    lines.push('');
-    lines.push('## Target');
-    lines.push('');
-    lines.push('| Field | Value |');
-    lines.push('|---|---|');
-    lines.push(`| Type | ${targetTypeLabel} |`);
-    lines.push(`| ${targetKind} | ${targetDisplayId} — ${tableCell(target.title)} |`);
-    lines.push(`| Repository | \`${tableCell(target.repository)}\` |`);
-    lines.push(`| Author | ${isLocal ? tableCell(target.author) : `@${tableCell(target.author)}`} |`);
-    lines.push(`| Source branch | \`${tableCell(target.sourceBranch)}\` |`);
-    lines.push(`| Target branch | \`${tableCell(target.targetBranch)}\` |`);
-    lines.push(`| State | ${tableCell(target.state)} |`);
-    if (target.webUrl) lines.push(`| URL | ${target.webUrl} |`);
-    lines.push('');
-    lines.push('This file is the run-specific entry point.');
-    lines.push('');
-    lines.push('1. Read `.revpack/AGENT_CONTRACT.md` next. It contains the short mandatory review contract.');
-    lines.push('2. Read the files listed in **Required Instructions for This Run**.');
-    lines.push('');
-    lines.push('Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the full instruction set.');
-    lines.push('');
-
-    // ─── Review Checkpoint Summary ──────────────────────────
     const ps = options?.prepareSummary;
+    let checkpoint: ContextTemplateView['checkpoint'];
     if (ps) {
-      lines.push('## Review Checkpoint Summary');
-      lines.push('');
-
+      const guidance: string[] = [];
       if (ps.checkpoint) {
-        lines.push('| Field | Value |');
-        lines.push('|---|---|');
-        lines.push(`| Last review checkpoint | ${ps.checkpoint.createdAt} |`);
-        lines.push(`| Last reviewed head SHA | \`${ps.checkpoint.headSha}\` |`);
-        lines.push(`| Current target head SHA | \`${ps.current.targetHeadSha}\` |`);
-        lines.push(
-          `| Target code changed since checkpoint | ${ps.comparison.targetCodeChangedSinceCheckpoint ? 'yes' : 'no'} |`,
-        );
-        lines.push(
-          `| Threads/replies changed since checkpoint | ${ps.comparison.threadsChangedSinceCheckpoint != null ? (ps.comparison.threadsChangedSinceCheckpoint ? 'yes' : 'no') : 'unknown'} |`,
-        );
-        lines.push(
-          `| Description changed since checkpoint | ${ps.comparison.descriptionChangedSinceCheckpoint != null ? (ps.comparison.descriptionChangedSinceCheckpoint ? 'yes' : 'no') : 'unknown'} |`,
-        );
-        lines.push(`| Local HEAD at prepare | \`${ps.current.localHeadSha}\` |`);
-        lines.push('| Local checkout verified | yes |');
-        lines.push('');
-
-        // Checkpoint-specific context guidance
         if (ps.comparison.targetCodeChangedSinceCheckpoint) {
-          lines.push('Target code has changed since the last review checkpoint.');
-          lines.push('');
-          lines.push('Focus proactive review on the updated diff and unresolved thread updates.');
-          lines.push('');
+          guidance.push('Target code has changed since the last review checkpoint.');
+          guidance.push(
+            'Focus proactive review on the code changes since the last checkpoint and on relevant thread updates.',
+          );
+          guidance.push(
+            'Important: incremental mode limits where you should spend most of your review effort; it does not limit what you may report. If you discover a concrete, non-duplicate issue introduced, exposed, or made worse by the current MR/PR, report it even when the relevant line is outside the checkpoint delta.',
+          );
         } else if (ps.comparison.threadsChangedSinceCheckpoint) {
-          lines.push(
+          guidance.push(
             'No target code changes since the last review checkpoint, but threads or replies have been updated.',
           );
-          lines.push('');
-          lines.push(
+          guidance.push(
             'Focus on updated unresolved threads, newly added replies, and pending outputs. Do not perform a full proactive code review unless requested.',
           );
-          lines.push('');
         } else {
-          lines.push('No target code or thread/reply changes since the last review checkpoint.');
-          lines.push('');
-          lines.push('Focus on pending outputs, if any. Do not perform a full proactive code review unless requested.');
-          lines.push('');
+          guidance.push('No target code or thread/reply changes since the last review checkpoint.');
+          guidance.push(
+            'Focus on pending outputs, if any. Do not perform a full proactive code review unless requested.',
+          );
         }
+
+        checkpoint = {
+          hasCheckpoint: true,
+          createdAt: ps.checkpoint.createdAt,
+          headSha: ps.checkpoint.headSha,
+          currentTargetHeadSha: ps.current.targetHeadSha,
+          targetCodeChanged: ps.comparison.targetCodeChangedSinceCheckpoint ? 'yes' : 'no',
+          threadsChanged:
+            ps.comparison.threadsChangedSinceCheckpoint != null
+              ? ps.comparison.threadsChangedSinceCheckpoint
+                ? 'yes'
+                : 'no'
+              : 'unknown',
+          descriptionChanged:
+            ps.comparison.descriptionChangedSinceCheckpoint != null
+              ? ps.comparison.descriptionChangedSinceCheckpoint
+                ? 'yes'
+                : 'no'
+              : 'unknown',
+          localHeadSha: ps.current.localHeadSha,
+          guidance,
+        };
       } else {
-        lines.push('No previous revpack review checkpoint was found for this MR/PR.');
-        lines.push('');
-        lines.push('Treat this as a fresh review.');
-        lines.push('');
+        checkpoint = {
+          hasCheckpoint: false,
+          targetCodeChanged: 'unknown',
+          threadsChanged: 'unknown',
+          descriptionChanged: 'unknown',
+          guidance: [
+            'No previous revpack review checkpoint was found for this MR/PR.',
+            'Treat this as a fresh review.',
+          ],
+        };
       }
     }
 
-    // ─── Suggested Reading Order ──────────────────────────
-    const hasUnresolvedThreads = unresolvedThreads.length > 0;
-    const instructionRoute = buildInstructionRoute(ps, hasUnresolvedThreads);
-
-    lines.push('## Current Run Mode');
-    lines.push('');
-    lines.push('| Field | Value |');
-    lines.push('|---|---|');
-    lines.push(`| Mode | ${instructionRoute.modeLabel} |`);
-    lines.push(`| Primary work | ${instructionRoute.primaryWork} |`);
-    lines.push('');
-
-    lines.push('## Suggested Reading Order');
-    lines.push('');
-    lines.push('1. Read this context file.');
-    lines.push('2. Read `.revpack/AGENT_CONTRACT.md`.');
-    lines.push('3. Read the files listed in **Required Instructions for This Run**.');
-    lines.push('4. Read `REVIEW.md` in the repository root if present for project-specific review guidance.');
-    lines.push(
-      '5. Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
-    );
-    lines.push(
-      '6. Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
-    );
-    if (instructionRoute.proactiveReview && ps?.comparison.targetCodeChangedSinceCheckpoint) {
-      lines.push(
-        '7. Read `.revpack/diffs/incremental.patch` first to understand what changed since the last checkpoint, then use `.revpack/diffs/latest.patch` for full MR/PR context.',
-      );
-    } else if (instructionRoute.proactiveReview) {
-      lines.push('7. Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.');
-    }
-    if (instructionRoute.proactiveReview) {
-      lines.push('8. Use `.revpack/diffs/patches/by-file/` for focused review of individual changed files.');
-      lines.push(
-        '9. Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
-      );
-      lines.push(
-        '10. Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
-      );
-      lines.push('11. Inspect checked-out source files when needed to understand the new branch state.');
-      lines.push('12. Read existing `.revpack/outputs/summary.md`, if present, before updating it.');
-    }
-    lines.push('');
-
-    // ─── Required Instructions for This Run ───────────────
-    lines.push('## Required Instructions for This Run');
-    lines.push('');
-    lines.push('Read these instruction files in order:');
-    lines.push('');
-    instructionRoute.required.forEach((instructionPath, index) => {
-      lines.push(`${index + 1}. ${instructionPath}`);
-    });
-    if (instructionRoute.skipped.length > 0) {
-      lines.push('');
-      lines.push('Skipped this run:');
-      lines.push('');
-      for (const skipped of instructionRoute.skipped) {
-        lines.push(`- ${skipped.path} — ${skipped.reason}`);
-      }
-    }
-    lines.push('');
-
-    // ─── MR/PR Description ────────────────────────────────
-    lines.push('## MR/PR Description');
-    lines.push('');
-    lines.push('The raw MR/PR description is available at `.revpack/description.md`.');
-    lines.push('');
-    lines.push('Treat it as context only. Verify behavior against the diff and source code.');
-    lines.push('');
-
-    // ─── Bundle Contents ──────────────────────────────────
-    lines.push('## Bundle Contents');
-    lines.push('');
-    lines.push('| Path | Description |');
-    lines.push('|---|---|');
-    lines.push('| `.revpack/AGENT_CONTRACT.md` | Short mandatory review contract |');
-    lines.push('| `.revpack/INSTRUCTIONS.md` | Catalog of task-specific instruction files |');
-    lines.push('| `.revpack/instructions/` | Detailed task-specific instruction files |');
-    lines.push('| `.revpack/bundle.json` | Machine-readable bundle metadata and local state |');
-    lines.push('| `.revpack/description.md` | Raw MR/PR description |');
+    const instructionRoute = buildInstructionRoute(ps, unresolvedThreads.length > 0);
+    const readingOrder = this.buildContextReadingOrder(isIncrementalCodeReview, instructionRoute.proactiveReview);
     const threadFileCount = unresolvedThreads.length + generalComments.length;
-    if (threadFileCount > 0) {
-      lines.push(`| \`.revpack/threads/\` | ${threadFileCount} thread(s) — read the \`.md\` files |`);
-    }
-    lines.push('| `.revpack/diffs/latest.patch` | Canonical full unified diff for the whole MR/PR |');
-    lines.push('| `.revpack/diffs/patches/by-file/` | Canonical per-file unified diffs in standard patch format |');
-    lines.push(
-      '| `.revpack/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and diff artifact paths |',
+    const incrementalChangedFiles = isIncrementalCodeReview ? await incrementalFiles() : [];
+
+    const changedThreads = this.buildChangedThreadsForContext(
+      options?.changedThreadIds,
+      options?.allThreads ?? threads,
+      threadIndex,
+      isIncrementalCodeReview,
+      threadLocation,
+      cleanSnippet,
     );
-    lines.push('| `.revpack/diffs/line-map.ndjson` | Canonical per-line map for valid positional review anchors |');
-    lines.push(
-      '| `.revpack/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |',
-    );
-    if (ps?.comparison.targetCodeChangedSinceCheckpoint) {
-      lines.push('| `.revpack/diffs/incremental.patch` | Code changes since last review checkpoint |');
-    }
-    lines.push('| `.revpack/outputs/` | Agent output files |');
-    lines.push('');
 
-    // ─── Changed Files ────────────────────────────────────
-    lines.push('## Changed Files');
-    lines.push('');
-    lines.push('| File | Status |');
-    lines.push('|---|---|');
-    for (const d of diffs) {
-      const tag = d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
-      lines.push(`| \`${tableCell(d.newPath || d.oldPath)}\` | ${tag} |`);
-    }
-    lines.push('');
-
-    // ─── Changed Threads Since Checkpoint ────────────────
-    const changedThreadIds = options?.changedThreadIds;
-    if (changedThreadIds && changedThreadIds.size > 0) {
-      const changedThreads = (options?.allThreads ?? threads).filter((t) => changedThreadIds.has(t.threadId));
-      const changedUnresolved = changedThreads.filter((t) => !t.resolved);
-      const changedResolved = changedThreads.filter((t) => t.resolved);
-
-      if (changedUnresolved.length > 0 || changedResolved.length > 0) {
-        lines.push('## Changed Threads Since Last Checkpoint');
-        lines.push('');
-        lines.push('These threads have been updated since the last review checkpoint. Prioritize reviewing them.');
-        lines.push('');
-        lines.push('| Thread | Status | Location | Summary |');
-        lines.push('|---|---|---|---|');
-        for (const t of [...changedUnresolved, ...changedResolved]) {
-          const prefix = threadIndex.get(t.threadId) ?? '?';
-          const status = t.resolved ? 'resolved' : 'unresolved';
-          const file = threadLocation(t);
-          const firstComment = firstNonSystemComment(t);
-          const snippet = cleanSnippet(firstComment?.body ?? '', 80);
-          lines.push(`| ${prefix} | ${status} | ${file} | ${snippet} |`);
-        }
-        lines.push('');
-      }
-    }
-
-    // ─── Unresolved Threads ───────────────────────────────
-    if (unresolvedThreads.length > 0) {
-      lines.push('## Unresolved Threads');
-      lines.push('');
-      lines.push('| Thread | Flags | Author | Location | Summary |');
-      lines.push('|---|---|---|---|---|');
-      for (const t of unresolvedThreads) {
+    return {
+      target: {
+        typeLabel: targetTypeLabel,
+        kind: targetKind,
+        displayId: targetDisplayId,
+        title: tableCell(target.title),
+        repository: tableCell(target.repository),
+        author: isLocal ? tableCell(target.author) : `@${tableCell(target.author)}`,
+        sourceBranch: tableCell(target.sourceBranch),
+        targetBranch: tableCell(target.targetBranch),
+        state: tableCell(target.state),
+        webUrl: target.webUrl,
+      },
+      checkpoint,
+      runMode: {
+        modeLabel: instructionRoute.modeLabel,
+        primaryWork: instructionRoute.primaryWork,
+      },
+      incremental: isIncrementalCodeReview,
+      readingOrder,
+      requiredInstructions: instructionRoute.required,
+      skippedInstructions: instructionRoute.skipped,
+      threadFileCount,
+      hasThreadFiles: threadFileCount > 0,
+      changedFilesTitle: isIncrementalCodeReview ? 'Files Changed in Current MR/PR' : 'Changed Files',
+      changedFilesIntro: isIncrementalCodeReview
+        ? 'These files are part of the full MR/PR diff. Use them for context, anchoring, duplicate checks, and verification when needed.'
+        : undefined,
+      changedFiles: diffs.map((d) => ({ path: tableCell(d.newPath || d.oldPath), status: diffStatus(d) })),
+      incrementalChangedFiles: incrementalChangedFiles.map((f) => ({ path: tableCell(f.path), status: f.status })),
+      changedThreads,
+      unresolvedThreads: unresolvedThreads.map((t) => {
         const prefix = threadIndex.get(t.threadId) ?? '?';
-        const isSelf = selfThreadIds.has(t.threadId);
-        const isReplied = repliedThreadIds.has(t.threadId);
         const badges: string[] = [];
-        if (isSelf) badges.push('SELF');
-        if (isReplied) badges.push('REPLIED');
-        const flagStr = badges.length > 0 ? badges.join(', ') : '';
-
+        if (selfThreadIds.has(t.threadId)) badges.push('SELF');
+        if (repliedThreadIds.has(t.threadId)) badges.push('REPLIED');
         const firstComment = firstNonSystemComment(t);
-        const author = firstComment?.author ?? '?';
-        const file = threadLocation(t);
-        const snippet = cleanSnippet(firstComment?.body ?? '', 80);
-        lines.push(`| ${prefix} | ${flagStr} | @${tableCell(author)} | ${file} | ${snippet} |`);
-      }
-      lines.push('');
-    }
-
-    // ─── General Comments ─────────────────────────────────
-    if (generalComments.length > 0) {
-      lines.push('## General Comments');
-      lines.push('');
-      for (const t of generalComments) {
+        return {
+          shortId: prefix,
+          flags: badges.length > 0 ? badges.join(', ') : '',
+          author: tableCell(firstComment?.author ?? '?'),
+          location: threadLocation(t),
+          summary: cleanSnippet(firstComment?.body ?? '', 80),
+        };
+      }),
+      generalComments: generalComments.map((t) => {
         const prefix = threadIndex.get(t.threadId) ?? '?';
         const firstComment = firstNonSystemComment(t);
-        const snippet = cleanSnippet(firstComment?.body ?? '', 120);
-        lines.push(`- **${prefix}** (@${tableCell(firstComment?.author ?? '?')}): ${snippet}`);
-      }
-      lines.push('');
-    }
-
-    // ─── Previous Actions ─────────────────────────────────
-    if (options?.publishedActions && options.publishedActions.length > 0) {
-      lines.push('## Previous Actions');
-      lines.push('');
-      lines.push('These actions were published by `revpack` in prior iterations. Do not re-raise the same issues.');
-      lines.push('');
-      lines.push('| Action | Location | Severity | Category | Title |');
-      lines.push('|---|---|---|---|---|');
-      for (const a of options.publishedActions) {
-        const actionLabel = a.type === 'reply' ? 'Reply' : a.type === 'finding' ? 'Finding' : 'Resolve';
-        const loc = a.location
-          ? `\`${tableCell(a.location.newPath || a.location.oldPath || '')}\`:${a.location.newLine ?? a.location.oldLine ?? '?'}`
-          : tableCell(a.providerThreadId ?? '');
-        lines.push(
-          `| ${actionLabel} | ${loc} | ${tableCell(a.severity ?? '')} | ${tableCell(a.category ?? '')} | ${tableCell(a.title ?? '')} |`,
-        );
-      }
-      lines.push('');
-    }
-
-    const content = lines.join('\n');
-    const contextPath = path.join(this.baseDir, 'CONTEXT.md');
-    await fs.writeFile(contextPath, content, 'utf-8');
-
-    // Also write instruction files (INSTRUCTIONS.md, AGENT_CONTRACT.md, instructions/*.md)
-    await this.writeInstructions();
-
-    return contextPath;
+        return {
+          shortId: prefix,
+          author: tableCell(firstComment?.author ?? '?'),
+          summary: cleanSnippet(firstComment?.body ?? '', 120),
+        };
+      }),
+      previousActions:
+        options?.publishedActions?.map((a) => {
+          const actionLabel = a.type === 'reply' ? 'Reply' : a.type === 'finding' ? 'Finding' : 'Resolve';
+          const loc = a.location
+            ? `\`${tableCell(a.location.newPath || a.location.oldPath || '')}\`:${a.location.newLine ?? a.location.oldLine ?? '?'}`
+            : tableCell(a.providerThreadId ?? '');
+          return {
+            actionLabel,
+            location: loc,
+            severity: tableCell(a.severity ?? ''),
+            category: tableCell(a.category ?? ''),
+            title: tableCell(a.title ?? ''),
+          };
+        }) ?? [],
+    };
   }
 
+  private buildContextReadingOrder(isIncrementalCodeReview: boolean, proactiveReview: boolean): string[] {
+    if (isIncrementalCodeReview) {
+      return [
+        'Read this context file.',
+        'Read `.revpack/AGENT_CONTRACT.md`.',
+        'Read the files listed in **Required Instructions for This Run**.',
+        'Read `REVIEW.md` in the repository root if present.',
+        'Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.',
+        'Read relevant changed or unresolved thread files in `.revpack/threads/`.',
+        'Use `.revpack/diffs/latest.patch` only for full MR/PR context when needed.',
+        'Use `.revpack/diffs/files.json` and `.revpack/diffs/patches/by-file/` only to inspect files relevant to the incremental change, thread updates, or a concrete concern you are verifying.',
+        'Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
+        'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
+        'Inspect checked-out source files when needed to understand the new branch state.',
+        'Read existing `.revpack/outputs/summary.md`, if present, before updating it.',
+      ];
+    }
+
+    const order = [
+      'Read this context file.',
+      'Read `.revpack/AGENT_CONTRACT.md`.',
+      'Read the files listed in **Required Instructions for This Run**.',
+      'Read `REVIEW.md` in the repository root if present for project-specific review guidance.',
+      'Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
+      'Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
+    ];
+
+    if (proactiveReview) {
+      order.push(
+        'Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.',
+        'Use `.revpack/diffs/patches/by-file/` for focused review of individual changed files.',
+        'Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
+        'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
+        'Inspect checked-out source files when needed to understand the new branch state.',
+        'Read existing `.revpack/outputs/summary.md`, if present, before updating it.',
+      );
+    }
+
+    return order;
+  }
+
+  private buildChangedThreadsForContext(
+    changedThreadIds: Set<string> | undefined,
+    threads: ReviewThread[],
+    threadIndex: ThreadIndex,
+    isIncrementalCodeReview: boolean,
+    threadLocation: (thread: ReviewThread) => string,
+    cleanSnippet: (body: string, maxLen: number) => string,
+  ): ContextTemplateView['changedThreads'] {
+    if (!changedThreadIds || changedThreadIds.size === 0) return undefined;
+
+    const changedThreads = threads.filter((t) => changedThreadIds.has(t.threadId));
+    const rows = [...changedThreads.filter((t) => !t.resolved), ...changedThreads.filter((t) => t.resolved)].map(
+      (t) => {
+        const firstComment = firstNonSystemComment(t);
+        return {
+          shortId: threadIndex.get(t.threadId) ?? '?',
+          status: t.resolved ? 'resolved' : 'unresolved',
+          location: threadLocation(t),
+          summary: cleanSnippet(firstComment?.body ?? '', 80),
+        };
+      },
+    );
+
+    if (rows.length === 0) return undefined;
+
+    return {
+      title: isIncrementalCodeReview ? 'Thread Updates Since Last Checkpoint' : 'Changed Threads Since Last Checkpoint',
+      intro: isIncrementalCodeReview
+        ? 'These threads changed since the last checkpoint. Read them when they affect duplicate checks, scope, or verification.'
+        : 'These threads have been updated since the last review checkpoint. Prioritize reviewing them.',
+      rows,
+    };
+  }
+
+  private async renderContextTemplate(view: ContextTemplateView): Promise<string> {
+    const thisFile = fileURLToPath(import.meta.url);
+    const templatesDir = path.resolve(path.dirname(thisFile), '..', '..', 'templates');
+    const templateSource = await fs.readFile(path.join(templatesDir, 'CONTEXT.md.hbs'), 'utf-8');
+    const template = Handlebars.compile(templateSource, { noEscape: true });
+    return (
+      template(view, {
+        helpers: {
+          inc: (value: number) => value + 1,
+        },
+      }).trimEnd() + '\n'
+    );
+  }
   // ─── Diff bundle artifacts ──────────────────────────────
 
   /**

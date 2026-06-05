@@ -22,14 +22,15 @@ You are reviewing an MR/PR using a prepared `.revpack/` workspace.
 10. Use `.revpack/diffs/line-map.ndjson` as the source of truth for positional anchors.
 11. Do not derive old or new line numbers from the checked-out workspace or by manually counting patch lines.
 12. Create new findings only for concrete, actionable issues introduced, exposed, or made worse by the MR/PR.
-13. Do not duplicate existing unresolved threads, previous actions, or other new findings.
-14. Put concrete line-level issues in `new-findings.json`, not in `review.md`.
-15. Put useful replies to existing threads in `replies.json`; otherwise omit the thread.
-16. Resolve only threads created by revpack itself (`SELF` threads).
-17. `summary.md` describes what the MR/PR changes, not what the reviewer found.
-18. `review.md` is optional MR/PR-level synthesis, not a second findings file or review report.
-19. Do not reference internal bundle files such as `.revpack/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `line-map.ndjson` in public output.
-20. If you accidentally modify files outside `.revpack/outputs/`, stop and report it in your final response. Do not attempt broad cleanup commands.
+13. In incremental mode, focus review effort on the checkpoint delta, but do not discard a valid, non-duplicate issue introduced, exposed, or made worse by the current MR/PR merely because it is outside the checkpoint delta.
+14. Do not duplicate existing unresolved threads, previous actions, or other new findings.
+15. Put concrete line-level issues in `new-findings.json`, not in `review.md`.
+16. Put useful replies to existing threads in `replies.json`; otherwise omit the thread.
+17. Resolve only threads created by revpack itself (`SELF` threads).
+18. `summary.md` describes what the MR/PR changes, not what the reviewer found.
+19. `review.md` is optional MR/PR-level synthesis, not a second findings file or review report.
+20. Do not reference internal bundle files such as `.revpack/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `line-map.ndjson` in public output.
+21. If you accidentally modify files outside `.revpack/outputs/`, stop and report it in your final response. Do not attempt broad cleanup commands.
 
 ## Required instruction files
 

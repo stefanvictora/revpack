@@ -25,6 +25,14 @@ When reviewing a changed line, also inspect the surrounding method, class, or ca
 
 Create positional findings only on lines listed in `line-map.ndjson`.
 
+## Incremental review scope
+
+In incremental code review, the checkpoint delta is the primary review focus, not the boundary for valid findings.
+
+Report a concrete issue outside the checkpoint delta when it is introduced, exposed, or made worse by the current MR/PR, is not already covered by an unresolved thread, Previous Action, or another finding, and can be anchored to a valid current MR/PR diff position.
+
+Do not remove a valid finding solely because it is outside the checkpoint delta. A previous review pass that missed the issue is not duplicate coverage.
+
 ## Diff navigation
 
 The workspace contains only the new branch state. Deleted lines do not exist in checked-out files.
