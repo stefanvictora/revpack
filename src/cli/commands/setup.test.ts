@@ -107,6 +107,14 @@ describe('runSetup', () => {
     );
   });
 
+  it('throws when AGENTS.md has a lone end marker', async () => {
+    await fs.writeFile(path.join(cwd, 'AGENTS.md'), '<!-- revpack:end -->\n', 'utf-8');
+
+    await expect(runSetupAgent({ cwd, target: 'codex' })).rejects.toThrow(
+      'AGENTS.md contains a partial revpack block.',
+    );
+  });
+
   async function fileExists(relativePath: string): Promise<boolean> {
     try {
       await fs.access(path.join(cwd, relativePath));

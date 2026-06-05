@@ -169,7 +169,7 @@ async function installCodexBlock(cwd: string, templatesDir: string, dryRun = fal
 
   const content = normalizeLineEndings(await fs.readFile(targetPath, 'utf-8'));
   const begin = content.indexOf(CODEX_BEGIN_MARKER);
-  const end = begin === -1 ? -1 : content.indexOf(CODEX_END_MARKER, begin + CODEX_BEGIN_MARKER.length);
+  const end = content.indexOf(CODEX_END_MARKER, begin === -1 ? 0 : begin + CODEX_BEGIN_MARKER.length);
 
   if (begin === -1 && end === -1) {
     const nextContent = ensureTrailingNewline(`${content.trimEnd()}\n\n${block.trimEnd()}`);
