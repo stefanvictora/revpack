@@ -95,6 +95,12 @@ describe('runSetup', () => {
     await expect(fileExists(path.join('.claude', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(false);
   });
 
+  it('throws when AGENTS.md has a lone begin marker', async () => {
+    await fs.writeFile(path.join(cwd, 'AGENTS.md'), '# Team instructions\n\n<!-- revpack:begin -->\nno end marker here\n', 'utf-8');
+
+    await expect(runSetupAgent({ cwd, target: 'codex' })).rejects.toThrow('AGENTS.md contains a partial revpack block.');
+  });
+
   async function fileExists(relativePath: string): Promise<boolean> {
     try {
       await fs.access(path.join(cwd, relativePath));
