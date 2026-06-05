@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseCheckpointMarker,
   buildCheckpointState,
   encodeCheckpointState,
-  buildReviewNoteBody,
-  updateReviewNoteBody,
   parseDescriptionState,
   buildDescriptionStateBlock,
   patchDescriptionWithState,
@@ -24,114 +21,6 @@ const targetRef: ReviewTargetRef = {
   targetType: 'merge_request',
   targetId: '902',
 };
-
-describe('checkpoint parser', () => {
-  it('parses existing managed note with valid base64url checkpoint marker', () => {
-    const state = buildCheckpointState(
-      targetRef,
-      'c304af19156d686a02f6e80be15b8fe6c445c00b',
-      '65bd426b0bc8bbf8ff9f3923a2689115233a98e1',
-      '65bd426b0bc8bbf8ff9f3923a2689115233a98e1',
-      'sha256:abc123',
-      '91295',
-    );
-    const noteBody = buildReviewNoteBody('Some review notes here.', state);
-
-    const result = parseCheckpointMarker(noteBody);
-
-    expect(result).not.toBeNull();
-    expect(result!.state.checkpoint.headSha).toBe('c304af19156d686a02f6e80be15b8fe6c445c00b');
-    expect(result!.state.checkpoint.baseSha).toBe('65bd426b0bc8bbf8ff9f3923a2689115233a98e1');
-    expect(result!.state.checkpoint.threadsDigest).toBe('sha256:abc123');
-    expect(result!.state.checkpoint.providerVersionId).toBe('91295');
-    expect(result!.state.target.provider).toBe('gitlab');
-    expect(result!.state.target.repository).toBe('edm/zareg/edmreg');
-    expect(result!.visibleContent).toContain('Some review notes here.');
-  });
-
-  it('parses raw JSON inside HTML comment', () => {
-    const state = {
-      schemaVersion: 1,
-      tool: { name: 'revpack', version: '0.2.0' },
-      target: { provider: 'gitlab', repository: 'group/proj', type: 'merge_request', id: '42' },
-      checkpoint: {
-        createdAt: '2026-04-27T12:00:00Z',
-        headSha: 'abc123',
-        baseSha: 'def456',
-        startSha: 'def456',
-        threadsDigest: null,
-      },
-    };
-    const noteBody = `${REVIEW_NOTE_MARKER}
-Visible content here
-
-${CHECKPOINT_MARKER_START}
-${JSON.stringify(state)}
-${CHECKPOINT_MARKER_END}`;
-
-    const result = parseCheckpointMarker(noteBody);
-
-    expect(result).not.toBeNull();
-    expect(result!.state.checkpoint.headSha).toBe('abc123');
-    expect(result!.state.checkpoint.threadDigests).toEqual({});
-    expect(result!.visibleContent).toContain('Visible content here');
-  });
-
-  it('handles missing checkpoint marker as null', () => {
-    const noteBody = `${REVIEW_NOTE_MARKER}
-Just some review notes without a checkpoint.
-`;
-
-    const result = parseCheckpointMarker(noteBody);
-    expect(result).toBeNull();
-  });
-
-  it('handles malformed base64url marker gracefully', () => {
-    const noteBody = `${REVIEW_NOTE_MARKER}
-Notes
-
-${CHECKPOINT_MARKER_START}
-not-valid-base64-and-not-valid-json!!!
-${CHECKPOINT_MARKER_END}`;
-
-    const result = parseCheckpointMarker(noteBody);
-    expect(result).toBeNull();
-  });
-
-  it('handles empty marker content as null', () => {
-    const noteBody = `${CHECKPOINT_MARKER_START}
-${CHECKPOINT_MARKER_END}`;
-
-    const result = parseCheckpointMarker(noteBody);
-    expect(result).toBeNull();
-  });
-
-  it('ignores unrelated HTML comments', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const noteBody = `<!-- some-other-tool: data -->
-${REVIEW_NOTE_MARKER}
-Notes
-
-<!-- unrelated comment -->
-
-${CHECKPOINT_MARKER_START}
-${encodeCheckpointState(state)}
-${CHECKPOINT_MARKER_END}`;
-
-    const result = parseCheckpointMarker(noteBody);
-    expect(result).not.toBeNull();
-    expect(result!.state.checkpoint.headSha).toBe('abc');
-  });
-
-  it('handles marker with missing required fields as null', () => {
-    const noteBody = `${CHECKPOINT_MARKER_START}
-${Buffer.from(JSON.stringify({ schemaVersion: 1, tool: { name: 'revpack' } })).toString('base64url')}
-${CHECKPOINT_MARKER_END}`;
-
-    const result = parseCheckpointMarker(noteBody);
-    expect(result).toBeNull();
-  });
-});
 
 describe('checkpoint serializer', () => {
   it('builds checkpoint state with all fields', () => {
@@ -165,62 +54,6 @@ describe('checkpoint serializer', () => {
 
     expect(decoded.checkpoint.headSha).toBe('abc');
     expect(decoded.checkpoint.threadsDigest).toBe('sha256:test');
-  });
-});
-
-describe('buildReviewNoteBody', () => {
-  it('builds note with visible content and hidden marker', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('## Review Notes\n\nLooks good.', state);
-
-    expect(body).toContain(REVIEW_NOTE_MARKER);
-    expect(body).toContain('## Review Notes');
-    expect(body).toContain('Looks good.');
-    expect(body).toContain(CHECKPOINT_MARKER_START);
-    expect(body).toContain(CHECKPOINT_MARKER_END);
-
-    // Roundtrip parse
-    const parsed = parseCheckpointMarker(body);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.state.checkpoint.headSha).toBe('abc');
-    expect(parsed!.visibleContent).toContain('Looks good.');
-  });
-
-  it('handles empty visible content', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('', state);
-
-    expect(body).toContain(REVIEW_NOTE_MARKER);
-    expect(body).toContain(CHECKPOINT_MARKER_START);
-  });
-});
-
-describe('updateReviewNoteBody', () => {
-  it('preserves existing visible content when newVisibleContent is empty', () => {
-    const oldState = buildCheckpointState(targetRef, 'old-head', 'def', 'def', null);
-    const existingBody = buildReviewNoteBody('Existing review text.', oldState);
-
-    const newState = buildCheckpointState(targetRef, 'new-head', 'def', 'def', 'sha256:new');
-    const updatedBody = updateReviewNoteBody(existingBody, newState, '');
-
-    const parsed = parseCheckpointMarker(updatedBody);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.state.checkpoint.headSha).toBe('new-head');
-    expect(parsed!.visibleContent).toContain('Existing review text.');
-  });
-
-  it('replaces visible content when newVisibleContent is provided', () => {
-    const oldState = buildCheckpointState(targetRef, 'old-head', 'def', 'def', null);
-    const existingBody = buildReviewNoteBody('Old text.', oldState);
-
-    const newState = buildCheckpointState(targetRef, 'new-head', 'def', 'def', null);
-    const updatedBody = updateReviewNoteBody(existingBody, newState, 'New visible text.');
-
-    const parsed = parseCheckpointMarker(updatedBody);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.state.checkpoint.headSha).toBe('new-head');
-    expect(parsed!.visibleContent).toContain('New visible text.');
-    expect(parsed!.visibleContent).not.toContain('Old text.');
   });
 });
 
@@ -467,87 +300,6 @@ describe('stripReviewNoteFooter', () => {
   });
 });
 
-// ─── Additional parseCheckpointMarker edge cases ─────────
-
-describe('parseCheckpointMarker edge cases', () => {
-  it('returns null when marker start exists but no end marker follows', () => {
-    const noteBody = `${CHECKPOINT_MARKER_START}\nsome data but no closing marker`;
-    expect(parseCheckpointMarker(noteBody)).toBeNull();
-  });
-
-  it('returns null when decoded JSON is a non-object value (number)', () => {
-    const encoded = Buffer.from('42').toString('base64url');
-    const noteBody = `${CHECKPOINT_MARKER_START}\n${encoded}\n${CHECKPOINT_MARKER_END}`;
-    expect(parseCheckpointMarker(noteBody)).toBeNull();
-  });
-
-  it('returns null when decoded JSON is a string', () => {
-    const encoded = Buffer.from('"hello"').toString('base64url');
-    const noteBody = `${CHECKPOINT_MARKER_START}\n${encoded}\n${CHECKPOINT_MARKER_END}`;
-    expect(parseCheckpointMarker(noteBody)).toBeNull();
-  });
-
-  it('returns null when decoded JSON is null', () => {
-    const encoded = Buffer.from('null').toString('base64url');
-    const noteBody = `${CHECKPOINT_MARKER_START}\n${encoded}\n${CHECKPOINT_MARKER_END}`;
-    expect(parseCheckpointMarker(noteBody)).toBeNull();
-  });
-
-  it('returns null when checkpoint field is missing', () => {
-    const obj = { schemaVersion: 1, tool: { name: 'revpack', version: '0.2.0' }, target: {} };
-    const encoded = Buffer.from(JSON.stringify(obj)).toString('base64url');
-    const noteBody = `${CHECKPOINT_MARKER_START}\n${encoded}\n${CHECKPOINT_MARKER_END}`;
-    expect(parseCheckpointMarker(noteBody)).toBeNull();
-  });
-
-  it('returns null when headSha is not a string', () => {
-    const obj = {
-      schemaVersion: 1,
-      tool: { name: 'revpack', version: '0.2.0' },
-      target: {},
-      checkpoint: { headSha: 123, baseSha: 'def', startSha: 'def', threadsDigest: null, createdAt: '2025-01-01' },
-    };
-    const encoded = Buffer.from(JSON.stringify(obj)).toString('base64url');
-    const noteBody = `${CHECKPOINT_MARKER_START}\n${encoded}\n${CHECKPOINT_MARKER_END}`;
-    expect(parseCheckpointMarker(noteBody)).toBeNull();
-  });
-
-  it('handles encoded content with surrounding whitespace', () => {
-    const state = buildCheckpointState(targetRef, 'head1', 'base1', 'base1', null);
-    const encoded = encodeCheckpointState(state);
-    const noteBody = `${CHECKPOINT_MARKER_START}\n   ${encoded}   \n${CHECKPOINT_MARKER_END}`;
-    const result = parseCheckpointMarker(noteBody);
-    expect(result).not.toBeNull();
-    expect(result!.state.checkpoint.headSha).toBe('head1');
-  });
-
-  it('correctly strips the marker block from visible content', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const encoded = encodeCheckpointState(state);
-    const noteBody = `${REVIEW_NOTE_MARKER}\nBefore marker\n${CHECKPOINT_MARKER_START}\n${encoded}\n${CHECKPOINT_MARKER_END}\nAfter marker`;
-    const result = parseCheckpointMarker(noteBody);
-    expect(result).not.toBeNull();
-    expect(result!.visibleContent).toContain('Before marker');
-    // The visible content should not contain marker delimiters
-    expect(result!.visibleContent).not.toContain(CHECKPOINT_MARKER_START);
-    expect(result!.visibleContent).not.toContain('<!-- revpack:review-note -->');
-  });
-
-  it('initializes threadDigests to empty object when missing', () => {
-    const obj = {
-      schemaVersion: 1,
-      tool: { name: 'revpack', version: '0.2.0' },
-      target: { provider: 'github', repository: 'org/repo', type: 'pull_request', id: '1' },
-      checkpoint: { headSha: 'abc', baseSha: 'def', startSha: 'def', threadsDigest: null, createdAt: '2025-01-01' },
-    };
-    const encoded = Buffer.from(JSON.stringify(obj)).toString('base64url');
-    const noteBody = `${CHECKPOINT_MARKER_START}\n${encoded}\n${CHECKPOINT_MARKER_END}`;
-    const result = parseCheckpointMarker(noteBody);
-    expect(result).not.toBeNull();
-    expect(result!.state.checkpoint.threadDigests).toEqual({});
-  });
-});
-
 // ─── Additional buildCheckpointState assertions ──────────
 
 describe('buildCheckpointState defaults', () => {
@@ -570,94 +322,6 @@ describe('buildCheckpointState defaults', () => {
   it('sets descriptionDigest to null when explicitly passed undefined', () => {
     const state = buildCheckpointState(targetRef, 'head', 'base', 'start', null, undefined, undefined);
     expect(state.checkpoint.descriptionDigest).toBeNull();
-  });
-});
-
-// ─── Additional buildReviewNoteBody structure tests ──────
-
-describe('buildReviewNoteBody structure', () => {
-  it('starts with the review note marker', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('Content here.', state);
-    expect(body.startsWith(REVIEW_NOTE_MARKER)).toBe(true);
-  });
-
-  it('includes the footer when visible content is non-empty', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('Content here.', state);
-    expect(body).toContain(REVIEW_NOTE_FOOTER);
-  });
-
-  it('does not include the footer when visible content is empty', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('', state);
-    expect(body).not.toContain(REVIEW_NOTE_FOOTER);
-    expect(body).not.toContain('<sub>');
-  });
-
-  it('does not include the footer when visible content is whitespace-only', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('   \n  ', state);
-    expect(body).not.toContain(REVIEW_NOTE_FOOTER);
-  });
-
-  it('trims visible content before inserting', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('  Content with spaces  ', state);
-    expect(body).toContain('Content with spaces');
-    expect(body).not.toContain('  Content with spaces  ');
-  });
-
-  it('ends with the checkpoint end marker', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('Content.', state);
-    expect(body.endsWith(CHECKPOINT_MARKER_END)).toBe(true);
-  });
-
-  it('contains properly formatted state block', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('Content.', state);
-    // The encoded data should be between the marker start and end
-    const startIdx = body.indexOf(CHECKPOINT_MARKER_START);
-    const endIdx = body.indexOf(CHECKPOINT_MARKER_END, startIdx + CHECKPOINT_MARKER_START.length);
-    expect(startIdx).toBeGreaterThan(-1);
-    expect(endIdx).toBeGreaterThan(startIdx);
-    const encodedSection = body.slice(startIdx + CHECKPOINT_MARKER_START.length, endIdx).trim();
-    expect(encodedSection.length).toBeGreaterThan(0);
-  });
-});
-
-// ─── Additional updateReviewNoteBody tests ───────────────
-
-describe('updateReviewNoteBody edge cases', () => {
-  it('uses empty string when existingBody has no checkpoint and newVisibleContent is undefined', () => {
-    const newState = buildCheckpointState(targetRef, 'new-head', 'base', 'start', null);
-    const result = updateReviewNoteBody('just some body with no marker', newState, undefined);
-    const parsed = parseCheckpointMarker(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.state.checkpoint.headSha).toBe('new-head');
-    // With no existing checkpoint and undefined new content, visible content should be empty
-    expect(parsed!.visibleContent).toBe('');
-  });
-
-  it('uses newVisibleContent when it is provided and non-empty', () => {
-    const oldState = buildCheckpointState(targetRef, 'old', 'base', 'start', null);
-    const existing = buildReviewNoteBody('Old text.', oldState);
-    const newState = buildCheckpointState(targetRef, 'new', 'base', 'start', null);
-    const result = updateReviewNoteBody(existing, newState, '  New content  ');
-    const parsed = parseCheckpointMarker(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.visibleContent).toContain('New content');
-    expect(parsed!.visibleContent).not.toContain('Old text.');
-  });
-
-  it('preserves existing visible content when newVisibleContent is whitespace-only', () => {
-    const oldState = buildCheckpointState(targetRef, 'old', 'base', 'start', null);
-    const existing = buildReviewNoteBody('Preserved.', oldState);
-    const newState = buildCheckpointState(targetRef, 'new', 'base', 'start', null);
-    const result = updateReviewNoteBody(existing, newState, '   ');
-    const parsed = parseCheckpointMarker(result);
-    expect(parsed!.visibleContent).toContain('Preserved.');
   });
 });
 
@@ -806,58 +470,11 @@ describe('sanitizeDescriptionForAgent advanced', () => {
   });
 });
 
-// ─── Additional buildReviewNoteBody structure assertions ─
-
-describe('buildReviewNoteBody structure details', () => {
-  it('places encoded data on its own line between marker start and end', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('Content.', state);
-    const lines = body.split('\n');
-    const startLineIdx = lines.findIndex((l) => l.includes(CHECKPOINT_MARKER_START));
-    const endLineIdx = lines.findIndex((l) => l === CHECKPOINT_MARKER_END);
-    // Encoded data should be on the line(s) between start and end markers
-    expect(endLineIdx).toBe(startLineIdx + 2);
-    const encodedLine = lines[startLineIdx + 1];
-    expect(encodedLine.length).toBeGreaterThan(0);
-  });
-
-  it('uses newline as join separator between parts', () => {
-    const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
-    const body = buildReviewNoteBody('Content.', state);
-    // The marker start and content should be on separate lines
-    expect(body).toContain('\n' + CHECKPOINT_MARKER_START);
-    expect(body).toContain('Content.\n');
-  });
-});
-
 // ─── buildCheckpointState version assertion ──────────────
 
 describe('buildCheckpointState tool info', () => {
   it('sets tool version to 0.2.0', () => {
     const state = buildCheckpointState(targetRef, 'head', 'base', 'start', null);
     expect(state.tool.version).toBe('0.2.0');
-  });
-});
-
-// ─── updateReviewNoteBody trim behavior ──────────────────
-
-describe('updateReviewNoteBody trim behavior', () => {
-  it('trims whitespace from newVisibleContent', () => {
-    const oldState = buildCheckpointState(targetRef, 'old', 'base', 'start', null);
-    const existing = buildReviewNoteBody('Old.', oldState);
-    const newState = buildCheckpointState(targetRef, 'new', 'base', 'start', null);
-    const result = updateReviewNoteBody(existing, newState, '  Trimmed  ');
-    // The visible content in the built body should be trimmed
-    expect(result).toContain('Trimmed');
-    expect(result).not.toMatch(/ {2}Trimmed {2}/);
-  });
-
-  it('falls back to existing content when newVisibleContent is only whitespace', () => {
-    const oldState = buildCheckpointState(targetRef, 'old', 'base', 'start', null);
-    const existing = buildReviewNoteBody('Keep me.', oldState);
-    const newState = buildCheckpointState(targetRef, 'new', 'base', 'start', null);
-    // Whitespace-only newVisibleContent should be treated as empty → use existing
-    const result = updateReviewNoteBody(existing, newState, '  \t  ');
-    expect(result).toContain('Keep me.');
   });
 });
