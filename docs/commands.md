@@ -90,9 +90,24 @@ Creates project-level files that help agents review consistently.
 
 ```bash
 revpack setup
+revpack setup agent claude
+revpack setup agent codex
+revpack setup agent cursor
+revpack setup agent copilot
 revpack setup --prompts
 revpack setup --dry-run
 ```
+
+`revpack setup` creates `REVIEW.md`. `revpack setup agent <target>` installs one agent harness adapter and does not create `REVIEW.md`.
+
+`--prompts` is kept as a deprecated compatibility flag. It creates `REVIEW.md` and installs the Copilot `/revpack-review` prompt.
+
+Generated harness files:
+
+- `agent claude`: `.claude/skills/revpack-review/SKILL.md`
+- `agent codex`: managed revpack block in `AGENTS.md`
+- `agent copilot`: `.github/prompts/revpack-review.prompt.md`
+- `agent cursor`: `.cursor/rules/revpack-review.mdc`
 
 ## `config`
 

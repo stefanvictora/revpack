@@ -1,0 +1,10 @@
+---
+description: Review a prepared PR/MR workspace with revpack
+alwaysApply: false
+---
+
+# Revpack Review
+
+When asked to review with revpack, use the prepared `.revpack/` bundle as the source of truth.
+
+{{revpack-review-instructions}}

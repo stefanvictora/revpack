@@ -16,7 +16,7 @@ export function registerCheckoutCommand(program: Command): void {
     )
     .summary('Check out the PR/MR source branch locally')
     .option('--prepare', 'Also run `prepare` after checkout')
-    .option('--setup', 'Also run `setup --prompts` after checkout (implies --prepare)')
+    .option('--setup', 'Also run `setup` after checkout (implies --prepare)')
     .option('--repo <repo>', 'Repository slug (group/project)')
     .option('--profile <name>', 'Profile to use (overrides auto-detection)')
     .action(async (ref: string, opts: { prepare?: boolean; setup?: boolean; repo?: string; profile?: string }) => {
@@ -65,12 +65,12 @@ export function registerCheckoutCommand(program: Command): void {
           console.log(`  ${chalk.dim('Context:')}  ${prepareResult.contextPath}`);
           console.log('');
 
-          // Run setup --prompts if --setup was requested
+          // Run setup if --setup was requested
           if (opts.setup) {
             const setupCwd = clonedTo ?? process.cwd();
             console.log(chalk.dim('Running setup...'));
             console.log('');
-            await runSetup({ cwd: setupCwd, prompts: true });
+            await runSetup({ cwd: setupCwd });
             console.log('');
           }
 
