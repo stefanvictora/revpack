@@ -442,6 +442,7 @@ export class GitHubProvider implements ReviewProvider {
       threadId: thread.id,
       resolved: thread.isResolved,
       resolvable: true,
+      outdated: thread.isOutdated,
       resolvedBy: undefined,
       resolvedAt: undefined,
       position: this.mapThreadPosition(thread),

@@ -316,6 +316,7 @@ describe('GitHubProvider GraphQL review threads', () => {
 
     const threads = await provider.listAllThreads(ref);
 
+    expect(queries[0]).toContain('isOutdated');
     expect(queries[0]).toContain('author { __typename login }');
     expect(calls).toEqual([
       { owner: 'octo', name: 'repo', number: 42, after: null },
@@ -328,6 +329,7 @@ describe('GitHubProvider GraphQL review threads', () => {
         threadId: 'thread-1',
         resolved: false,
         resolvable: true,
+        outdated: false,
         resolvedBy: undefined,
         resolvedAt: undefined,
         position: {
@@ -364,6 +366,7 @@ describe('GitHubProvider GraphQL review threads', () => {
         threadId: 'thread-2',
         resolved: true,
         resolvable: true,
+        outdated: false,
         resolvedBy: undefined,
         resolvedAt: undefined,
         position: {

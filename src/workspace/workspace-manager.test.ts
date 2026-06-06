@@ -2196,6 +2196,20 @@ describe('WorkspaceManager', () => {
       expect(md).toContain('- **Resolvable**: true');
     });
 
+    it('renders GitHub outdated status and warning when present', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        provider: 'github',
+        outdated: true,
+        position: undefined,
+      };
+      await createBundle(manager, makeTarget(), [thread], []);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('- **Outdated**: true');
+      expect(md).toContain('GitHub marks this thread as outdated');
+    });
+
     it('renders file path and line number from position', async () => {
       const thread: ReviewThread = {
         ...makeThread(),
