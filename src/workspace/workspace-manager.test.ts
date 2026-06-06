@@ -3311,7 +3311,7 @@ describe('WorkspaceManager', () => {
       expect(files[0]).not.toContain(']');
     });
 
-    it('uses fileId when filename has no basename after extension removal', async () => {
+    it('matches files.json naming when filename has no basename after extension removal', async () => {
       const diff: ReviewDiff = {
         oldPath: 'src/.gitignore',
         newPath: 'src/.gitignore',
@@ -3323,8 +3323,8 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), [], [diff]);
       const patchDir = path.join(tmpDir, '.revpack', 'diffs', 'patches', 'by-file');
       const files = await fs.readdir(patchDir);
-      // .gitignore → pop() = '.gitignore', replace(/\.[^.]+$/, '') = '' → falls back to fileId
-      expect(files[0]).toMatch(/^F001-.+\.patch$/);
+      // .gitignore -> pop() = '.gitignore', replace(/\.[^.]+$/, '') = ''
+      expect(files[0]).toBe('F001-.patch');
     });
 
     it('strips only the final extension from multi-dot filenames', async () => {

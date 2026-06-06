@@ -212,7 +212,7 @@ ${buildDescriptionStateBlock(state)}`;
     expect(sanitized).not.toContain('<!-- revpack:end -->');
   });
 
-  it('collapses excessive trailing newlines to a single newline', () => {
+  it('removes all trailing whitespace after stripping state block', () => {
     const state = buildCheckpointState(targetRef, 'abc', 'def', 'def', null);
     const description = `# My MR\n\n\n\n\n${buildDescriptionStateBlock(state)}`;
 

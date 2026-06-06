@@ -695,9 +695,8 @@ describe('GitHubProvider.resolveTarget regex anchoring', () => {
     );
   });
 
-  it('rejects http:// URLs (only https is supported)', () => {
-    // The regex uses https? but this tests that changing it to just 'https' still works
-    // Actually: http URLs ARE supported by the regex — this verifies they parse correctly
+  it('accepts http:// URLs (parses same as https)', () => {
+    // http URLs are supported by the regex and should parse correctly.
     expect(provider.resolveTarget('http://github.example.com/octo/repo/pull/42')).toEqual({
       ...ref,
       repository: 'octo/repo',
@@ -823,6 +822,7 @@ describe('GitHubProvider TLS dispatcher', () => {
       await provider.getTargetSnapshot(ref);
     } finally {
       fs.unlinkSync(caPath);
+      fs.rmdirSync(dir);
     }
   });
 

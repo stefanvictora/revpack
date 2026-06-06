@@ -1147,7 +1147,7 @@ export class WorkspaceManager {
         file.newPath
           .split('/')
           .pop()
-          ?.replace(/\.[^.]+$/, '') || file.fileId;
+          ?.replace(/\.[^.]+$/, '') ?? file.fileId;
       const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
       const fileName = `${file.fileId}-${safeName}.patch`;
       const content = patchSections[idx] ?? '';
