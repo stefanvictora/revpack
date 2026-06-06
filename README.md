@@ -329,7 +329,6 @@ revpack publish replies T-001
 
 > [!IMPORTANT]
 > When publishing outputs one by one, publish `checkpoint` last. It records the reviewed PR/MR state used for future incremental runs.
->
 > Publishing refreshes the bundle by default but preserves other pending outputs.
 
 ## Common workflows
@@ -367,17 +366,17 @@ revpack clean
 Use `checkout` when you want `revpack` to fetch the review branch for you:
 
 ```bash
-revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42 --prepare
+revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42
 ```
 
 Provider references work too:
 
 ```bash
-revpack checkout !42 --repo group/project --profile myGitlab --prepare
-revpack checkout 58 --repo user/project --profile myGithub --prepare
+revpack checkout !42 --repo group/project --profile myGitlab
+revpack checkout 58 --repo user/project --profile myGithub
 ```
 
-Inside an existing git repository, `checkout` fetches and switches to the source branch. Outside a git repository, it creates a shallow clone in a new directory.
+Inside an existing git repository, `checkout` fetches and switches to the source branch. Outside a git repository, it creates a shallow clone in a new directory. In both cases, it prepares the `.revpack/` bundle after checkout.
 
 ## Reference
 

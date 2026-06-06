@@ -16,8 +16,8 @@ export function registerCheckoutCommand(program: Command): void {
       ].join('\n'),
     )
     .summary('Check out the PR/MR source branch locally')
-    .option('--prepare', 'Also run `prepare` after checkout')
-    .option('--setup', 'Also run `setup` after checkout (implies --prepare)')
+    .option('--prepare', 'Deprecated: checkout prepares by default')
+    .option('--setup', 'Also run `setup` after checkout and prepare')
     .option('--repo <repo>', 'Repository slug (group/project)')
     .option('--profile <name>', 'Profile to use (overrides auto-detection)')
     .action(async (ref: string, opts: { prepare?: boolean; setup?: boolean; repo?: string; profile?: string }) => {
@@ -49,43 +49,34 @@ export function registerCheckoutCommand(program: Command): void {
           console.log('');
         }
 
-        // Auto-prepare if --prepare (or --setup, which implies prepare)
-        if (opts.prepare || opts.setup) {
-          console.log(chalk.dim('Running prepare...'));
+        console.log(chalk.dim('Running prepare...'));
+        console.log('');
+
+        const prepareResult = await orchestrator.prepare(ref, defaultRepo, {
+          fresh: true,
+          onProgress: createPrepareFetchLogger(),
+        });
+        const { bundle } = prepareResult;
+
+        console.log(chalk.green('✓ Bundle prepared'));
+        console.log(`  ${chalk.dim('Threads:')}  ${bundle.threads.length} unresolved`);
+        console.log(`  ${chalk.dim('Files:')}    ${bundle.diffs.length} changed`);
+        console.log(`  ${chalk.dim('Context:')}  ${prepareResult.contextPath}`);
+        console.log('');
+
+        // Run setup if --setup was requested
+        if (opts.setup) {
+          const setupCwd = clonedTo ?? process.cwd();
+          console.log(chalk.dim('Running setup...'));
           console.log('');
-
-          const prepareResult = await orchestrator.prepare(ref, defaultRepo, {
-            fresh: true,
-            onProgress: createPrepareFetchLogger(),
-          });
-          const { bundle } = prepareResult;
-
-          console.log(chalk.green('✓ Bundle prepared'));
-          console.log(`  ${chalk.dim('Threads:')}  ${bundle.threads.length} unresolved`);
-          console.log(`  ${chalk.dim('Files:')}    ${bundle.diffs.length} changed`);
-          console.log(`  ${chalk.dim('Context:')}  ${prepareResult.contextPath}`);
+          await runSetup({ cwd: setupCwd });
           console.log('');
+        }
 
-          // Run setup if --setup was requested
-          if (opts.setup) {
-            const setupCwd = clonedTo ?? process.cwd();
-            console.log(chalk.dim('Running setup...'));
-            console.log('');
-            await runSetup({ cwd: setupCwd });
-            console.log('');
-          }
-
-          console.log(formatGuidanceLine('Next:'));
-          console.log(formatGuidanceLine('  Open .revpack/CONTEXT.md and point your agent at it'));
-          if (clonedTo) {
-            console.log(formatGuidanceLine(`  cd ${clonedTo}`));
-          }
-        } else {
-          console.log(formatGuidanceLine('Next:'));
-          console.log(formatGuidanceLine('  revpack prepare'));
-          if (clonedTo) {
-            console.log(formatGuidanceLine(`  cd ${clonedTo}`));
-          }
+        console.log(formatGuidanceLine('Next:'));
+        console.log(formatGuidanceLine('  Open .revpack/CONTEXT.md and point your agent at it'));
+        if (clonedTo) {
+          console.log(formatGuidanceLine(`  cd ${clonedTo}`));
         }
       } catch (err) {
         handleError(err);
