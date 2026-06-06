@@ -151,7 +151,7 @@ export class GitHubProvider implements ReviewProvider {
                       id
                       databaseId
                       body
-                      author { login }
+                      author { __typename login }
                       createdAt
                       updatedAt
                     }
@@ -468,7 +468,7 @@ export class GitHubProvider implements ReviewProvider {
       author: comment.author?.login ?? 'unknown',
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
-      origin: this.detectOrigin(comment.body, comment.author?.login),
+      origin: this.detectOrigin(comment.body, comment.author?.login, comment.author?.__typename),
       system: false,
     };
   }
@@ -486,8 +486,9 @@ export class GitHubProvider implements ReviewProvider {
     };
   }
 
-  private detectOrigin(body: string, login?: string): CommentOrigin {
+  private detectOrigin(body: string, login?: string, authorType?: string): CommentOrigin {
     if (body.startsWith('<!-- revpack')) return 'bot';
+    if (authorType === 'Bot') return 'bot';
     const normalized = login?.toLowerCase() ?? '';
     if (normalized.includes('[bot]') || normalized.includes('bot')) return 'bot';
     return 'human';
@@ -601,7 +602,7 @@ interface GitHubReviewComment {
   id: string;
   databaseId?: number | null;
   body: string;
-  author?: { login: string } | null;
+  author?: { __typename?: string; login: string } | null;
   createdAt: string;
   updatedAt: string;
 }

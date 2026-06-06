@@ -242,8 +242,10 @@ describe('GitHubProvider GraphQL review threads', () => {
 
   it('lists all review threads, preserving resolved state and comment origin', async () => {
     const calls: unknown[] = [];
+    const queries: string[] = [];
     installFetch((_url, init) => {
-      const payload = requestBodyJson(init) as { variables: { after: string | null } };
+      const payload = requestBodyJson(init) as { query: string; variables: { after: string | null } };
+      queries.push(payload.query);
       calls.push(payload.variables);
       const firstPage = payload.variables.after === null;
       return jsonResponse({
@@ -314,6 +316,7 @@ describe('GitHubProvider GraphQL review threads', () => {
 
     const threads = await provider.listAllThreads(ref);
 
+    expect(queries[0]).toContain('author { __typename login }');
     expect(calls).toEqual([
       { owner: 'octo', name: 'repo', number: 42, after: null },
       { owner: 'octo', name: 'repo', number: 42, after: 'cursor-1' },
@@ -968,6 +971,49 @@ describe('GitHubProvider comment origin detection', () => {
     );
     const threads = await provider.listAllThreads(ref);
     expect(threads[0].comments[0].origin).toBe('bot');
+  });
+
+  it('detects bot origin from GraphQL author type when login has no bot marker', async () => {
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-coderabbit',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/coderabbit.ts',
+                    line: 4,
+                    diffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'c-coderabbit',
+                          databaseId: 301,
+                          body: 'Automated review suggestion',
+                          author: { __typename: 'Bot', login: 'coderabbitai' },
+                          createdAt: '2026-01-01T00:00:00Z',
+                          updatedAt: '2026-01-01T00:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+    const threads = await provider.listAllThreads(ref);
+    expect(threads[0].comments[0]).toMatchObject({
+      author: 'coderabbitai',
+      origin: 'bot',
+    });
   });
 
   it('identifies human origin for regular users', async () => {
