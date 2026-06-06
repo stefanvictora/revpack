@@ -166,13 +166,14 @@ revpack status
 Example:
 
 ```text
-─ Output status ─
+─ Agent outputs ─
   Replies:  2 pending
   Findings: 1 pending
   Summary:  pending
   Review:   empty
 
 Next:
+  Review .revpack/outputs/
   revpack publish all
 ```
 

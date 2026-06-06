@@ -9,7 +9,7 @@ import { createOrchestrator, getRepoFromGit, handleError, outputJson } from '../
 export function registerStatusCommand(program: Command): void {
   program
     .command('status [ref]')
-    .description('Show target, bundle, checkout, and output status')
+    .description('Show target, bundle, checkout, agent outputs, and publish history')
     .option('--json', 'Output as JSON')
     .action(async (ref: string | undefined, opts: { json?: boolean }) => {
       try {
@@ -70,6 +70,7 @@ export function registerStatusCommand(program: Command): void {
 
           console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${t.title}`));
           console.log(`  ${chalk.dim('Repository:')} ${t.repository}`);
+          console.log(`  ${chalk.dim('Author:')}     @${t.author}`);
           console.log(`  ${chalk.dim('Branch:')}     ${t.sourceBranch} → ${t.targetBranch}`);
           console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
           if (t.webUrl) {
@@ -82,18 +83,15 @@ export function registerStatusCommand(program: Command): void {
           console.log(`  ${chalk.dim('Prepared:')}      ${formatDate(bundleState.preparedAt)}`);
           console.log(`  ${chalk.dim(`${targetKind} head:`)}       ${t.diffRefs.headSha.slice(0, 7)}`);
           if (bundleState.local) {
-            console.log(`  ${chalk.dim('Prepared HEAD:')} ${bundleState.local.headSha.slice(0, 7)}`);
+            console.log(`  ${chalk.dim('Prepared head:')} ${bundleState.local.headSha.slice(0, 7)}`);
           }
           console.log('');
 
           // Local checkout info
+          let checkoutNeedsRefresh = false;
           const git = new GitHelper(process.cwd());
           try {
-            const [currentHead, currentBranch, isClean] = await Promise.all([
-              git.headSha(),
-              git.currentBranch(),
-              git.isClean(),
-            ]);
+            const [currentHead, currentBranch] = await Promise.all([git.headSha(), git.currentBranch()]);
             const matchesTarget = currentHead === t.diffRefs.headSha;
             let needsPullBeforePrepare = false;
 
@@ -103,13 +101,13 @@ export function registerStatusCommand(program: Command): void {
             if (matchesTarget) {
               console.log(`  ${chalk.dim(`Matches ${targetKind} head:`)}  ${chalk.green('yes')}`);
             } else {
+              checkoutNeedsRefresh = true;
               const isAncestor = await git.isAncestor(t.diffRefs.headSha).catch(() => false);
               needsPullBeforePrepare = !isAncestor;
               const relation = isAncestor ? `ahead of ${targetKind} head` : `behind ${targetKind} head`;
               console.log(`  ${chalk.dim(`${targetKind} head:`)}          ${t.diffRefs.headSha.slice(0, 7)}`);
               console.log(`  ${chalk.dim(`Matches ${targetKind} head:`)}  ${chalk.yellow(`no — ${relation}`)}`);
             }
-            console.log(`  ${chalk.dim('Working tree:')}     ${isClean ? 'clean' : chalk.yellow('dirty')}`);
             if (!matchesTarget) {
               console.log('');
               console.log(chalk.dim('Next:'));
@@ -138,15 +136,11 @@ export function registerStatusCommand(program: Command): void {
             );
           }
 
-          // Output status
+          // Agent outputs
           console.log('');
-          console.log(chalk.dim('─ Output status ─'));
-          console.log(
-            `  ${chalk.dim('Replies:')}  ${pendingReplies > 0 ? `${pendingReplies} pending` : 'none pending'}`,
-          );
-          console.log(
-            `  ${chalk.dim('Findings:')} ${pendingFindings > 0 ? `${pendingFindings} pending` : 'none pending'}`,
-          );
+          console.log(chalk.dim('─ Agent outputs ─'));
+          console.log(`  ${chalk.dim('Replies:')}  ${pendingReplies > 0 ? `${pendingReplies} pending` : 'none'}`);
+          console.log(`  ${chalk.dim('Findings:')} ${pendingFindings > 0 ? `${pendingFindings} pending` : 'none'}`);
           console.log(`  ${chalk.dim('Summary:')}  ${formatOutputState(summaryState)}`);
           console.log(`  ${chalk.dim('Review:')}   ${formatOutputState(reviewState)}`);
 
@@ -161,7 +155,18 @@ export function registerStatusCommand(program: Command): void {
           console.log('');
           if (pendingFindings > 0 || pendingReplies > 0 || summaryState === 'pending' || reviewState === 'pending') {
             console.log(chalk.dim('Next:'));
+            console.log(chalk.dim('  Review .revpack/outputs/'));
             console.log(chalk.dim('  revpack publish all'));
+          } else if (
+            !checkoutNeedsRefresh &&
+            !mismatch &&
+            pendingFindings === 0 &&
+            pendingReplies === 0 &&
+            summaryState === 'empty' &&
+            reviewState === 'empty'
+          ) {
+            console.log(chalk.dim('Next:'));
+            console.log(chalk.dim('  Give your agent .revpack/CONTEXT.md'));
           }
         } else {
           // No bundle — fall back to fetching target from provider
