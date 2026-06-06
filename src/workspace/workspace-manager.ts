@@ -582,7 +582,9 @@ export class WorkspaceManager {
     try {
       const data = await fs.readFile(jsonPath, 'utf-8');
       const thread = JSON.parse(data) as { threadId?: string };
-      threadId = thread.threadId;
+      if (typeof thread.threadId === 'string') {
+        threadId = thread.threadId;
+      }
     } catch {
       // File not found or invalid JSON
     }

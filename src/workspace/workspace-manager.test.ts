@@ -1651,6 +1651,13 @@ describe('WorkspaceManager', () => {
       await fs.writeFile(jsonPath, JSON.stringify({ noThreadId: true }), 'utf-8');
       await expect(manager.resolveThreadRef('T-050')).rejects.toThrow('Cannot resolve thread reference "T-050"');
     });
+
+    it('throws when thread JSON file has a non-string threadId field', async () => {
+      await createBundle(manager, makeTarget(), []);
+      const jsonPath = path.join(tmpDir, '.revpack', 'threads', 'T-051.json');
+      await fs.writeFile(jsonPath, JSON.stringify({ threadId: 123 }), 'utf-8');
+      await expect(manager.resolveThreadRef('T-051')).rejects.toThrow('Cannot resolve thread reference "T-051"');
+    });
   });
 
   describe('getOutputState', () => {
@@ -2414,17 +2421,16 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('| Type | GitLab merge request |');
       expect(content).toContain('`.revpack/instructions/02-thread-replies.md`');
       expect(content).toContain('`.revpack/instructions/03-new-findings-and-anchors.md`');
-      // Should include incremental patch reading suggestion (unique to reading order step 7)
-      expect(content).toContain('Read `.revpack/diffs/incremental.patch` first');
+      expect(content).toContain('Use `.revpack/diffs/incremental.patch` as the primary review surface');
       // Checkpoint-specific guidance
       expect(content).toContain('Target code has changed since the last review checkpoint');
-      expect(content).toContain('Focus proactive review on the updated diff');
+      expect(content).toContain('Focus proactive review on the code changes since the last checkpoint');
       // All instructions required → no "Skipped" section
       expect(content).not.toContain('Skipped this run');
       // Instructions numbered starting from 1
       expect(content).toMatch(/^1\. `\.revpack\/instructions\/01-review-workflow/m);
       // Proactive review reading order includes per-file patches
-      expect(content).toContain('Use `.revpack/diffs/patches/by-file/` for focused review');
+      expect(content).toContain('Use `.revpack/diffs/latest.patch`, `.revpack/diffs/patches/by-file/`');
       // Bundle Contents table includes incremental.patch entry
       expect(content).toContain('| `.revpack/diffs/incremental.patch` |');
     });
