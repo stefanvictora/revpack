@@ -309,7 +309,7 @@ export function buildStatusNextLines(options: {
 
       lines.push('', 'Or publish selected:', ...selectedCommands);
       if (options.checkpointDue) {
-        lines.push('', 'After selected publishing, save the review checkpoint:', '  revpack publish checkpoint');
+        lines.push('', 'After publishing selected outputs, record the review state:', '  revpack publish checkpoint');
       }
     }
     return lines;

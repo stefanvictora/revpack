@@ -83,6 +83,13 @@ describe('publish command internals', () => {
     expect(createOrchestrator).not.toHaveBeenCalled();
   });
 
+  it('treats empty review notes from any source path as no review note to publish', () => {
+    expect(__testing.isNoReviewNoteToPublishError(new Error('review.md is empty'))).toBe(true);
+    expect(__testing.isNoReviewNoteToPublishError(new Error('custom-note.md is empty; nothing to publish'))).toBe(true);
+    expect(__testing.isNoReviewNoteToPublishError(new Error('custom-note.md is empty'))).toBe(true);
+    expect(__testing.isNoReviewNoteToPublishError(new Error('custom-note.md is missing'))).toBe(false);
+  });
+
   it('uses summary.md as the default description source', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), 'Generated summary', 'utf-8');

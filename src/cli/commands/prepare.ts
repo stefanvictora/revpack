@@ -157,7 +157,7 @@ function formatDate(iso: string): string {
     const diffMs = now.getTime() - d.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    const formatted = d.toLocaleDateString('en-US', {
+    const formatted = d.toLocaleString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

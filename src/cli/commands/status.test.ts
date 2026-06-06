@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildPendingOlderBundleLines, buildStatusNextLines } from './status.js';
 
 describe('buildStatusNextLines', () => {
+  // Checkpoint guidance is intentionally omitted when exactly one content output is ready.
   it('shows only the primary publish path when one visible output is ready', () => {
     expect(
       buildStatusNextLines({
@@ -33,9 +34,32 @@ describe('buildStatusNextLines', () => {
       '  revpack publish findings',
       '  revpack publish summary',
       '',
-      'After selected publishing, save the review checkpoint:',
+      'After publishing selected outputs, record the review state:',
       '  revpack publish checkpoint',
     ]);
+  });
+
+  it('shows selected publish commands without checkpoint guidance when checkpoint is not due', () => {
+    const lines = buildStatusNextLines({
+      repliesReady: true,
+      findingsReady: true,
+      summaryReady: true,
+      reviewReady: false,
+      checkpointDue: false,
+    });
+
+    expect(lines).toEqual([
+      'Next:',
+      '  Review .revpack/outputs/',
+      '  revpack publish all',
+      '',
+      'Or publish selected:',
+      '  revpack publish replies',
+      '  revpack publish findings',
+      '  revpack publish summary',
+    ]);
+    expect(lines).not.toContain('After publishing selected outputs, record the review state:');
+    expect(lines).not.toContain('  revpack publish checkpoint');
   });
 
   it('lists review note publishing as a selected content command and checkpoint separately', () => {
@@ -56,7 +80,7 @@ describe('buildStatusNextLines', () => {
       '  revpack publish findings',
       '  revpack publish review',
       '',
-      'After selected publishing, save the review checkpoint:',
+      'After publishing selected outputs, record the review state:',
       '  revpack publish checkpoint',
     ]);
   });
@@ -99,6 +123,22 @@ describe('buildPendingOlderBundleLines', () => {
       'Still pending output from previous bundle:',
       '  Review .revpack/outputs/',
       '  revpack publish summary',
+    ]);
+  });
+
+  it('lists multiple selected publish commands for pending output from a stale bundle', () => {
+    expect(
+      buildPendingOlderBundleLines({
+        repliesReady: true,
+        findingsReady: true,
+        summaryReady: false,
+        reviewReady: false,
+      }),
+    ).toEqual([
+      'Still pending output from previous bundle:',
+      '  Review .revpack/outputs/',
+      '  revpack publish replies',
+      '  revpack publish findings',
     ]);
   });
 

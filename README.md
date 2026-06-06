@@ -181,6 +181,9 @@ Or publish selected:
   revpack publish replies
   revpack publish findings
   revpack publish summary
+
+After publishing selected outputs, record the review state:
+  revpack publish checkpoint
 ```
 
 `pending` means revpack found proposed review content under `.revpack/outputs/` that can be published. `empty` is also valid; for example, `Review note: empty` means the agent did not write a PR/MR-level review note. The checkpoint records what remote PR/MR state has been reviewed.

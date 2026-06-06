@@ -568,9 +568,10 @@ export class ReviewOrchestrator {
   async publishCheckpoint(defaultRepo?: string): Promise<void> {
     const targetRef = await this.resolveRef(undefined, defaultRepo);
 
-    const [target, rawThreads] = await Promise.all([
+    const [target, rawThreads, versions] = await Promise.all([
       this.provider.getTargetSnapshot(targetRef),
       this.provider.listAllThreads(targetRef),
+      this.provider.getDiffVersions(targetRef),
     ]);
 
     // Identify existing review note for thread filtering
@@ -587,7 +588,6 @@ export class ReviewOrchestrator {
     const currentDescriptionDigest = computeContentHash(sanitizeDescriptionForAgent(target.description ?? ''));
     const threadDigests = computeThreadDigestMap(allThreads);
 
-    const versions = await this.provider.getDiffVersions(targetRef);
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
 
     const checkpointState = buildCheckpointState(

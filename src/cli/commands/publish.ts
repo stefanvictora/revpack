@@ -423,7 +423,7 @@ async function publishCheckpointCmd(opts: { repo?: string }): Promise<number> {
 
 function isNoReviewNoteToPublishError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
-  return err.message.includes('No review note found') || err.message.includes('review.md is empty');
+  return err.message.includes('No review note found') || / is empty(?:; nothing to publish)?$/.test(err.message);
 }
 
 function warnPartialSuccess(occurred: boolean): void {
@@ -440,6 +440,7 @@ function warnPartialSuccess(occurred: boolean): void {
 export const __testing = {
   findReplyEntryIndex,
   normalizeThreadRef,
+  isNoReviewNoteToPublishError,
   publishReplies,
   publishDescription,
   requirePublishableContent,
@@ -563,7 +564,6 @@ export function registerPublishCommand(program: Command): void {
         console.log(chalk.bold('─── Checkpoint ───'));
         try {
           await publishCheckpointCmd({});
-          total += reviewPublishedInBatch ? 1 : 0;
           checkpointRecorded = true;
         } catch (err) {
           warnPartialSuccess(partialSuccess);
