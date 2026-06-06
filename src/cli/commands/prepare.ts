@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import chalk from 'chalk';
 import { formatTargetDisplayId, formatTargetKind } from '../../core/display.js';
 import { createLocalOrchestrator, createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
+import { formatGuidanceLine } from '../output.js';
 
 export function registerPrepareCommand(program: Command): void {
   program
@@ -115,10 +116,12 @@ export function registerPrepareCommand(program: Command): void {
           }
 
           // Next steps
-          console.log(chalk.dim('Next steps:'));
-          console.log(chalk.dim('  • Give your agent .revpack/CONTEXT.md'));
-          console.log(chalk.dim('  • Or use a Copilot prompt: /revpack-review'));
-          console.log(chalk.dim('  • Re-run `revpack prepare` after changes to refresh'));
+          console.log(formatGuidanceLine('Next steps:'));
+          console.log(formatGuidanceLine('  • Give your agent .revpack/CONTEXT.md'));
+          console.log(formatGuidanceLine('  • Or use a Copilot prompt:'));
+          console.log(formatGuidanceLine('    /revpack-review'));
+          console.log(formatGuidanceLine('  • Re-run after changes to refresh:'));
+          console.log(formatGuidanceLine('    revpack prepare'));
         } catch (err) {
           handleError(err);
         }

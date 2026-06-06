@@ -5,6 +5,7 @@ import { formatTargetDisplayId, formatTargetKind } from '../../core/display.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { GitHelper } from '../../workspace/git-helper.js';
 import { createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
+import { formatGuidanceLine } from '../output.js';
 
 export function registerStatusCommand(program: Command): void {
   program
@@ -111,7 +112,7 @@ export function registerStatusCommand(program: Command): void {
               const isAncestor = await git.isAncestor(comparisonTargetHead).catch(() => false);
               const relation = isAncestor ? `ahead of ${targetKind} head` : `behind ${targetKind} head`;
               console.log(`  ${chalk.dim(`${targetKind} head:`)}          ${comparisonTargetHead.slice(0, 7)}`);
-              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}    ${chalk.yellow(`no — ${relation}`)}`);
+              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}       ${chalk.yellow(`no — ${relation}`)}`);
             }
           } catch {
             // Not a git repo — skip local checkout info
@@ -159,8 +160,8 @@ export function registerStatusCommand(program: Command): void {
           const needsCheckpoint = checkpointState !== 'current';
 
           if (bundleIsOutdated) {
-            console.log(chalk.dim('Next:'));
-            console.log('  revpack prepare');
+            console.log(formatGuidanceLine('Next:'));
+            console.log(formatGuidanceLine('  revpack prepare'));
             const pendingOlderBundleLines = buildPendingOlderBundleLines({
               repliesReady: pendingReplies > 0,
               findingsReady: pendingFindings > 0,
@@ -181,7 +182,7 @@ export function registerStatusCommand(program: Command): void {
               reviewReady: hasPublishableReview,
               checkpointDue: needsCheckpoint,
             })) {
-              console.log(line ? chalk.dim(line) : '');
+              console.log(formatGuidanceLine(line));
             }
           }
         } else {
@@ -198,7 +199,10 @@ export function registerStatusCommand(program: Command): void {
           console.log(`  ${chalk.dim('Branch:')}    ${target.sourceBranch} → ${target.targetBranch}`);
           console.log(`  ${chalk.dim('URL:')}       ${target.webUrl}`);
           console.log('');
-          console.log(chalk.dim('No bundle prepared. Run `revpack prepare` to create one.'));
+          console.log(formatGuidanceLine('No bundle prepared.'));
+          console.log('');
+          console.log(formatGuidanceLine('Next:'));
+          console.log(formatGuidanceLine('  revpack prepare'));
         }
       } catch (err) {
         handleError(err);

@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import chalk from 'chalk';
 import { handleError } from '../helpers.js';
+import { formatGuidanceLine } from '../output.js';
 
 export function registerCleanCommand(program: Command): void {
   program
@@ -26,7 +27,8 @@ export function registerCleanCommand(program: Command): void {
         console.log(
           chalk.dim('.revpack/ is disposable local state. This does not affect the MR/PR or published comments.'),
         );
-        console.log(chalk.dim('Run `revpack prepare` to create a fresh bundle.'));
+        console.log(formatGuidanceLine('Next:'));
+        console.log(formatGuidanceLine('  revpack prepare'));
       } catch (err) {
         handleError(err);
       }

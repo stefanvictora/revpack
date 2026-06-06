@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import chalk from 'chalk';
 import { formatTargetDisplayId } from '../../core/display.js';
 import { createOrchestrator, createOrchestratorAt, getRepoFromGit, handleError } from '../helpers.js';
+import { formatGuidanceLine } from '../output.js';
 import { runSetup } from './setup.js';
 
 export function registerCheckoutCommand(program: Command): void {
@@ -74,14 +75,16 @@ export function registerCheckoutCommand(program: Command): void {
             console.log('');
           }
 
-          console.log(chalk.dim('Next: open .revpack/CONTEXT.md and point your agent at it'));
+          console.log(formatGuidanceLine('Next:'));
+          console.log(formatGuidanceLine('  Open .revpack/CONTEXT.md and point your agent at it'));
           if (clonedTo) {
-            console.log(chalk.dim(`      cd ${clonedTo}`));
+            console.log(formatGuidanceLine(`  cd ${clonedTo}`));
           }
         } else {
-          console.log(chalk.dim('Next: run `revpack prepare` to generate the review bundle'));
+          console.log(formatGuidanceLine('Next:'));
+          console.log(formatGuidanceLine('  revpack prepare'));
           if (clonedTo) {
-            console.log(chalk.dim(`      cd ${clonedTo}`));
+            console.log(formatGuidanceLine(`  cd ${clonedTo}`));
           }
         }
       } catch (err) {

@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
+import { formatGuidanceLine } from '../output.js';
 
 interface SetupFile {
   /** Path relative to the target project root. */
@@ -98,20 +99,18 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
 
   if (!opts.dryRun && results.some((result) => result.status === 'created' || result.status === 'updated')) {
     console.log('');
-    console.log(chalk.dim('Next steps:'));
+    console.log(formatGuidanceLine('Next steps:'));
     if (results.some((result) => result.target === 'REVIEW.md' && result.status === 'created')) {
-      console.log(chalk.dim('  1. Edit REVIEW.md - tailor review priorities to your project'));
+      console.log(formatGuidanceLine('  1. Edit REVIEW.md - tailor review priorities to your project'));
     }
     if (!opts.prompts) {
-      console.log(
-        chalk.dim(
-          '  Tip: install an agent adapter with `revpack setup agent codex`, `claude`, `copilot`, or `cursor`.',
-        ),
-      );
+      console.log(formatGuidanceLine('  Tip: install an agent adapter, for example:'));
+      console.log(formatGuidanceLine('  revpack setup agent codex'));
     } else {
-      console.log(chalk.dim('  Tip: `revpack setup --prompts` is deprecated; use `revpack setup agent copilot`.'));
+      console.log(formatGuidanceLine('  Tip: `revpack setup --prompts` is deprecated; use:'));
+      console.log(formatGuidanceLine('  revpack setup agent copilot'));
     }
-    console.log(chalk.dim('  Then run `revpack prepare` to prepare a review bundle.'));
+    console.log(formatGuidanceLine('  revpack prepare'));
   }
 }
 
@@ -126,7 +125,8 @@ export async function runSetupAgent(opts: SetupAgentOptions): Promise<void> {
   printAgentUsage(opts.target);
 
   if (!(await fileExists(path.join(opts.cwd, 'REVIEW.md')))) {
-    console.log(chalk.dim('Tip: run `revpack setup` to add project-specific review guidance in REVIEW.md.'));
+    console.log(formatGuidanceLine('Tip: add project-specific review guidance in REVIEW.md.'));
+    console.log(formatGuidanceLine('  revpack setup'));
   }
 }
 
@@ -254,16 +254,18 @@ function printAgentUsage(target: AgentTarget): void {
   console.log('');
   switch (target) {
     case 'claude':
-      console.log(chalk.dim('Use it in Claude Code with /revpack-review.'));
+      console.log(formatGuidanceLine('Use it in Claude Code with:'));
+      console.log(formatGuidanceLine('  /revpack-review'));
       break;
     case 'codex':
-      console.log(chalk.dim('Codex will read AGENTS.md automatically in this repository.'));
+      console.log(formatGuidanceLine('Codex will read AGENTS.md automatically in this repository.'));
       break;
     case 'copilot':
-      console.log(chalk.dim('Use it in Copilot Chat with /revpack-review.'));
+      console.log(formatGuidanceLine('Use it in Copilot Chat with:'));
+      console.log(formatGuidanceLine('  /revpack-review'));
       break;
     case 'cursor':
-      console.log(chalk.dim('Use it in Cursor by asking for a revpack review.'));
+      console.log(formatGuidanceLine('Use it in Cursor by asking for a revpack review.'));
       break;
   }
 }
