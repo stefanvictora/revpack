@@ -49,7 +49,7 @@ Notes:
 
 ## `status [ref]`
 
-Shows PR/MR state, branches, labels, dates, output status, prepare summary, and published actions.
+Shows PR/MR state, branches, bundle freshness, local checkout status, pending outputs, and publish history.
 
 ```bash
 revpack status
@@ -58,6 +58,8 @@ revpack status !42 --json
 ```
 
 When a bundle exists, `status` reads from `.revpack/bundle.json`. Otherwise, it fetches from the provider API.
+The bundle section shows the PR/MR head commit that was reviewed and the local checkout commit captured at prepare time.
+The publish history section reports earlier `revpack publish` actions recorded in the bundle; `status` itself does not publish anything.
 
 ## `publish`
 

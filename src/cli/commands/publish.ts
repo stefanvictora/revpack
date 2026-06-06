@@ -187,7 +187,7 @@ async function publishReplies(opts: {
         } catch (err) {
           console.error(
             chalk.red(
-              `    resolve failed: ${err instanceof Error ? err.message : String(err)} (reply will not be retried)`,
+              `    resolve failed: ${err instanceof Error ? err.message : String(err)} (resolve will not be retried)`,
             ),
           );
         }

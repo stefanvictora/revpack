@@ -79,10 +79,10 @@ export function registerStatusCommand(program: Command): void {
 
           // Bundle info
           console.log(chalk.dim('─ Bundle ─'));
-          console.log(`  ${chalk.dim('Prepared:')}    ${formatDate(bundleState.preparedAt)}`);
-          console.log(`  ${chalk.dim('Target head:')} ${t.diffRefs.headSha.slice(0, 7)}`);
+          console.log(`  ${chalk.dim('Prepared:')}      ${formatDate(bundleState.preparedAt)}`);
+          console.log(`  ${chalk.dim(`${targetKind} head:`)}       ${t.diffRefs.headSha.slice(0, 7)}`);
           if (bundleState.local) {
-            console.log(`  ${chalk.dim('Local head:')}  ${bundleState.local.headSha.slice(0, 7)} (at prepare)`);
+            console.log(`  ${chalk.dim('Prepared HEAD:')} ${bundleState.local.headSha.slice(0, 7)}`);
           }
           console.log('');
 
@@ -95,25 +95,29 @@ export function registerStatusCommand(program: Command): void {
               git.isClean(),
             ]);
             const matchesTarget = currentHead === t.diffRefs.headSha;
+            let needsPullBeforePrepare = false;
 
             console.log(chalk.dim('─ Local checkout ─'));
-            console.log(`  ${chalk.dim('Branch:')}         ${currentBranch}`);
-            console.log(`  ${chalk.dim('Current HEAD:')}   ${currentHead.slice(0, 7)}`);
+            console.log(`  ${chalk.dim('Branch:')}           ${currentBranch}`);
+            console.log(`  ${chalk.dim('Current HEAD:')}     ${currentHead.slice(0, 7)}`);
             if (matchesTarget) {
-              console.log(`  ${chalk.dim('Matches target:')} ${chalk.green('yes')}`);
+              console.log(`  ${chalk.dim(`Matches ${targetKind} head:`)}  ${chalk.green('yes')}`);
             } else {
               const isAncestor = await git.isAncestor(t.diffRefs.headSha).catch(() => false);
+              needsPullBeforePrepare = !isAncestor;
               const relation = isAncestor ? `ahead of ${targetKind} head` : `behind ${targetKind} head`;
-              console.log(`  ${chalk.dim('Target head:')}    ${t.diffRefs.headSha.slice(0, 7)}`);
-              console.log(`  ${chalk.dim('Matches target:')} ${chalk.yellow(`no — ${relation}`)}`);
+              console.log(`  ${chalk.dim(`${targetKind} head:`)}          ${t.diffRefs.headSha.slice(0, 7)}`);
+              console.log(`  ${chalk.dim(`Matches ${targetKind} head:`)}  ${chalk.yellow(`no — ${relation}`)}`);
+            }
+            console.log(`  ${chalk.dim('Working tree:')}     ${isClean ? 'clean' : chalk.yellow('dirty')}`);
+            if (!matchesTarget) {
               console.log('');
               console.log(chalk.dim('Next:'));
-              if (!isAncestor) {
+              if (needsPullBeforePrepare) {
                 console.log(chalk.dim('  git pull'));
               }
               console.log(chalk.dim('  revpack prepare'));
             }
-            console.log(`  ${chalk.dim('Working tree:')}   ${isClean ? 'clean' : chalk.yellow('dirty')}`);
           } catch {
             // Not a git repo — skip local checkout info
           }
@@ -146,11 +150,11 @@ export function registerStatusCommand(program: Command): void {
           console.log(`  ${chalk.dim('Summary:')}  ${formatOutputState(summaryState)}`);
           console.log(`  ${chalk.dim('Review:')}   ${formatOutputState(reviewState)}`);
 
-          // Published actions
+          // Publish history
           if (bundleState.publishedActions.length > 0) {
             console.log('');
-            console.log(chalk.dim('─ Published actions ─'));
-            console.log(`  ${formatCount(bundleState.publishedActions.length, 'action')} published`);
+            console.log(chalk.dim('─ Publish history ─'));
+            console.log(`  ${formatCount(bundleState.publishedActions.length, 'action')} previously published`);
           }
 
           // Next step
