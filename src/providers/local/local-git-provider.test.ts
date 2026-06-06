@@ -875,7 +875,6 @@ describe('LocalGitProvider orchestrator boundary', () => {
         headSha: 'old-head',
         matchesTargetSourceBranch: true,
         matchesTargetHead: true,
-        workingTreeClean: true,
         checkedAt: '2026-01-01T00:00:00.000Z',
       },
       prepare: {
@@ -930,7 +929,6 @@ describe('LocalGitProvider orchestrator boundary', () => {
     vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/local-review');
     vi.spyOn(GitHelper.prototype, 'headSha').mockResolvedValue('head-sha');
     vi.spyOn(GitHelper.prototype, 'repositoryRoot').mockResolvedValue(tmpDir);
-    vi.spyOn(GitHelper.prototype, 'isClean').mockResolvedValue(true);
     vi.spyOn(GitHelper.prototype, 'hasCommit').mockResolvedValue(true);
     vi.spyOn(GitHelper.prototype, 'diffForReview').mockResolvedValue(localPatch());
 

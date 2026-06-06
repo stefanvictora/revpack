@@ -120,7 +120,6 @@ describe('ReviewOrchestrator', () => {
   let headShaSpy: MockInstance<(...args: any[]) => any>;
   let currentBranchSpy: MockInstance<(...args: any[]) => any>;
   let repositoryRootSpy: MockInstance<(...args: any[]) => any>;
-  let isCleanSpy: MockInstance<(...args: any[]) => any>;
   let isAncestorSpy: MockInstance<(...args: any[]) => any>;
   let hasCommitSpy: MockInstance<(...args: any[]) => any>;
   let fetchCommitSpy: MockInstance<(...args: any[]) => any>;
@@ -136,7 +135,6 @@ describe('ReviewOrchestrator', () => {
     headShaSpy = vi.spyOn(GitHelper.prototype, 'headSha').mockResolvedValue('bbb');
     currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/test');
     repositoryRootSpy = vi.spyOn(GitHelper.prototype, 'repositoryRoot').mockResolvedValue(tmpDir);
-    isCleanSpy = vi.spyOn(GitHelper.prototype, 'isClean').mockResolvedValue(true);
     isAncestorSpy = vi.spyOn(GitHelper.prototype, 'isAncestor').mockResolvedValue(false);
     hasCommitSpy = vi.spyOn(GitHelper.prototype, 'hasCommit').mockResolvedValue(true);
     fetchCommitSpy = vi.spyOn(GitHelper.prototype, 'fetchCommit').mockResolvedValue(undefined);
@@ -150,7 +148,6 @@ describe('ReviewOrchestrator', () => {
     headShaSpy.mockRestore();
     currentBranchSpy.mockRestore();
     repositoryRootSpy.mockRestore();
-    isCleanSpy.mockRestore();
     isAncestorSpy.mockRestore();
     hasCommitSpy.mockRestore();
     fetchCommitSpy.mockRestore();
@@ -364,13 +361,11 @@ describe('ReviewOrchestrator', () => {
       expect(err.message).toContain('base: aaa');
     });
 
-    it('uses commit-to-commit local diff without requiring a clean working tree', async () => {
-      isCleanSpy.mockResolvedValue(false);
-
+    it('uses commit-to-commit local diff without fetching when commits are available', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
 
-      expect(result.bundleState.local.workingTreeClean).toBe(false);
+      expect(result.bundleState.local.headSha).toBe('bbb');
       expect(fetchCommitSpy).not.toHaveBeenCalled();
       expect(fetchSpy).not.toHaveBeenCalled();
       expect(fetchBranchSpy).not.toHaveBeenCalled();
@@ -1159,7 +1154,6 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundleState.local.branch).toBe('feature/test');
       expect(result.bundleState.local.matchesTargetHead).toBe(true);
       expect(result.bundleState.local.matchesTargetSourceBranch).toBe(true);
-      expect(result.bundleState.local.workingTreeClean).toBe(true);
     });
 
     it('succeeds on detached HEAD with matchesTargetSourceBranch false', async () => {

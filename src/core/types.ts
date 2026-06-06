@@ -208,7 +208,6 @@ export interface BundleLocal {
   headSha: string;
   matchesTargetSourceBranch: boolean;
   matchesTargetHead: boolean;
-  workingTreeClean: boolean;
   checkedAt: string;
 }
 

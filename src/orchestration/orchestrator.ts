@@ -166,14 +166,12 @@ export class ReviewOrchestrator {
     let localHeadSha: string;
     let localBranch: string;
     let localRepoRoot: string;
-    let localClean: boolean;
 
     try {
-      [localHeadSha, localBranch, localRepoRoot, localClean] = await Promise.all([
+      [localHeadSha, localBranch, localRepoRoot] = await Promise.all([
         this.git.headSha(),
         this.git.currentBranch(),
         this.git.repositoryRoot(),
-        this.git.isClean(),
       ]);
     } catch {
       throw new Error(
@@ -281,7 +279,6 @@ export class ReviewOrchestrator {
       headSha: localHeadSha,
       matchesTargetSourceBranch: localBranch === target.sourceBranch,
       matchesTargetHead: localHeadSha === mrHeadSha,
-      workingTreeClean: localClean,
       checkedAt: new Date().toISOString(),
     };
 
