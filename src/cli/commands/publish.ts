@@ -382,13 +382,17 @@ async function publishFindingsAndReviewBatch(reviewContent: string): Promise<num
   return findings.length;
 }
 
-async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise<number> {
+async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty?: boolean }): Promise<number> {
   const filePath = opts.from ?? DEFAULT_REVIEW_FILE;
   let content: string;
   try {
     content = await fs.readFile(workspacePath(filePath), 'utf-8');
   } catch {
     throw new Error(`No review note found at ${filePath}.`);
+  }
+  if (opts.allowEmpty && !content.trim()) {
+    console.log(chalk.dim('No review note published'));
+    return 0;
   }
   requirePublishableContent(content, filePath);
 
@@ -442,6 +446,7 @@ export const __testing = {
   isNoReviewNoteToPublishError,
   publishReplies,
   publishDescription,
+  publishReviewCmd,
   requirePublishableContent,
   autoRefresh,
 };
@@ -547,7 +552,7 @@ export function registerPublishCommand(program: Command): void {
           console.log('');
           console.log(chalk.bold('─── Review note ───'));
           try {
-            total += await publishReviewCmd({});
+            total += await publishReviewCmd({ allowEmpty: true });
             partialSuccess = true;
           } catch (err) {
             if (!isNoReviewNoteToPublishError(err)) {

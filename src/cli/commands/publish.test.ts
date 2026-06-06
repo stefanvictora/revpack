@@ -90,6 +90,22 @@ describe('publish command internals', () => {
     expect(__testing.isNoReviewNoteToPublishError(new Error('custom-note.md is missing'))).toBe(false);
   });
 
+  it('allows publish all to skip an empty default review note', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), ' \n\t', 'utf-8');
+
+    await expect(__testing.publishReviewCmd({ allowEmpty: true })).resolves.toBe(0);
+    expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
+  it('keeps explicit review publishing strict for empty review notes', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), ' \n\t', 'utf-8');
+
+    await expect(__testing.publishReviewCmd({})).rejects.toThrow('review.md is empty');
+    expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
   it('uses summary.md as the default description source', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), 'Generated summary', 'utf-8');
