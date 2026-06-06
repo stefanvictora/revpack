@@ -31,11 +31,10 @@ Local mode:
 
 ## `checkout <ref>`
 
-Switches to a PR/MR source branch, or clones it when run outside a git repository.
+Switches to a PR/MR source branch, or clones it when run outside a git repository, then prepares the `.revpack/` bundle.
 
 ```bash
 revpack checkout !42
-revpack checkout !42 --prepare
 revpack checkout !42 --setup
 revpack checkout !42 --repo group/project --profile myprofile
 revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42
@@ -44,6 +43,7 @@ revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42
 Notes:
 
 - In an existing repo, `checkout` requires a clean working tree.
+- `--prepare` is still accepted for compatibility, but prepare now runs by default.
 - By default, clones use HTTPS.
 - To clone with SSH, set `sshClone: true` in the profile. Git handles SSH keys and passphrase prompts as usual.
 
