@@ -96,17 +96,17 @@ export function registerStatusCommand(program: Command): void {
             let needsPullBeforePrepare = false;
 
             console.log(chalk.dim('─ Local checkout ─'));
-            console.log(`  ${chalk.dim('Branch:')}           ${currentBranch}`);
-            console.log(`  ${chalk.dim('Current HEAD:')}     ${currentHead.slice(0, 7)}`);
+            console.log(`  ${chalk.dim('Branch:')}        ${currentBranch}`);
+            console.log(`  ${chalk.dim('Current HEAD:')}  ${currentHead.slice(0, 7)}`);
             if (matchesTarget) {
-              console.log(`  ${chalk.dim(`Matches ${targetKind} head:`)}  ${chalk.green('yes')}`);
+              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}    ${chalk.green('yes')}`);
             } else {
               checkoutNeedsRefresh = true;
               const isAncestor = await git.isAncestor(t.diffRefs.headSha).catch(() => false);
               needsPullBeforePrepare = !isAncestor;
               const relation = isAncestor ? `ahead of ${targetKind} head` : `behind ${targetKind} head`;
-              console.log(`  ${chalk.dim(`${targetKind} head:`)}          ${t.diffRefs.headSha.slice(0, 7)}`);
-              console.log(`  ${chalk.dim(`Matches ${targetKind} head:`)}  ${chalk.yellow(`no — ${relation}`)}`);
+              console.log(`  ${chalk.dim(`${targetKind} head:`)}       ${t.diffRefs.headSha.slice(0, 7)}`);
+              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}    ${chalk.yellow(`no — ${relation}`)}`);
             }
             if (!matchesTarget) {
               console.log('');
@@ -136,13 +136,17 @@ export function registerStatusCommand(program: Command): void {
             );
           }
 
-          // Agent outputs
+          // Publish status
           console.log('');
-          console.log(chalk.dim('─ Agent outputs ─'));
-          console.log(`  ${chalk.dim('Replies:')}  ${pendingReplies > 0 ? `${pendingReplies} pending` : 'none'}`);
-          console.log(`  ${chalk.dim('Findings:')} ${pendingFindings > 0 ? `${pendingFindings} pending` : 'none'}`);
-          console.log(`  ${chalk.dim('Summary:')}  ${formatOutputState(summaryState)}`);
-          console.log(`  ${chalk.dim('Review:')}   ${formatOutputState(reviewState)}`);
+          console.log(chalk.dim('─ Publish status ─'));
+          console.log(`  ${chalk.dim('Replies:')}       ${pendingReplies > 0 ? `${pendingReplies} pending` : 'none'}`);
+          console.log(
+            `  ${chalk.dim('Findings:')}      ${pendingFindings > 0 ? `${pendingFindings} pending` : 'none'}`,
+          );
+          console.log(`  ${chalk.dim('Summary:')}       ${formatOutputState(summaryState)}`);
+          console.log(`  ${chalk.dim('Review note:')}   ${formatOutputState(reviewState)}`);
+          const checkpointState = getCheckpointState(bundleState);
+          console.log(`  ${chalk.dim('Checkpoint:')}    ${formatCheckpointState(checkpointState)}`);
 
           // Publish history
           if (bundleState.publishedActions.length > 0) {
@@ -153,20 +157,20 @@ export function registerStatusCommand(program: Command): void {
 
           // Next step
           console.log('');
-          if (pendingFindings > 0 || pendingReplies > 0 || summaryState === 'pending' || reviewState === 'pending') {
-            console.log(chalk.dim('Next:'));
-            console.log(chalk.dim('  Review .revpack/outputs/'));
-            console.log(chalk.dim('  revpack publish all'));
-          } else if (
-            !checkoutNeedsRefresh &&
-            !mismatch &&
-            pendingFindings === 0 &&
-            pendingReplies === 0 &&
-            summaryState === 'empty' &&
-            reviewState === 'empty'
-          ) {
-            console.log(chalk.dim('Next:'));
-            console.log(chalk.dim('  Give your agent .revpack/CONTEXT.md'));
+          const hasPublishableSummary = isPublishableOutputState(summaryState);
+          const hasPublishableReview = isPublishableOutputState(reviewState);
+          const needsCheckpoint = checkpointState !== 'current';
+
+          if (!checkoutNeedsRefresh && !mismatch) {
+            for (const line of buildStatusNextLines({
+              repliesReady: pendingReplies > 0,
+              findingsReady: pendingFindings > 0,
+              summaryReady: hasPublishableSummary,
+              reviewReady: hasPublishableReview,
+              checkpointDue: needsCheckpoint,
+            })) {
+              console.log(line ? chalk.dim(line) : '');
+            }
           }
         } else {
           // No bundle — fall back to fetching target from provider
@@ -215,6 +219,84 @@ async function countJsonArray(filePath: string): Promise<number> {
   }
 }
 
+type CheckpointState = 'none' | 'current' | 'outdated' | 'unknown';
+
+function getCheckpointState(bundleState: {
+  prepare: {
+    checkpoint: unknown;
+    comparison: {
+      targetCodeChangedSinceCheckpoint: boolean | null;
+      threadsChangedSinceCheckpoint: boolean | null;
+      descriptionChangedSinceCheckpoint: boolean | null;
+    };
+  };
+}): CheckpointState {
+  if (!bundleState.prepare.checkpoint) return 'none';
+
+  const comparison = bundleState.prepare.comparison;
+  const values = [
+    comparison.targetCodeChangedSinceCheckpoint,
+    comparison.threadsChangedSinceCheckpoint,
+    comparison.descriptionChangedSinceCheckpoint,
+  ];
+
+  if (values.some((value) => value === true)) return 'outdated';
+  if (values.every((value) => value === false)) return 'current';
+  return 'unknown';
+}
+
+function formatCheckpointState(state: CheckpointState): string {
+  switch (state) {
+    case 'none':
+      return chalk.yellow('not recorded');
+    case 'current':
+      return chalk.green('current');
+    case 'outdated':
+      return chalk.yellow('needs update');
+    case 'unknown':
+      return chalk.yellow('unknown');
+  }
+}
+
+function isPublishableOutputState(state: string): boolean {
+  return state === 'pending' || state === 'modified since publish';
+}
+
+export function buildStatusNextLines(options: {
+  repliesReady: boolean;
+  findingsReady: boolean;
+  summaryReady: boolean;
+  reviewReady: boolean;
+  checkpointDue: boolean;
+}): string[] {
+  const contentReady = [options.repliesReady, options.findingsReady, options.summaryReady, options.reviewReady].filter(
+    Boolean,
+  ).length;
+
+  if (contentReady > 0) {
+    const lines = ['Next:', '  Review .revpack/outputs/', '  revpack publish all'];
+    if (contentReady >= 2) {
+      const selectedCommands: string[] = [];
+      if (options.repliesReady) selectedCommands.push('  revpack publish replies');
+      if (options.findingsReady) selectedCommands.push('  revpack publish findings');
+      if (options.summaryReady) selectedCommands.push('  revpack publish summary');
+      if (options.reviewReady) selectedCommands.push('  revpack publish review');
+
+      lines.push('', 'Or publish selected:', ...selectedCommands);
+      if (options.checkpointDue) {
+        lines.push('', 'After selected publishing, save the review checkpoint:', '  revpack publish checkpoint');
+      }
+    }
+    return lines;
+  }
+
+  if (options.checkpointDue) {
+    return ['Next:', '  revpack publish checkpoint'];
+  }
+
+  return ['Next:', '  No pending publish action.'];
+}
+
 function formatOutputState(state: string): string {
   switch (state) {
     case 'empty':
@@ -224,7 +306,7 @@ function formatOutputState(state: string): string {
     case 'published':
       return chalk.green('published');
     case 'modified since publish':
-      return chalk.yellow('modified since publish');
+      return chalk.yellow('pending (modified)');
     default:
       return state;
   }

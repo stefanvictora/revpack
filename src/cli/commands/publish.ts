@@ -31,6 +31,12 @@ interface ReplyEntry {
   resolve?: boolean;
 }
 
+interface PublishSummaryOptions {
+  from?: string;
+  replace?: boolean;
+  repo?: string;
+}
+
 function normalizeThreadRef(ref: string): string {
   return ref.trim().toUpperCase();
 }
@@ -382,32 +388,42 @@ async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise
   try {
     content = await fs.readFile(workspacePath(filePath), 'utf-8');
   } catch {
-    content = '';
+    throw new Error(`No review note found at ${filePath}.`);
   }
+  requirePublishableContent(content, filePath);
 
   const orchestrator = await createOrchestrator();
   const defaultRepo = opts.repo ?? (await getRepoFromGit());
 
   const result = await orchestrator.publishReview(content, defaultRepo);
   if (result.created) {
-    console.log(chalk.green('✓ Review published'));
-    console.log(chalk.dim('  review state updated for future refreshes'));
+    console.log(chalk.green('Review note published'));
   } else {
-    console.log(chalk.green('✓ Review state updated'));
-    console.log(chalk.dim('  no review body to publish'));
+    console.log(chalk.dim('No review note published'));
   }
 
-  // Store publish hash for review tracking
-  if (content.trim()) {
-    const ws = new WorkspaceManager(process.cwd());
-    const bundleState = await ws.loadBundleState();
-    if (bundleState) {
-      const hash = computeContentHash(content);
-      await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha, result.noteId);
-    }
+  const ws = new WorkspaceManager(process.cwd());
+  const bundleState = await ws.loadBundleState();
+  if (bundleState) {
+    const hash = computeContentHash(content);
+    await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha, result.noteId);
   }
 
   return result.created ? 1 : 0;
+}
+
+async function publishCheckpointCmd(opts: { repo?: string }): Promise<number> {
+  const orchestrator = await createOrchestrator();
+  const defaultRepo = opts.repo ?? (await getRepoFromGit());
+
+  await orchestrator.publishCheckpoint(defaultRepo);
+  console.log(chalk.green('✓ Checkpoint recorded'));
+  return 1;
+}
+
+function isNoReviewNoteToPublishError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.message.includes('No review note found') || err.message.includes('review.md is empty');
 }
 
 function warnPartialSuccess(occurred: boolean): void {
@@ -415,7 +431,7 @@ function warnPartialSuccess(occurred: boolean): void {
   console.error(
     chalk.yellow(
       'Publishing failed after one or more provider actions may already have succeeded.\n' +
-        'The review state was not updated and pending output files were not cleared.\n' +
+        'The checkpoint was not recorded and pending output files were not cleared.\n' +
         'Review the PR/MR before retrying to avoid duplicate comments.',
     ),
   );
@@ -457,8 +473,9 @@ export function registerPublishCommand(program: Command): void {
     console.log('  revpack publish all           Publish everything pending');
     console.log('  revpack publish findings      Publish findings only');
     console.log('  revpack publish replies       Publish replies only');
-    console.log('  revpack publish description   Update MR description');
-    console.log('  revpack publish review        Publish review.md if non-empty and record review state');
+    console.log('  revpack publish summary       Update PR/MR summary in the description');
+    console.log('  revpack publish review        Publish review.md as a review note');
+    console.log('  revpack publish checkpoint    Record checkpoint only');
     process.exit(1);
   });
 
@@ -472,7 +489,7 @@ export function registerPublishCommand(program: Command): void {
         let total = 0;
         let partialSuccess = false;
         let reviewPublishedInBatch = false;
-        let reviewStateUpdated = false;
+        let checkpointRecorded = false;
 
         // Determine provider for flow branching
         const ws = new WorkspaceManager(process.cwd());
@@ -526,23 +543,31 @@ export function registerPublishCommand(program: Command): void {
           console.log(chalk.dim('  (no summary to publish)'));
         }
 
-        // ── 4. Review / Checkpoint ────────────────────────────
-        // GitHub batch already advanced the checkpoint when findings were submitted.
-        // For all other cases (GitLab, or GitHub with no findings), run the normal flow.
-        console.log('');
-        console.log(chalk.bold('─── Review ───'));
-        if (batchCount > 0) {
-          console.log(chalk.green('✓ Review state updated'));
-          total += reviewPublishedInBatch ? 1 : 0;
-          reviewStateUpdated = true;
-        } else {
+        if (!reviewPublishedInBatch) {
+          console.log('');
+          console.log(chalk.bold('─── Review note ───'));
           try {
             total += await publishReviewCmd({});
-            reviewStateUpdated = true;
+            partialSuccess = true;
           } catch (err) {
-            warnPartialSuccess(partialSuccess);
-            throw err;
+            if (!isNoReviewNoteToPublishError(err)) {
+              warnPartialSuccess(partialSuccess);
+              throw err;
+            }
+            console.log(chalk.dim('  (no review note to publish)'));
           }
+        }
+
+        // ── 5. Checkpoint ─────────────────────────────────────
+        console.log('');
+        console.log(chalk.bold('─── Checkpoint ───'));
+        try {
+          await publishCheckpointCmd({});
+          total += reviewPublishedInBatch ? 1 : 0;
+          checkpointRecorded = true;
+        } catch (err) {
+          warnPartialSuccess(partialSuccess);
+          throw err;
         }
 
         // ── Summary ──────────────────────────────────────────
@@ -553,7 +578,7 @@ export function registerPublishCommand(program: Command): void {
           console.log(chalk.green(`✓ ${total} item(s) published`));
         }
 
-        if (parentOpts?.refresh !== false && (total > 0 || reviewStateUpdated)) {
+        if (parentOpts?.refresh !== false && (total > 0 || checkpointRecorded)) {
           await autoRefresh();
         }
       } catch (err) {
@@ -600,35 +625,60 @@ export function registerPublishCommand(program: Command): void {
       }
     });
 
-  // ── publish description ────────────────────────────────────
-  publish
-    .command('description')
-    .description('Update the MR/PR description with a revpack section')
-    .option('--from <file>', 'Read content from a file')
-    .option('--replace', 'Replace entire description')
-    .option('--repo <repo>', 'Repository slug')
-    .action(async (opts: { from?: string; replace?: boolean; repo?: string }, cmd: Command) => {
-      try {
-        const parentOpts = cmd.parent?.opts();
-        await publishDescription(opts);
-        if (parentOpts?.refresh !== false) {
-          await autoRefresh();
+  // ── publish summary ────────────────────────────────────────
+  function addSummaryPublishCommand(commandName: string, opts?: { hidden?: boolean }): void {
+    publish
+      .command(commandName, opts)
+      .description('Update the PR/MR summary section in the description')
+      .option('--from <file>', 'Read content from a file')
+      .option('--replace', 'Replace entire description')
+      .option('--repo <repo>', 'Repository slug')
+      .action(async (opts: PublishSummaryOptions, cmd: Command) => {
+        try {
+          const parentOpts = cmd.parent?.opts();
+          await publishDescription(opts);
+          if (parentOpts?.refresh !== false) {
+            await autoRefresh();
+          }
+        } catch (err) {
+          handleError(err);
         }
-      } catch (err) {
-        handleError(err);
-      }
-    });
+      });
+  }
+
+  addSummaryPublishCommand('summary');
+  addSummaryPublishCommand('description', { hidden: true });
 
   // ── publish review ──────────────────────────────────────────
+  function addReviewPublishCommand(commandName: string, opts?: { hidden?: boolean }): void {
+    publish
+      .command(commandName, opts)
+      .description('Publish review.md as a review note')
+      .option('--from <file>', `Review file (default: ${DEFAULT_REVIEW_FILE})`)
+      .option('--repo <repo>', 'Repository slug')
+      .action(async (opts: { from?: string; repo?: string }, cmd: Command) => {
+        try {
+          const parentOpts = cmd.parent?.opts();
+          await publishReviewCmd(opts);
+          if (parentOpts?.refresh !== false) {
+            await autoRefresh();
+          }
+        } catch (err) {
+          handleError(err);
+        }
+      });
+  }
+
+  addReviewPublishCommand('review');
+
   publish
-    .command('review')
-    .description('Publish review.md if non-empty and record review state')
-    .option('--from <file>', `Review file (default: ${DEFAULT_REVIEW_FILE})`)
+    .command('checkpoint')
+    .description('Record the review checkpoint')
     .option('--repo <repo>', 'Repository slug')
-    .action(async (opts: { from?: string; repo?: string }, cmd: Command) => {
+    .action(async (opts: { repo?: string }, cmd: Command) => {
       try {
         const parentOpts = cmd.parent?.opts();
-        await publishReviewCmd(opts);
+        await publishCheckpointCmd(opts);
         if (parentOpts?.refresh !== false) {
           await autoRefresh();
         }

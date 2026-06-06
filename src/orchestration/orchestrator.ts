@@ -520,17 +520,9 @@ export class ReviewOrchestrator {
   }
 
   /**
-   * Publish review: advance the checkpoint via the description state block,
-   * and optionally publish review.md as a visible comment/note.
-   *
-   * - Hidden state is always written to the MR/PR description/body.
-   * - If visibleContent is non-empty, publishes it as a new normal comment/note.
-   * - If visibleContent is empty, no visible review artifact is created.
+   * Publish review.md as a visible comment/note.
    */
   async publishReview(visibleContent: string, defaultRepo?: string): Promise<{ created: boolean; noteId?: string }> {
-    await this.advanceCheckpoint(defaultRepo);
-
-    // Publish visible review body if non-empty
     if (visibleContent.trim()) {
       const targetRef = await this.resolveRef(undefined, defaultRepo);
       const markedBody = `${REVIEW_NOTE_MARKER}\n${visibleContent.trim()}${REVIEW_NOTE_FOOTER}`;
@@ -543,7 +535,6 @@ export class ReviewOrchestrator {
 
   /**
    * Publish review as part of a GitHub PR review batch (with findings as inline comments).
-   * Advances the checkpoint via the description state block.
    */
   async publishReviewBatch(
     findings: NewFinding[],
@@ -568,15 +559,13 @@ export class ReviewOrchestrator {
       await this.provider.submitReview(targetRef, comments, body, 'COMMENT');
     }
 
-    await this.advanceCheckpoint(defaultRepo);
-
     return { created: findings.length > 0 || !!reviewBody.trim() };
   }
 
   /**
    * Snapshot current MR/PR state and write the checkpoint into the description body.
    */
-  private async advanceCheckpoint(defaultRepo?: string): Promise<void> {
+  async publishCheckpoint(defaultRepo?: string): Promise<void> {
     const targetRef = await this.resolveRef(undefined, defaultRepo);
 
     const [target, rawThreads] = await Promise.all([

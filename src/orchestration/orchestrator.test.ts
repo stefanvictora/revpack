@@ -1600,7 +1600,7 @@ describe('ReviewOrchestrator', () => {
   // ─── Publish review tests ──────────────────────────────
 
   describe('publishReview', () => {
-    it('creates visible comment and advances checkpoint when review content is non-empty', async () => {
+    it('creates visible comment without advancing checkpoint when review content is non-empty', async () => {
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
       (mockProvider.createNote as ReturnType<typeof vi.fn>).mockResolvedValue('new-note-id');
 
@@ -1621,19 +1621,10 @@ describe('ReviewOrchestrator', () => {
       expect(noteBody).not.toContain('<!-- revpack:state');
       expect(noteBody).toContain(REVIEW_NOTE_MARKER);
 
-      expect(mockProvider.updateDescription).toHaveBeenCalledWith(
-        expect.objectContaining({ targetId: '42' }),
-        expect.stringContaining('<!-- revpack:state'),
-      );
-
-      const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      const state = parseDescriptionState(updatedDesc);
-      expect(state).not.toBeNull();
-      expect(state!.checkpoint.headSha).toBe('bbb');
-      expect(state!.target.id).toBe('42');
+      expect(mockProvider.updateDescription).not.toHaveBeenCalled();
     });
 
-    it('with empty review.md publishes no visible comment but advances checkpoint', async () => {
+    it('with empty review.md publishes no visible comment and does not advance checkpoint', async () => {
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
@@ -1643,13 +1634,8 @@ describe('ReviewOrchestrator', () => {
 
       expect(result.created).toBe(false);
       expect(result.noteId).toBeUndefined();
-      // No visible comment created
       expect(mockProvider.createNote).not.toHaveBeenCalled();
-      // But description state block was advanced
-      expect(mockProvider.updateDescription).toHaveBeenCalledWith(
-        expect.objectContaining({ targetId: '42' }),
-        expect.stringContaining('<!-- revpack:state'),
-      );
+      expect(mockProvider.updateDescription).not.toHaveBeenCalled();
     });
 
     it('with whitespace-only content publishes no visible comment', async () => {
@@ -1671,7 +1657,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      await orchestrator.publishReview('', 'group/project');
+      await orchestrator.publishCheckpoint('group/project');
 
       // Description state was written — parse it and check versionId is absent
       const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
@@ -2027,8 +2013,7 @@ describe('ReviewOrchestrator', () => {
       );
 
       expect(result.created).toBe(true);
-      // updateDescription should still be called (advanceCheckpoint runs)
-      expect(providerWithoutSubmit.updateDescription).toHaveBeenCalled();
+      expect(providerWithoutSubmit.updateDescription).not.toHaveBeenCalled();
     });
 
     it('trims whitespace from reviewBody in submitted review', async () => {
@@ -2156,6 +2141,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
       await orchestrator.publishReview('Some review', 'group/project');
+      await orchestrator.publishCheckpoint('group/project');
 
       // The description state should reflect the digest WITHOUT the review note thread
       const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
@@ -2266,7 +2252,7 @@ describe('ReviewOrchestrator', () => {
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
-      await orchestrator.publishReview('', 'group/project');
+      await orchestrator.publishCheckpoint('group/project');
 
       const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
       const state = parseDescriptionState(updatedDesc);
@@ -2285,7 +2271,7 @@ describe('ReviewOrchestrator', () => {
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
-      await orchestrator.publishReview('', 'group/project');
+      await orchestrator.publishCheckpoint('group/project');
 
       const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
       const state = parseDescriptionState(updatedDesc);

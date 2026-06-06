@@ -818,7 +818,7 @@ describeRealGit('LocalGitProvider integration', () => {
     expect(first.bundle.target.targetBranch).toBe('main');
     expect(first.bundle.diffs).toHaveLength(1);
 
-    await orchestrator.publishReview('');
+    await orchestrator.publishCheckpoint();
     const stateRaw = await fs.readFile(path.join(tmpDir, '.revpack', 'local', 'state.json'), 'utf-8');
     const state = JSON.parse(stateRaw) as { description: string };
     const checkpoint = parseDescriptionState(state.description);

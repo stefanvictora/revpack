@@ -1,0 +1,87 @@
+import { describe, expect, it } from 'vitest';
+import { buildStatusNextLines } from './status.js';
+
+describe('buildStatusNextLines', () => {
+  it('shows only the primary publish path when one visible output is ready', () => {
+    expect(
+      buildStatusNextLines({
+        repliesReady: false,
+        findingsReady: false,
+        summaryReady: true,
+        reviewReady: false,
+        checkpointDue: true,
+      }),
+    ).toEqual(['Next:', '  Review .revpack/outputs/', '  revpack publish all']);
+  });
+
+  it('shows selected publish commands when at least two visible outputs are ready', () => {
+    expect(
+      buildStatusNextLines({
+        repliesReady: true,
+        findingsReady: true,
+        summaryReady: true,
+        reviewReady: false,
+        checkpointDue: true,
+      }),
+    ).toEqual([
+      'Next:',
+      '  Review .revpack/outputs/',
+      '  revpack publish all',
+      '',
+      'Or publish selected:',
+      '  revpack publish replies',
+      '  revpack publish findings',
+      '  revpack publish summary',
+      '',
+      'After selected publishing, save the review checkpoint:',
+      '  revpack publish checkpoint',
+    ]);
+  });
+
+  it('lists review note publishing as a selected content command and checkpoint separately', () => {
+    expect(
+      buildStatusNextLines({
+        repliesReady: false,
+        findingsReady: true,
+        summaryReady: false,
+        reviewReady: true,
+        checkpointDue: true,
+      }),
+    ).toEqual([
+      'Next:',
+      '  Review .revpack/outputs/',
+      '  revpack publish all',
+      '',
+      'Or publish selected:',
+      '  revpack publish findings',
+      '  revpack publish review',
+      '',
+      'After selected publishing, save the review checkpoint:',
+      '  revpack publish checkpoint',
+    ]);
+  });
+
+  it('shows checkpoint directly when no visible output is ready but checkpoint is due', () => {
+    expect(
+      buildStatusNextLines({
+        repliesReady: false,
+        findingsReady: false,
+        summaryReady: false,
+        reviewReady: false,
+        checkpointDue: true,
+      }),
+    ).toEqual(['Next:', '  revpack publish checkpoint']);
+  });
+
+  it('shows no pending publish action when nothing is ready or due', () => {
+    expect(
+      buildStatusNextLines({
+        repliesReady: false,
+        findingsReady: false,
+        summaryReady: false,
+        reviewReady: false,
+        checkpointDue: false,
+      }),
+    ).toEqual(['Next:', '  No pending publish action.']);
+  });
+});
