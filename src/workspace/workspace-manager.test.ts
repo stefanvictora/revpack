@@ -648,7 +648,7 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('| renamed |');
     });
 
-    it('includes resolved changed threads from the full checkpoint comparison set', async () => {
+    it('excludes resolved changed threads from the full checkpoint comparison set', async () => {
       const activeThread = makeThread();
       const resolvedThread: ReviewThread = {
         ...makeThread(),
@@ -676,9 +676,9 @@ describe('WorkspaceManager', () => {
       });
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Changed Threads Since Last Checkpoint');
-      expect(content).toContain('| T-002 | resolved |');
-      expect(content).toContain('This was fixed in the latest push');
+      expect(content).not.toContain('## Changed Threads Since Last Checkpoint');
+      expect(content).not.toContain('| T-002 | resolved |');
+      expect(content).not.toContain('This was fixed in the latest push');
     });
 
     it('escapes markdown table separators in thread snippets', async () => {
@@ -903,9 +903,8 @@ describe('WorkspaceManager', () => {
       });
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Thread Updates Since Last Checkpoint');
-      expect(content).toContain('These threads changed since the last checkpoint.');
-      expect(content).toContain('| T-002 | resolved |');
+      expect(content).not.toContain('## Thread Updates Since Last Checkpoint');
+      expect(content).not.toContain('| T-002 | resolved |');
       expect(content).toContain('## Unresolved Threads Requiring Attention');
       expect(content).toContain('These unresolved threads may need replies or resolution.');
     });
@@ -3358,7 +3357,7 @@ describe('WorkspaceManager', () => {
   });
 
   describe('changed threads section in writeContext', () => {
-    it('lists both resolved and unresolved changed threads', async () => {
+    it('lists unresolved changed threads and excludes resolved changed threads', async () => {
       const unresolvedThread: ReviewThread = {
         ...makeThread(),
         threadId: 'changed-unresolved',
@@ -3385,15 +3384,14 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Changed Threads Since Last Checkpoint');
       expect(content).toContain('unresolved');
-      expect(content).toContain('resolved');
       expect(content).toContain('`src/a.ts`:5');
-      expect(content).toContain('`src/b.ts`:10');
-      // Each thread appears exactly once (no duplicates from filter removal)
+      expect(content).not.toContain('`src/b.ts`:10');
       const changedSection = content.split('## Changed Threads Since Last Checkpoint')[1]?.split('##')[0] ?? '';
+      expect(changedSection).not.toContain('| T-002 | resolved |');
       const dataRows = changedSection
         .split('\n')
         .filter((l) => l.startsWith('|') && !l.includes('---') && !l.includes('Thread'));
-      expect(dataRows).toHaveLength(2);
+      expect(dataRows).toHaveLength(1);
     });
 
     it('omits section when no changed thread IDs match any thread', async () => {

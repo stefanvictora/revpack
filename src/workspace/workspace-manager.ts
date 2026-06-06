@@ -892,18 +892,16 @@ export class WorkspaceManager {
   ): ContextTemplateView['changedThreads'] {
     if (!changedThreadIds || changedThreadIds.size === 0) return undefined;
 
-    const changedThreads = threads.filter((t) => changedThreadIds.has(t.threadId));
-    const rows = [...changedThreads.filter((t) => !t.resolved), ...changedThreads.filter((t) => t.resolved)].map(
-      (t) => {
-        const firstComment = firstNonSystemComment(t);
-        return {
-          shortId: threadIndex.get(t.threadId) ?? '?',
-          status: t.resolved ? 'resolved' : 'unresolved',
-          location: threadLocation(t),
-          summary: cleanSnippet(firstComment?.body ?? '', 80),
-        };
-      },
-    );
+    const changedThreads = threads.filter((t) => changedThreadIds.has(t.threadId) && t.resolvable && !t.resolved);
+    const rows = changedThreads.map((t) => {
+      const firstComment = firstNonSystemComment(t);
+      return {
+        shortId: threadIndex.get(t.threadId) ?? '?',
+        status: t.resolved ? 'resolved' : 'unresolved',
+        location: threadLocation(t),
+        summary: cleanSnippet(firstComment?.body ?? '', 80),
+      };
+    });
 
     if (rows.length === 0) return undefined;
 
