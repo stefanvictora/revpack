@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildStatusNextLines } from './status.js';
+import { buildPendingOlderBundleLines, buildStatusNextLines } from './status.js';
 
 describe('buildStatusNextLines', () => {
   it('shows only the primary publish path when one visible output is ready', () => {
@@ -83,5 +83,33 @@ describe('buildStatusNextLines', () => {
         checkpointDue: false,
       }),
     ).toEqual(['Next:', '  No pending publish action.']);
+  });
+});
+
+describe('buildPendingOlderBundleLines', () => {
+  it('lists selected publish commands for pending output from a stale bundle', () => {
+    expect(
+      buildPendingOlderBundleLines({
+        repliesReady: false,
+        findingsReady: false,
+        summaryReady: true,
+        reviewReady: false,
+      }),
+    ).toEqual([
+      'Still pending output from previous bundle:',
+      '  Review .revpack/outputs/',
+      '  revpack publish summary',
+    ]);
+  });
+
+  it('omits the older bundle block when no content output is pending', () => {
+    expect(
+      buildPendingOlderBundleLines({
+        repliesReady: false,
+        findingsReady: false,
+        summaryReady: false,
+        reviewReady: false,
+      }),
+    ).toEqual([]);
   });
 });

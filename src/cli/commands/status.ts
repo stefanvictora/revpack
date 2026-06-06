@@ -60,13 +60,19 @@ export function registerStatusCommand(program: Command): void {
         // If we have a bundle, show bundle-first status
         if (bundleState) {
           const t = bundleState.target;
+          const latestTarget = await orchestrator.open(undefined, defaultRepo).catch(() => null);
+          const currentTargetHead = latestTarget?.diffRefs.headSha;
+          const comparisonTargetHead = currentTargetHead ?? t.diffRefs.headSha;
+          const bundleIsOutdated = currentTargetHead ? currentTargetHead !== t.diffRefs.headSha : false;
           const targetKind = formatTargetKind({ targetType: t.type });
           const targetDisplayId = formatTargetDisplayId({
             provider: t.provider,
             targetType: t.type,
             targetId: t.id,
           });
-          const stateColor = getStateColor(t.state);
+          const stateColor = getStateColor(latestTarget?.state ?? t.state);
+          const hasPublishableSummary = isPublishableOutputState(summaryState);
+          const hasPublishableReview = isPublishableOutputState(reviewState);
 
           console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${t.title}`));
           console.log(`  ${chalk.dim('Repository:')} ${t.repository}`);
@@ -80,41 +86,32 @@ export function registerStatusCommand(program: Command): void {
 
           // Bundle info
           console.log(chalk.dim('─ Bundle ─'));
-          console.log(`  ${chalk.dim('Prepared:')}      ${formatDate(bundleState.preparedAt)}`);
-          console.log(`  ${chalk.dim(`${targetKind} head:`)}       ${t.diffRefs.headSha.slice(0, 7)}`);
-          if (bundleState.local) {
-            console.log(`  ${chalk.dim('Prepared head:')} ${bundleState.local.headSha.slice(0, 7)}`);
+          console.log(`  ${chalk.dim('Prepared:')}         ${formatDate(bundleState.preparedAt)}`);
+          console.log(`  ${chalk.dim(`Prepared ${targetKind} head:`)} ${t.diffRefs.headSha.slice(0, 7)}`);
+          if (currentTargetHead) {
+            console.log(`  ${chalk.dim(`Latest ${targetKind} head:`)}   ${currentTargetHead.slice(0, 7)}`);
           }
+          console.log(
+            `  ${chalk.dim('Status:')}           ${formatBundleFreshnessState(currentTargetHead, bundleIsOutdated, targetKind)}`,
+          );
           console.log('');
 
           // Local checkout info
-          let checkoutNeedsRefresh = false;
           const git = new GitHelper(process.cwd());
           try {
             const [currentHead, currentBranch] = await Promise.all([git.headSha(), git.currentBranch()]);
-            const matchesTarget = currentHead === t.diffRefs.headSha;
-            let needsPullBeforePrepare = false;
+            const matchesTarget = currentHead === comparisonTargetHead;
 
             console.log(chalk.dim('─ Local checkout ─'));
-            console.log(`  ${chalk.dim('Branch:')}        ${currentBranch}`);
-            console.log(`  ${chalk.dim('Current HEAD:')}  ${currentHead.slice(0, 7)}`);
+            console.log(`  ${chalk.dim('Branch:')}           ${currentBranch}`);
+            console.log(`  ${chalk.dim('Current HEAD:')}     ${currentHead.slice(0, 7)}`);
             if (matchesTarget) {
-              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}    ${chalk.green('yes')}`);
+              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}       ${chalk.green('yes')}`);
             } else {
-              checkoutNeedsRefresh = true;
-              const isAncestor = await git.isAncestor(t.diffRefs.headSha).catch(() => false);
-              needsPullBeforePrepare = !isAncestor;
+              const isAncestor = await git.isAncestor(comparisonTargetHead).catch(() => false);
               const relation = isAncestor ? `ahead of ${targetKind} head` : `behind ${targetKind} head`;
-              console.log(`  ${chalk.dim(`${targetKind} head:`)}       ${t.diffRefs.headSha.slice(0, 7)}`);
+              console.log(`  ${chalk.dim(`${targetKind} head:`)}          ${comparisonTargetHead.slice(0, 7)}`);
               console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}    ${chalk.yellow(`no — ${relation}`)}`);
-            }
-            if (!matchesTarget) {
-              console.log('');
-              console.log(chalk.dim('Next:'));
-              if (needsPullBeforePrepare) {
-                console.log(chalk.dim('  git pull'));
-              }
-              console.log(chalk.dim('  revpack prepare'));
             }
           } catch {
             // Not a git repo — skip local checkout info
@@ -139,14 +136,16 @@ export function registerStatusCommand(program: Command): void {
           // Publish status
           console.log('');
           console.log(chalk.dim('─ Publish status ─'));
-          console.log(`  ${chalk.dim('Replies:')}       ${pendingReplies > 0 ? `${pendingReplies} pending` : 'none'}`);
           console.log(
-            `  ${chalk.dim('Findings:')}      ${pendingFindings > 0 ? `${pendingFindings} pending` : 'none'}`,
+            `  ${chalk.dim('Replies:')}          ${pendingReplies > 0 ? `${pendingReplies} pending` : chalk.dim('none')}`,
           );
-          console.log(`  ${chalk.dim('Summary:')}       ${formatOutputState(summaryState)}`);
-          console.log(`  ${chalk.dim('Review note:')}   ${formatOutputState(reviewState)}`);
+          console.log(
+            `  ${chalk.dim('Findings:')}         ${pendingFindings > 0 ? `${pendingFindings} pending` : chalk.dim('none')}`,
+          );
+          console.log(`  ${chalk.dim('Summary:')}          ${formatOutputState(summaryState)}`);
+          console.log(`  ${chalk.dim('Review note:')}      ${formatOutputState(reviewState)}`);
           const checkpointState = getCheckpointState(bundleState);
-          console.log(`  ${chalk.dim('Checkpoint:')}    ${formatCheckpointState(checkpointState)}`);
+          console.log(`  ${chalk.dim('Checkpoint:')}       ${formatCheckpointState(checkpointState)}`);
 
           // Publish history
           if (bundleState.publishedActions.length > 0) {
@@ -157,11 +156,24 @@ export function registerStatusCommand(program: Command): void {
 
           // Next step
           console.log('');
-          const hasPublishableSummary = isPublishableOutputState(summaryState);
-          const hasPublishableReview = isPublishableOutputState(reviewState);
           const needsCheckpoint = checkpointState !== 'current';
 
-          if (!checkoutNeedsRefresh && !mismatch) {
+          if (bundleIsOutdated) {
+            console.log(chalk.dim('Next:'));
+            console.log('  revpack prepare');
+            const pendingOlderBundleLines = buildPendingOlderBundleLines({
+              repliesReady: pendingReplies > 0,
+              findingsReady: pendingFindings > 0,
+              summaryReady: hasPublishableSummary,
+              reviewReady: hasPublishableReview,
+            });
+            if (pendingOlderBundleLines.length > 0) {
+              console.log('');
+              for (const line of pendingOlderBundleLines) {
+                console.log(chalk.dim(line));
+              }
+            }
+          } else if (!mismatch) {
             for (const line of buildStatusNextLines({
               repliesReady: pendingReplies > 0,
               findingsReady: pendingFindings > 0,
@@ -258,6 +270,15 @@ function formatCheckpointState(state: CheckpointState): string {
   }
 }
 
+function formatBundleFreshnessState(
+  currentTargetHead: string | undefined,
+  bundleIsOutdated: boolean,
+  targetKind: string,
+): string {
+  if (!currentTargetHead) return chalk.yellow('unknown');
+  return bundleIsOutdated ? chalk.yellow(`stale — prepared for older ${targetKind} head`) : chalk.green('current');
+}
+
 function isPublishableOutputState(state: string): boolean {
   return state === 'pending' || state === 'modified since publish';
 }
@@ -297,6 +318,21 @@ export function buildStatusNextLines(options: {
   return ['Next:', '  No pending publish action.'];
 }
 
+export function buildPendingOlderBundleLines(options: {
+  repliesReady: boolean;
+  findingsReady: boolean;
+  summaryReady: boolean;
+  reviewReady: boolean;
+}): string[] {
+  const lines: string[] = [];
+  if (options.repliesReady) lines.push('  revpack publish replies');
+  if (options.findingsReady) lines.push('  revpack publish findings');
+  if (options.summaryReady) lines.push('  revpack publish summary');
+  if (options.reviewReady) lines.push('  revpack publish review');
+
+  return lines.length > 0 ? ['Still pending output from previous bundle:', '  Review .revpack/outputs/', ...lines] : [];
+}
+
 function formatOutputState(state: string): string {
   switch (state) {
     case 'empty':
@@ -323,6 +359,9 @@ function formatDate(iso: string): string {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
     });
 
     if (diffDays === 0) return `${formatted} (today)`;

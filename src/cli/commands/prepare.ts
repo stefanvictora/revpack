@@ -158,6 +158,9 @@ function formatDate(iso: string): string {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
     });
 
     if (diffDays === 0) return `${formatted} (today)`;
