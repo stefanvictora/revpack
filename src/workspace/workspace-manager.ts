@@ -329,6 +329,7 @@ export class WorkspaceManager {
           markdownFile: `.revpack/threads/${shortId}.md`,
           resolved: t.resolved,
           resolvable: t.resolvable,
+          ...(t.outdated !== undefined ? { outdated: t.outdated } : {}),
           commentsCount: t.comments.length,
           latestCommentAt: latestComment?.createdAt ?? null,
           digest: computeThreadDigest(t),
@@ -1353,12 +1354,20 @@ export class WorkspaceManager {
     lines.push('');
     lines.push(`- **Status**: ${thread.resolved ? 'Resolved' : 'Unresolved'}`);
     lines.push(`- **Resolvable**: ${thread.resolvable}`);
+    if (thread.outdated !== undefined) lines.push(`- **Outdated**: ${thread.outdated}`);
     if (thread.position) {
       lines.push(`- **File**: \`${thread.position.filePath}\``);
       const lineNum = thread.position.newLine ?? thread.position.oldLine;
       if (lineNum) lines.push(`- **Line**: ${lineNum}`);
     }
     lines.push('');
+
+    if (thread.outdated) {
+      lines.push(
+        '> Warning: GitHub marks this thread as outdated because newer changes affected its diff anchor. Verify against the current code before deciding whether it is still actionable.',
+      );
+      lines.push('');
+    }
 
     // Embed diff context around the thread's position.
     // Only show context if the thread's headSha matches the current MR head,

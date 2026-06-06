@@ -1456,7 +1456,7 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundleState.threads.items[0].digest).toBeTruthy();
       expect(result.bundleState.threads.items[0].shortId).toBe('T-001');
       expect(result.bundleState.threads.digest).toBeTruthy();
-      expect(result.bundleState.threads.digestVersion).toBe(2);
+      expect(result.bundleState.threads.digestVersion).toBe(3);
     });
   });
 

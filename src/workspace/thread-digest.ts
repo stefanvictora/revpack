@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { ReviewThread } from '../core/types.js';
 import { canonicalThreadComments } from './thread-utils.js';
 
-const DIGEST_VERSION = 2;
+const DIGEST_VERSION = 3;
 
 /**
  * Compute a SHA-256 hash of a string.
@@ -31,6 +31,7 @@ function threadProjection(thread: ReviewThread): object {
     providerThreadId: thread.threadId,
     resolved: thread.resolved,
     resolvable: thread.resolvable,
+    outdated: nullable(thread.outdated),
     resolvedBy: nullable(thread.resolvedBy),
     resolvedAt: nullable(thread.resolvedAt),
     position: thread.position

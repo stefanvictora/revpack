@@ -116,6 +116,7 @@ export interface ReviewThreadRef {
 export interface ReviewThread extends ReviewThreadRef {
   resolved: boolean;
   resolvable: boolean;
+  outdated?: boolean;
   resolvedBy?: string;
   resolvedAt?: string;
   position?: DiffPosition;
@@ -277,6 +278,7 @@ export interface BundleThreadItem {
   markdownFile: string;
   resolved: boolean;
   resolvable: boolean;
+  outdated?: boolean;
   commentsCount: number;
   latestCommentAt: string | null;
   digest: string;
