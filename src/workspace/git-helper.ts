@@ -1,7 +1,30 @@
 import { execFile, spawn as nodeSpawn } from 'node:child_process';
-import { promisify } from 'node:util';
 
-const exec = promisify(execFile);
+const GIT_LONG_PATHS_CONFIG = ['-c', 'core.longpaths=true'];
+
+function gitArgs(args: string[]): string[] {
+  return [...GIT_LONG_PATHS_CONFIG, ...args];
+}
+
+async function execGit(args: string[], cwd: string): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile('git', gitArgs(args), { cwd }, (error, stdout, stderr) => {
+      if (error) {
+        reject(error instanceof Error ? error : new Error('Git command failed'));
+        return;
+      }
+
+      resolve({ stdout: stdout.toString(), stderr: stderr.toString() });
+    });
+  });
+}
+
+function spawnGit(args: string[], cwd: string): ReturnType<typeof nodeSpawn> {
+  return nodeSpawn('git', gitArgs(args), {
+    cwd,
+    stdio: 'inherit',
+  });
+}
 
 export class GitHelper {
   readonly cwd: string;
@@ -36,10 +59,10 @@ export class GitHelper {
 
     // Step 1: clone without checking out any branch (avoids downloading default branch content)
     await new Promise<void>((resolve, reject) => {
-      const child = nodeSpawn('git', ['clone', '--depth', '1', '--no-checkout', '--progress', cloneUrl, resolvedName], {
-        cwd: parentDir,
-        stdio: 'inherit',
-      });
+      const child = spawnGit(
+        ['clone', '--depth', '1', '--no-checkout', '--progress', cloneUrl, resolvedName],
+        parentDir,
+      );
       child.on('close', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`git clone exited with code ${code}`));
@@ -50,10 +73,10 @@ export class GitHelper {
     const clonedPath = (await import('node:path')).resolve(parentDir, resolvedName);
 
     // Step 2: fetch the PR/MR refspec into a local branch (shallow to match the clone depth)
-    await exec('git', ['fetch', '--depth', '1', 'origin', `${remoteRef}:${localBranch}`], { cwd: clonedPath });
+    await execGit(['fetch', '--depth', '1', 'origin', `${remoteRef}:${localBranch}`], clonedPath);
 
     // Step 3: switch to the local branch
-    await exec('git', ['switch', localBranch], { cwd: clonedPath });
+    await execGit(['switch', localBranch], clonedPath);
 
     return clonedPath;
   }
@@ -77,10 +100,7 @@ export class GitHelper {
     // Use spawn with inherited stdio so clone progress is shown in terminal,
     // and stdin is inherited so SSH passphrase prompts can be answered interactively.
     await new Promise<void>((resolve, reject) => {
-      const child = nodeSpawn('git', args, {
-        cwd: parentDir,
-        stdio: 'inherit',
-      });
+      const child = spawnGit(args, parentDir);
       child.on('close', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`git clone exited with code ${code}`));
@@ -93,13 +113,13 @@ export class GitHelper {
 
   /** Get current branch name. */
   async currentBranch(): Promise<string> {
-    const { stdout } = await exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: this.cwd });
+    const { stdout } = await execGit(['rev-parse', '--abbrev-ref', 'HEAD'], this.cwd);
     return stdout.trim();
   }
 
   /** Get remote URL for origin. */
   async remoteUrl(remote = 'origin'): Promise<string> {
-    const { stdout } = await exec('git', ['remote', 'get-url', remote], { cwd: this.cwd });
+    const { stdout } = await execGit(['remote', 'get-url', remote], this.cwd);
     return stdout.trim();
   }
 
@@ -109,12 +129,12 @@ export class GitHelper {
    */
   async listRemoteUrls(): Promise<string[]> {
     try {
-      const { stdout } = await exec('git', ['remote'], { cwd: this.cwd });
+      const { stdout } = await execGit(['remote'], this.cwd);
       const remoteNames = stdout.trim().split('\n').filter(Boolean);
       const urls: string[] = [];
       for (const name of remoteNames) {
         try {
-          const { stdout: url } = await exec('git', ['remote', 'get-url', name], { cwd: this.cwd });
+          const { stdout: url } = await execGit(['remote', 'get-url', name], this.cwd);
           if (url.trim()) urls.push(url.trim());
         } catch {
           // skip unreachable remotes
@@ -140,7 +160,7 @@ export class GitHelper {
 
   /** Resolve a ref to a commit SHA. */
   async revParse(ref: string): Promise<string> {
-    const { stdout } = await exec('git', ['rev-parse', '--verify', `${ref}^{commit}`], { cwd: this.cwd });
+    const { stdout } = await execGit(['rev-parse', '--verify', `${ref}^{commit}`], this.cwd);
     return stdout.trim();
   }
 
@@ -156,14 +176,14 @@ export class GitHelper {
 
   /** Return the merge-base between two refs. */
   async mergeBase(leftRef: string, rightRef: string): Promise<string> {
-    const { stdout } = await exec('git', ['merge-base', leftRef, rightRef], { cwd: this.cwd });
+    const { stdout } = await execGit(['merge-base', leftRef, rightRef], this.cwd);
     return stdout.trim();
   }
 
   /** Read a git config value, returning undefined when it is not configured. */
   async configValue(key: string): Promise<string | undefined> {
     try {
-      const { stdout } = await exec('git', ['config', '--get', key], { cwd: this.cwd });
+      const { stdout } = await execGit(['config', '--get', key], this.cwd);
       const value = stdout.trim();
       return value || undefined;
     } catch {
@@ -174,7 +194,7 @@ export class GitHelper {
   /** Fetch a branch from a specific remote URL without adding a named remote. */
   async fetchBranchFromUrl(remoteUrl: string, branch: string): Promise<void> {
     // git fetch <url> <branch>:<branch> — creates a local tracking ref with the same name.
-    await exec('git', ['fetch', remoteUrl, `${branch}:${branch}`], { cwd: this.cwd });
+    await execGit(['fetch', remoteUrl, `${branch}:${branch}`], this.cwd);
   }
 
   /**
@@ -183,17 +203,17 @@ export class GitHelper {
    * Example: fetchRef('origin', 'refs/pull/42/head', 'pr-42-head')
    */
   async fetchRef(remote: string, remoteRef: string, localBranch: string): Promise<void> {
-    await exec('git', ['fetch', '--depth', '1', remote, `${remoteRef}:${localBranch}`], { cwd: this.cwd });
+    await execGit(['fetch', '--depth', '1', remote, `${remoteRef}:${localBranch}`], this.cwd);
   }
 
   /** Switch to a branch, creating a tracking branch if needed. */
   async switchBranch(branch: string, remote = 'origin'): Promise<void> {
     try {
       // Try switching to existing local branch first
-      await exec('git', ['switch', branch], { cwd: this.cwd });
+      await execGit(['switch', branch], this.cwd);
     } catch {
       // Branch doesn't exist locally — create tracking branch from remote
-      await exec('git', ['switch', '-c', branch, '--track', `${remote}/${branch}`], { cwd: this.cwd });
+      await execGit(['switch', '-c', branch, '--track', `${remote}/${branch}`], this.cwd);
     }
   }
 
@@ -209,13 +229,13 @@ export class GitHelper {
       return;
     }
 
-    await exec('git', args, { cwd: this.cwd });
+    await execGit(args, this.cwd);
   }
 
   /** Check if we're inside a git repository. */
   async isGitRepo(): Promise<boolean> {
     try {
-      await exec('git', ['rev-parse', '--git-dir'], { cwd: this.cwd });
+      await execGit(['rev-parse', '--git-dir'], this.cwd);
       return true;
     } catch {
       return false;
@@ -230,7 +250,7 @@ export class GitHelper {
       return;
     }
 
-    await exec('git', args, { cwd: this.cwd });
+    await execGit(args, this.cwd);
   }
 
   /** Fetch a specific commit/object from a remote into FETCH_HEAD when the server allows it. */
@@ -245,25 +265,25 @@ export class GitHelper {
       return;
     }
 
-    await exec('git', args, { cwd: this.cwd });
+    await execGit(args, this.cwd);
   }
 
   /** Read a file at a specific ref. */
   async showFile(ref: string, filePath: string): Promise<string> {
-    const { stdout } = await exec('git', ['show', `${ref}:${filePath}`], { cwd: this.cwd });
+    const { stdout } = await execGit(['show', `${ref}:${filePath}`], this.cwd);
     return stdout;
   }
 
   /** Get current HEAD sha. */
   async headSha(): Promise<string> {
-    const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: this.cwd });
+    const { stdout } = await execGit(['rev-parse', 'HEAD'], this.cwd);
     return stdout.trim();
   }
 
   /** Check if a commit is an ancestor of HEAD (i.e. HEAD includes that commit). */
   async isAncestor(commitSha: string): Promise<boolean> {
     try {
-      await exec('git', ['merge-base', '--is-ancestor', commitSha, 'HEAD'], { cwd: this.cwd });
+      await execGit(['merge-base', '--is-ancestor', commitSha, 'HEAD'], this.cwd);
       return true;
     } catch {
       return false;
@@ -279,7 +299,7 @@ export class GitHelper {
   /** Check whether a commit object exists locally. */
   async hasCommit(commitSha: string): Promise<boolean> {
     try {
-      await exec('git', ['cat-file', '-e', `${commitSha}^{commit}`], { cwd: this.cwd });
+      await execGit(['cat-file', '-e', `${commitSha}^{commit}`], this.cwd);
       return true;
     } catch {
       return false;
@@ -288,40 +308,34 @@ export class GitHelper {
 
   /** Get the repository root directory. */
   async repositoryRoot(): Promise<string> {
-    const { stdout } = await exec('git', ['rev-parse', '--show-toplevel'], { cwd: this.cwd });
+    const { stdout } = await execGit(['rev-parse', '--show-toplevel'], this.cwd);
     return stdout.trim();
   }
 
   /** Generate a diff between two refs. */
   async diff(baseRef: string, headRef: string): Promise<string> {
-    const { stdout } = await exec('git', ['diff', baseRef, headRef], { cwd: this.cwd });
+    const { stdout } = await execGit(['diff', baseRef, headRef], this.cwd);
     return stdout;
   }
 
   /** Generate the canonical review patch between two commits. */
   async diffForReview(baseSha: string, headSha: string): Promise<string> {
-    const { stdout } = await exec(
-      'git',
+    const { stdout } = await execGit(
       ['diff', '--find-renames', '--unified=3', '--ignore-space-at-eol', '--ignore-blank-lines', baseSha, headSha],
-      {
-        cwd: this.cwd,
-      },
+      this.cwd,
     );
     return stdout;
   }
 
   /** List changed files between two refs. */
   async changedFiles(baseRef: string, headRef: string): Promise<string[]> {
-    const { stdout } = await exec('git', ['diff', '--name-only', baseRef, headRef], { cwd: this.cwd });
+    const { stdout } = await execGit(['diff', '--name-only', baseRef, headRef], this.cwd);
     return stdout.trim().split('\n').filter(Boolean);
   }
 
   private async runGitWithInheritedOutput(args: string[]): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const child = nodeSpawn('git', args, {
-        cwd: this.cwd,
-        stdio: 'inherit',
-      });
+      const child = spawnGit(args, this.cwd);
       child.on('close', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`git ${args.join(' ')} exited with code ${code}`));
