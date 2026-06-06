@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
   configSchema,
+  providerTypeSchema,
+  remoteProviderTypeSchema,
+  targetTypeSchema,
+  reviewTargetRefSchema,
   newFindingSchema,
   newFindingsArraySchema,
   replyDraftSchema,
+  replyDispositionSchema,
+  repliesArraySchema,
   severitySchema,
   findingCategorySchema,
 } from '../core/schemas.js';
@@ -145,6 +151,10 @@ describe('newFindingSchema', () => {
       category: 'correctness',
     });
     expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected missing line finding to fail validation');
+    expect(result.error.issues).toContainEqual(
+      expect.objectContaining({ message: 'At least one of oldLine or newLine is required' }),
+    );
   });
 
   it('rejects invalid severity', () => {
@@ -181,6 +191,56 @@ describe('newFindingSchema', () => {
       category: 'correctness',
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('provider and target schemas', () => {
+  it('accepts every supported provider type', () => {
+    for (const provider of ['gitlab', 'github', 'local']) {
+      expect(providerTypeSchema.safeParse(provider).success).toBe(true);
+    }
+  });
+
+  it('limits remote provider types to hosted providers', () => {
+    expect(remoteProviderTypeSchema.safeParse('gitlab').success).toBe(true);
+    expect(remoteProviderTypeSchema.safeParse('github').success).toBe(true);
+    expect(remoteProviderTypeSchema.safeParse('local').success).toBe(false);
+  });
+
+  it('accepts every supported target type', () => {
+    for (const targetType of ['merge_request', 'pull_request', 'local_review']) {
+      expect(targetTypeSchema.safeParse(targetType).success).toBe(true);
+    }
+  });
+
+  it('validates review target references', () => {
+    const result = reviewTargetRefSchema.safeParse({
+      provider: 'github',
+      repository: 'owner/repo',
+      targetType: 'pull_request',
+      targetId: '123',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects review target references with empty repository or target id', () => {
+    expect(
+      reviewTargetRefSchema.safeParse({
+        provider: 'github',
+        repository: '',
+        targetType: 'pull_request',
+        targetId: '123',
+      }).success,
+    ).toBe(false);
+    expect(
+      reviewTargetRefSchema.safeParse({
+        provider: 'github',
+        repository: 'owner/repo',
+        targetType: 'pull_request',
+        targetId: '',
+      }).success,
+    ).toBe(false);
   });
 });
 
@@ -233,6 +293,29 @@ describe('replyDraftSchema', () => {
       disposition: 'invalid',
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('replyDispositionSchema', () => {
+  it('accepts all valid reply dispositions', () => {
+    for (const disposition of ['already_fixed', 'explain', 'suggest_fix', 'disagree', 'escalate']) {
+      expect(replyDispositionSchema.safeParse(disposition).success).toBe(true);
+    }
+  });
+});
+
+describe('repliesArraySchema', () => {
+  it('validates an array of reply drafts', () => {
+    const result = repliesArraySchema.safeParse([
+      {
+        threadId: 'T-001',
+        body: 'Fixed in the latest push.',
+        resolve: true,
+        disposition: 'already_fixed',
+      },
+    ]);
+
+    expect(result.success).toBe(true);
   });
 });
 

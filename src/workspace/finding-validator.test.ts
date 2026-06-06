@@ -22,6 +22,16 @@ const makeLineMap = (): LineMap => ({
       oldExists: true,
       newExists: true,
     },
+    {
+      oldPath: 'src/RenamedOld.java',
+      newPath: 'src/RenamedNew.java',
+      status: 'renamed',
+      hunks: [],
+      lines: [{ type: 'added', newLine: 5, text: '    renamed();' }],
+      binary: false,
+      oldExists: true,
+      newExists: true,
+    },
   ],
 });
 
@@ -84,6 +94,32 @@ describe('validateFindings', () => {
       expect(result.errors).toHaveLength(0);
       expect(result.valid).toHaveLength(0);
     });
+
+    it('keeps valid findings when another finding fails positional validation', () => {
+      const findings = [
+        {
+          oldPath: 'src/App.java',
+          newPath: 'src/App.java',
+          newLine: 2,
+          body: 'Valid finding',
+          severity: 'high',
+          category: 'correctness',
+        },
+        {
+          oldPath: 'src/App.java',
+          newPath: 'src/App.java',
+          newLine: 99,
+          body: 'Invalid finding',
+          severity: 'medium',
+          category: 'correctness',
+        },
+      ];
+
+      const result = validateFindings(findings, makeLineMap());
+      expect(result.valid).toEqual([findings[0]]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].index).toBe(1);
+    });
   });
 
   describe('invalid findings', () => {
@@ -103,6 +139,12 @@ describe('validateFindings', () => {
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain('context line');
       expect(result.errors[0].message).toContain('both oldLine and newLine');
+      expect(result.errors[0].message).toContain(
+        'newLine=12 in src/App.java is a context line (oldLine=11, newLine=12).',
+      );
+      expect(result.errors[0].message).toBe(
+        'newLine-only findings must point to an added line. newLine=12 in src/App.java is a context line (oldLine=11, newLine=12). Context lines require both oldLine and newLine.',
+      );
     });
 
     it('rejects finding with line outside the diff', () => {
@@ -121,6 +163,12 @@ describe('validateFindings', () => {
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain('No valid added-line anchor');
       expect(result.errors[0].message).toContain('newLine 99');
+      expect(result.errors[0].message).toContain(
+        'If this line is outside the visible diff, move the issue to review.md or anchor it to the closest visible changed/context line.',
+      );
+      expect(result.errors[0].message).toBe(
+        'No valid added-line anchor found for src/App.java newLine 99. If this is an unchanged context line, provide both oldLine and newLine. If this line is outside the visible diff, move the issue to review.md or anchor it to the closest visible changed/context line.',
+      );
     });
 
     it('rejects finding for non-existent file', () => {
@@ -138,6 +186,26 @@ describe('validateFindings', () => {
       const result = validateFindings(findings, makeLineMap());
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain('No file entry found');
+      expect(result.errors[0].message).toBe(
+        'No file entry found in diffs/latest.patch for oldPath="src/Missing.java", newPath="src/Missing.java". The finding must reference a file that exists in the MR diff.',
+      );
+    });
+
+    it('requires both oldPath and newPath to match the same file entry', () => {
+      const findings = [
+        {
+          oldPath: 'src/RenamedOld.java',
+          newPath: 'src/App.java',
+          newLine: 5,
+          body: 'Wrong side of rename',
+          severity: 'high',
+          category: 'correctness',
+        },
+      ];
+
+      const result = validateFindings(findings, makeLineMap());
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].message).toContain('oldPath="src/RenamedOld.java", newPath="src/App.java"');
     });
 
     it('rejects invalid severity', () => {
@@ -155,6 +223,20 @@ describe('validateFindings', () => {
       const result = validateFindings(findings, makeLineMap());
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain('Schema error');
+      expect(result.errors[0].index).toBe(0);
+      expect(result.errors[0].finding).toEqual(findings[0]);
+      expect(result.errors[0].message).toContain('(at 0.severity)');
+    });
+
+    it('reports root-level schema errors at index zero', () => {
+      const result = validateFindings({ not: 'an array' } as unknown as unknown[], makeLineMap());
+
+      expect(result.valid).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].index).toBe(0);
+      expect(result.errors[0].finding).toEqual({});
+      expect(result.errors[0].message).toContain('Schema error');
+      expect(result.errors[0].message).toContain('(at )');
     });
 
     it('rejects invalid category', () => {
@@ -172,6 +254,34 @@ describe('validateFindings', () => {
       const result = validateFindings(findings, makeLineMap());
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain('Schema error');
+    });
+
+    it('reports schema errors at the failing finding index', () => {
+      const findings = [
+        {
+          oldPath: 'src/App.java',
+          newPath: 'src/App.java',
+          newLine: 2,
+          body: 'Valid finding',
+          severity: 'high',
+          category: 'correctness',
+        },
+        {
+          oldPath: 'src/App.java',
+          newPath: 'src/App.java',
+          newLine: 2,
+          body: 'Bad severity',
+          severity: 'major',
+          category: 'correctness',
+        },
+      ];
+
+      const result = validateFindings(findings, makeLineMap());
+      expect(result.valid).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].index).toBe(1);
+      expect(result.errors[0].finding).toEqual(findings[1]);
+      expect(result.errors[0].message).toContain('(at 1.severity)');
     });
 
     it('rejects finding missing both line fields', () => {
@@ -206,6 +316,8 @@ describe('validateFindings', () => {
       const result = validateFindings(findings, makeLineMap());
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain('No valid context-line anchor');
+      expect(result.errors[0].message).toContain('oldLine=10, newLine=11');
+      expect(result.errors[0].message).toContain('Context lines require both oldLine and newLine to match exactly.');
     });
 
     it('rejects oldLine-only finding on a line that is not removed', () => {
@@ -223,6 +335,46 @@ describe('validateFindings', () => {
       const result = validateFindings(findings, makeLineMap());
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain('No valid removed-line anchor');
+      expect(result.errors[0].message).toContain(
+        'If this line is outside the visible diff, move the issue to review.md or anchor it to the closest visible changed/context line.',
+      );
+    });
+
+    it('rejects oldLine-only finding on a context line', () => {
+      const findings = [
+        {
+          oldPath: 'src/App.java',
+          newPath: 'src/App.java',
+          oldLine: 10,
+          body: 'Context is not removed',
+          severity: 'high',
+          category: 'correctness',
+        },
+      ];
+
+      const result = validateFindings(findings, makeLineMap());
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].message).toContain('No valid removed-line anchor');
+      expect(result.errors[0].message).toContain('oldLine 10');
+    });
+
+    it('rejects context-line finding when the line type is added', () => {
+      const findings = [
+        {
+          oldPath: 'src/App.java',
+          newPath: 'src/App.java',
+          oldLine: 2,
+          newLine: 2,
+          body: 'Added is not context',
+          severity: 'medium',
+          category: 'correctness',
+        },
+      ];
+
+      const result = validateFindings(findings, makeLineMap());
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].message).toContain('No valid context-line anchor');
+      expect(result.errors[0].message).toContain('oldLine=2, newLine=2');
     });
   });
 
@@ -244,8 +396,90 @@ describe('validateFindings', () => {
 
       const formatted = formatValidationErrors(result.errors);
       expect(formatted).toContain('Invalid finding position');
+      expect(formatted).toContain('oldPath: src/App.java\n  newPath: src/App.java\n  newLine: 99');
       expect(formatted).toContain('newLine: 99');
       expect(formatted).toContain('src/App.java');
+    });
+
+    it('formats removed-line errors with old line details only', () => {
+      const result = validateFindings(
+        [
+          {
+            oldPath: 'src/App.java',
+            newPath: 'src/App.java',
+            oldLine: 99,
+            body: 'Not in diff',
+            severity: 'high',
+            category: 'correctness',
+          },
+        ],
+        makeLineMap(),
+      );
+
+      const formatted = formatValidationErrors(result.errors);
+      expect(formatted).toContain('oldPath: src/App.java');
+      expect(formatted).toContain('newPath: src/App.java');
+      expect(formatted).toContain('oldLine: 99');
+      expect(formatted).not.toContain('newLine:');
+    });
+
+    it('omits missing location fields when formatting schema errors', () => {
+      const formatted = formatValidationErrors([
+        {
+          index: 0,
+          finding: {
+            oldPath: '',
+            newPath: 'src/App.java',
+            oldLine: undefined,
+            newLine: undefined,
+            body: 'No line',
+            severity: 'high',
+            category: 'correctness',
+          },
+          message: 'schema failed',
+        },
+      ]);
+
+      expect(formatted).not.toContain('oldPath:');
+      expect(formatted).toContain('newPath: src/App.java');
+      expect(formatted).not.toContain('oldLine:');
+      expect(formatted).not.toContain('newLine:');
+      expect(formatted).toContain('schema failed');
+    });
+
+    it('joins multiple formatted errors with a divider', () => {
+      const formatted = formatValidationErrors([
+        {
+          index: 0,
+          finding: {
+            oldPath: 'src/App.java',
+            newPath: 'src/App.java',
+            newLine: 99,
+            body: 'Missing added line',
+            severity: 'high',
+            category: 'correctness',
+          },
+          message: 'first error',
+        },
+        {
+          index: 1,
+          finding: {
+            oldPath: 'src/App.java',
+            newPath: 'src/App.java',
+            oldLine: 99,
+            body: 'Missing removed line',
+            severity: 'medium',
+            category: 'testing',
+          },
+          message: 'second error',
+        },
+      ]);
+
+      expect(formatted).toContain('outputs/new-findings.json[0]');
+      expect(formatted).toContain('outputs/new-findings.json[1]');
+      expect(formatted).toContain('\n\n---\n\n');
+      expect(formatted).toContain('first error');
+      expect(formatted).toContain('second error');
     });
   });
 });

@@ -50,44 +50,29 @@ export function stripReviewNoteFooter(content: string): string {
 // ─── Parser ──────────────────────────────────────────────
 
 /**
- * Parse the hidden revpack:state marker from a managed review note body.
- * Returns the decoded CheckpointState and the visible (human-readable) content, or null if no marker found.
+ * Decode and validate an encoded checkpoint state string (base64url or raw JSON).
+ * Returns the validated CheckpointState or null if decoding/validation fails.
  */
-export function parseCheckpointMarker(noteBody: string): { state: CheckpointState; visibleContent: string } | null {
-  const startIdx = noteBody.indexOf(CHECKPOINT_MARKER_START);
-  if (startIdx === -1) return null;
-
-  const afterStart = startIdx + CHECKPOINT_MARKER_START.length;
-  const endIdx = noteBody.indexOf(CHECKPOINT_MARKER_END, afterStart);
-  if (endIdx === -1) return null;
-
-  const encoded = noteBody.slice(afterStart, endIdx).trim();
+function decodeAndValidateState(encoded: string): CheckpointState | null {
   if (!encoded) return null;
 
   let state: CheckpointState;
   try {
-    // Try base64url-decoded JSON first
     const decoded = Buffer.from(encoded, 'base64url').toString('utf-8');
     state = JSON.parse(decoded) as CheckpointState;
   } catch {
     try {
-      // Fallback: raw JSON inside the comment
       state = JSON.parse(encoded) as CheckpointState;
     } catch {
       return null;
     }
   }
 
-  // Validate minimum required fields
   if (!state || typeof state !== 'object') return null;
   if (!state.checkpoint || typeof state.checkpoint.headSha !== 'string') return null;
   state.checkpoint.threadDigests ??= {};
 
-  // Extract visible content (everything outside the marker block)
-  const markerBlock = noteBody.slice(startIdx, endIdx + CHECKPOINT_MARKER_END.length);
-  const visibleContent = noteBody.replace(markerBlock, '').replace(REVIEW_NOTE_MARKER, '').trim();
-
-  return { state, visibleContent };
+  return state;
 }
 
 // ─── Serializer ──────────────────────────────────────────
@@ -135,43 +120,6 @@ export function encodeCheckpointState(state: CheckpointState): string {
   return Buffer.from(json, 'utf-8').toString('base64url');
 }
 
-/**
- * Build the full managed review note body with visible content and hidden checkpoint marker.
- */
-export function buildReviewNoteBody(visibleContent: string, state: CheckpointState): string {
-  const encoded = encodeCheckpointState(state);
-  const parts: string[] = [];
-
-  parts.push(REVIEW_NOTE_MARKER);
-
-  if (visibleContent.trim()) {
-    parts.push(visibleContent.trim());
-    parts.push(REVIEW_NOTE_FOOTER);
-  }
-
-  parts.push('');
-  parts.push(`${CHECKPOINT_MARKER_START}`);
-  parts.push(encoded);
-  parts.push(CHECKPOINT_MARKER_END);
-
-  return parts.join('\n');
-}
-
-/**
- * Update an existing note body: replace only the checkpoint marker, preserve visible content.
- * If `newVisibleContent` is provided and non-empty, use it; otherwise preserve existing visible content.
- */
-export function updateReviewNoteBody(
-  existingBody: string,
-  newState: CheckpointState,
-  newVisibleContent?: string,
-): string {
-  const parsed = parseCheckpointMarker(existingBody);
-  const visibleContent = newVisibleContent?.trim() ? newVisibleContent.trim() : (parsed?.visibleContent ?? '');
-
-  return buildReviewNoteBody(visibleContent, newState);
-}
-
 // ─── Description-body state block functions ──────────────
 
 /**
@@ -196,25 +144,7 @@ export function parseDescriptionState(description: string): CheckpointState | nu
   if (endIdx === -1) return null;
 
   const encoded = block.slice(afterStart, endIdx).trim();
-  if (!encoded) return null;
-
-  let state: CheckpointState;
-  try {
-    const decoded = Buffer.from(encoded, 'base64url').toString('utf-8');
-    state = JSON.parse(decoded) as CheckpointState;
-  } catch {
-    try {
-      state = JSON.parse(encoded) as CheckpointState;
-    } catch {
-      return null;
-    }
-  }
-
-  if (!state || typeof state !== 'object') return null;
-  if (!state.checkpoint || typeof state.checkpoint.headSha !== 'string') return null;
-  state.checkpoint.threadDigests ??= {};
-
-  return state;
+  return decodeAndValidateState(encoded);
 }
 
 /**
@@ -273,5 +203,5 @@ export function sanitizeDescriptionForAgent(description: string): string {
     }
   }
 
-  return result.replace(/\n{3,}$/g, '\n').trimEnd();
+  return result.trimEnd();
 }

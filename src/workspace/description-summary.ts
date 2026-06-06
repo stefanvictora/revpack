@@ -11,9 +11,10 @@ export function mergeWithMarkers(existing: string, newContent: string): string {
   const markedSection = `${MARKER_START}\n${newContent.trim()}\n${MARKER_END}`;
 
   const startIdx = existing.indexOf(MARKER_START);
-  const endIdx = existing.indexOf(MARKER_END);
+  const contentStart = startIdx + MARKER_START.length;
+  const endIdx = existing.indexOf(MARKER_END, contentStart);
 
-  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+  if (startIdx !== -1 && endIdx >= contentStart) {
     return existing.slice(0, startIdx) + markedSection + existing.slice(endIdx + MARKER_END.length);
   }
 

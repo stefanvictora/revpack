@@ -28,10 +28,8 @@ interface LocalTargetState {
 
 interface ParsedReviewRange {
   baseRef: string;
-  headRef: string;
   baseSha: string;
   headSha: string;
-  targetId: string;
 }
 
 interface LocalGitAdapter {
@@ -307,7 +305,7 @@ export class LocalGitProvider implements ReviewProvider {
           this.git.mergeBase(baseRef, explicitHead),
           this.git.revParse(explicitHead),
         ]);
-        return { baseRef, headRef: explicitHead, baseSha, headSha, targetId: explicit };
+        return { baseRef, baseSha, headSha };
       }
 
       const doubleDot = explicit.match(/^(.+)\.\.(.+)$/);
@@ -315,11 +313,11 @@ export class LocalGitProvider implements ReviewProvider {
         const baseRef = doubleDot[1].trim();
         const explicitHead = doubleDot[2].trim();
         const [baseSha, headSha] = await Promise.all([this.git.revParse(baseRef), this.git.revParse(explicitHead)]);
-        return { baseRef, headRef: explicitHead, baseSha, headSha, targetId: explicit };
+        return { baseRef, baseSha, headSha };
       }
 
       const [baseSha, headSha] = await Promise.all([this.git.mergeBase(explicit, headRef), this.git.revParse(headRef)]);
-      return { baseRef: explicit, headRef, baseSha, headSha, targetId: `${explicit}...HEAD` };
+      return { baseRef: explicit, baseSha, headSha };
     }
 
     if (existing?.baseRef) {
@@ -327,7 +325,7 @@ export class LocalGitProvider implements ReviewProvider {
         this.git.mergeBase(existing.baseRef, headRef),
         this.git.revParse(headRef),
       ]);
-      return { baseRef: existing.baseRef, headRef, baseSha, headSha, targetId: `${existing.baseRef}...HEAD` };
+      return { baseRef: existing.baseRef, baseSha, headSha };
     }
 
     for (const candidate of COMMON_BASE_REFS) {
@@ -337,10 +335,8 @@ export class LocalGitProvider implements ReviewProvider {
       if (candidateSha === headSha) continue;
       return {
         baseRef: candidate,
-        headRef,
         baseSha: await this.git.mergeBase(candidate, headRef),
         headSha,
-        targetId: `${candidate}...HEAD`,
       };
     }
 

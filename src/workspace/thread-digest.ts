@@ -8,7 +8,7 @@ const DIGEST_VERSION = 2;
  * Compute a SHA-256 hash of a string.
  */
 function sha256(input: string): string {
-  return `sha256:${createHash('sha256').update(input, 'utf-8').digest('hex')}`;
+  return `sha256:${createHash('sha256').update(input).digest('hex')}`;
 }
 
 /**
@@ -61,7 +61,7 @@ function threadProjection(thread: ReviewThread): object {
  * Deep sort for canonical serialization — sorts all object keys recursively.
  */
 function deepSort(value: unknown): unknown {
-  if (value === null || value === undefined) return value;
+  if (value === null) return value;
   if (Array.isArray(value)) return value.map(deepSort);
   if (typeof value === 'object') {
     const sorted: Record<string, unknown> = {};

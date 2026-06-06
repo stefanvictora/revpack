@@ -3,7 +3,15 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
-import type { ReviewTarget, ReviewThread, ReviewDiff, ReviewVersion } from '../core/types.js';
+import type {
+  ReviewTarget,
+  ReviewThread,
+  ReviewDiff,
+  ReviewVersion,
+  PrepareSummary,
+  BundleLocal,
+} from '../core/types.js';
+import { computeContentHash } from './thread-digest.js';
 
 const makeTarget = (): ReviewTarget => ({
   provider: 'gitlab',
@@ -55,6 +63,22 @@ const makeDiff = (): ReviewDiff => ({
   newFile: false,
   renamedFile: false,
   deletedFile: false,
+});
+
+const makeVersion = (versionId: string, createdAt: string): ReviewVersion => ({
+  provider: 'gitlab',
+  targetRef: {
+    provider: 'gitlab',
+    repository: 'group/project',
+    targetType: 'merge_request',
+    targetId: '42',
+  },
+  versionId,
+  headCommitSha: 'bbb',
+  baseCommitSha: 'aaa',
+  startCommitSha: 'aaa',
+  createdAt,
+  realSize: 1,
 });
 
 const makeStructuredDiff = (): ReviewDiff => ({
@@ -113,6 +137,11 @@ describe('WorkspaceManager', () => {
     expect(entries).toContain('threads');
     expect(entries).toContain('diffs');
     expect(entries).toContain('outputs');
+
+    // Verify output schema files are written
+    const outputEntries = await fs.readdir(path.join(bundleDir, 'outputs'));
+    expect(outputEntries).toContain('new-findings.schema.json');
+    expect(outputEntries).toContain('replies.schema.json');
   });
 
   it('writeContext writes AGENT_CONTRACT.md, INSTRUCTIONS.md and instructions/', async () => {
@@ -288,6 +317,86 @@ describe('WorkspaceManager', () => {
     ]);
   });
 
+  it('produces delete change-block when lines are only removed', async () => {
+    const diff: ReviewDiff = {
+      oldPath: 'src/app.ts',
+      newPath: 'src/app.ts',
+      diff: '@@ -1,4 +1,2 @@\n keep1\n-removed_a\n-removed_b\n keep2\n',
+      newFile: false,
+      renamedFile: false,
+      deletedFile: false,
+    };
+    await createBundle(manager, makeTarget(), [], [diff]);
+    const diffDir = path.join(tmpDir, '.revpack', 'diffs');
+    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
+    expect(changeBlocks.blocks).toHaveLength(1);
+    expect(changeBlocks.blocks[0]).toMatchObject({
+      kind: 'delete',
+      oldStart: 2,
+      oldEnd: 3,
+      preferredCommentTarget: { side: 'old', path: 'src/app.ts', line: 2 },
+    });
+  });
+
+  it('produces insert change-block spanning multiple added lines', async () => {
+    const diff: ReviewDiff = {
+      oldPath: 'src/app.ts',
+      newPath: 'src/app.ts',
+      diff: '@@ -5,2 +5,4 @@\n before\n+added1\n+added2\n after\n',
+      newFile: false,
+      renamedFile: false,
+      deletedFile: false,
+    };
+    await createBundle(manager, makeTarget(), [], [diff]);
+    const diffDir = path.join(tmpDir, '.revpack', 'diffs');
+    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
+    expect(changeBlocks.blocks).toHaveLength(1);
+    expect(changeBlocks.blocks[0]).toMatchObject({
+      kind: 'insert',
+      oldStart: 5,
+      oldEnd: 5,
+      newStart: 6,
+      newEnd: 7,
+      preferredCommentTarget: { side: 'new', path: 'src/app.ts', line: 6 },
+    });
+  });
+
+  it('uses newPath for insert preferredCommentTarget in renamed files', async () => {
+    const diff: ReviewDiff = {
+      oldPath: 'src/old-name.ts',
+      newPath: 'src/new-name.ts',
+      diff: '@@ -1,2 +1,3 @@\n keep\n+inserted\n end\n',
+      newFile: false,
+      renamedFile: true,
+      deletedFile: false,
+    };
+    await createBundle(manager, makeTarget(), [], [diff]);
+    const diffDir = path.join(tmpDir, '.revpack', 'diffs');
+    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
+    expect(changeBlocks.blocks[0].preferredCommentTarget).toMatchObject({
+      side: 'new',
+      path: 'src/new-name.ts',
+    });
+  });
+
+  it('uses oldPath for delete preferredCommentTarget in renamed files', async () => {
+    const diff: ReviewDiff = {
+      oldPath: 'src/old-name.ts',
+      newPath: 'src/new-name.ts',
+      diff: '@@ -1,3 +1,2 @@\n keep\n-removed\n end\n',
+      newFile: false,
+      renamedFile: true,
+      deletedFile: false,
+    };
+    await createBundle(manager, makeTarget(), [], [diff]);
+    const diffDir = path.join(tmpDir, '.revpack', 'diffs');
+    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
+    expect(changeBlocks.blocks[0].preferredCommentTarget).toMatchObject({
+      side: 'old',
+      path: 'src/old-name.ts',
+    });
+  });
+
   it('writes output files', async () => {
     await createBundle(manager, makeTarget(), []);
     const outputPath = await manager.writeOutput('test.md', '# Test');
@@ -295,6 +404,18 @@ describe('WorkspaceManager', () => {
     expect(outputPath).toContain('outputs');
     const content = await fs.readFile(outputPath, 'utf-8');
     expect(content).toBe('# Test');
+  });
+
+  it('creates default empty output files on bundle creation', async () => {
+    await createBundle(manager, makeTarget(), []);
+    // These files should exist with empty/default content without any explicit write
+    const summary = await manager.readOutput('summary.md');
+    const review = await manager.readOutput('review.md');
+    expect(summary).toBe('');
+    expect(review).toBe('');
+    // .gitignore should be created to exclude bundle from version control
+    const gitignore = await fs.readFile(path.join(tmpDir, '.revpack', '.gitignore'), 'utf-8');
+    expect(gitignore).toBe('*\n');
   });
 
   it('loadBundleState returns null when no bundle exists', async () => {
@@ -354,6 +475,15 @@ describe('WorkspaceManager', () => {
   it('passes through non-T-NNN refs unchanged', async () => {
     const resolved = await manager.resolveThreadRef('abc123def');
     expect(resolved).toBe('abc123def');
+  });
+
+  it('does not match T-NNN pattern with prefix or suffix', async () => {
+    // Prefix before T- should not match (tests ^ anchor)
+    const withPrefix = await manager.resolveThreadRef('XXX-T-001');
+    expect(withPrefix).toBe('XXX-T-001');
+    // Suffix after digits should not match (tests $ anchor)
+    const withSuffix = await manager.resolveThreadRef('T-001-extra');
+    expect(withSuffix).toBe('T-001-extra');
   });
 
   it('prunes stale replies on incremental runs', async () => {
@@ -492,17 +622,31 @@ describe('WorkspaceManager', () => {
         newPath: 'src/new-file.ts',
         oldPath: 'src/new-file.ts',
       };
+      const deletedDiff: ReviewDiff = {
+        ...makeDiff(),
+        deletedFile: true,
+        newPath: 'src/old.ts',
+        oldPath: 'src/old.ts',
+      };
+      const renamedDiff: ReviewDiff = {
+        ...makeDiff(),
+        renamedFile: true,
+        oldPath: 'src/before.ts',
+        newPath: 'src/after.ts',
+      };
 
-      const { threadIndex } = await createBundle(manager, makeTarget(), [], [makeDiff(), newFileDiff]);
+      const allDiffs = [makeDiff(), newFileDiff, deletedDiff, renamedDiff];
+      const { threadIndex } = await createBundle(manager, makeTarget(), [], allDiffs);
 
-      const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff(), newFileDiff], threadIndex);
+      const contextPath = await manager.writeContext(makeTarget(), [], allDiffs, threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Changed Files');
       expect(content).toContain('`src/app.ts`');
-      expect(content).toContain('modified');
-      expect(content).toContain('`src/new-file.ts`');
-      expect(content).toContain('added');
+      expect(content).toContain('| modified |');
+      expect(content).toContain('| added |');
+      expect(content).toContain('| deleted |');
+      expect(content).toContain('| renamed |');
     });
 
     it('includes resolved changed threads from the full checkpoint comparison set', async () => {
@@ -561,6 +705,16 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('Use foo \\| bar handling here');
     });
 
+    it('replaces newlines with spaces in table cells', async () => {
+      const target = { ...makeTarget(), title: 'Fix auth\nand validation' };
+      const { threadIndex } = await createBundle(manager, target, []);
+      const contextPath = await manager.writeContext(target, [], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // Newlines in table cell should be collapsed to spaces
+      expect(content).toContain('Fix auth and validation');
+      expect(content).not.toContain('Fix auth\n');
+    });
+
     it('shows review checkpoint summary with checkpoint and code changes', async () => {
       const threads = [makeThread()];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads);
@@ -591,8 +745,44 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Review Checkpoint Summary');
       expect(content).toContain('Last review checkpoint');
-      expect(content).toContain('Target code changed since checkpoint');
-      expect(content).toContain('yes');
+      expect(content).toContain('| Target code changed since checkpoint | yes |');
+      // Proactive review with code change → shows incremental.patch instruction
+      expect(content).toContain('incremental.patch');
+      expect(content).toContain('patches/by-file/');
+    });
+
+    it('shows threads/description change status in checkpoint summary', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'note-1',
+            headSha: 'aaa',
+            baseSha: 'xxx',
+            startSha: 'xxx',
+            threadsDigest: null,
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: false,
+            threadsChangedSinceCheckpoint: true,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('Threads/replies changed since checkpoint | yes');
+      expect(content).toContain('Description changed since checkpoint | no');
+      // When code didn't change but threads did, show thread-focus message
+      expect(content).toContain('threads or replies have been updated');
     });
 
     it('writes incremental CONTEXT.md with checkpoint delta rules and scoped navigation', async () => {
@@ -744,6 +934,8 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('`.revpack/instructions/01-review-workflow-and-outputs.md`');
       expect(content).toContain('Skipped this run:');
       expect(content).toContain('`.revpack/instructions/02-thread-replies.md` — skip, no unresolved threads');
+      // Fresh review (no prepareSummary) → proactive review instructions required
+      expect(content).not.toContain('03-new-findings-and-anchors.md` — skip');
       expect(content).toContain('`.revpack/instructions/03-new-findings-and-anchors.md`');
     });
 
@@ -756,6 +948,8 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Required Instructions for This Run');
       expect(content).not.toContain('skip, no unresolved threads');
+      // 02 is required, not skipped
+      expect(content).not.toContain('02-thread-replies.md` — skip');
       expect(content).toContain('`.revpack/instructions/02-thread-replies.md`');
     });
 
@@ -793,6 +987,19 @@ describe('WorkspaceManager', () => {
       expect(content).toContain(
         '`.revpack/instructions/03-new-findings-and-anchors.md` — skip, no new target code to review proactively',
       );
+      // Non-proactive review → no per-file review step in reading order
+      expect(content).not.toContain('Use `.revpack/diffs/patches/by-file/` for focused review');
+      // Non-proactive → no latest.patch reading order step either
+      expect(content).not.toContain('for the overall change and cross-file context');
+      // Non-proactive → no line-map/change-blocks steps
+      expect(content).not.toContain('validate review anchors before creating findings');
+      // Checkpoint-specific guidance for thread-only refresh
+      expect(content).toContain('threads or replies have been updated');
+      expect(content).toContain('Focus on updated unresolved threads');
+      // All proactive instructions are skipped with specific reasons
+      expect(content).toContain('skip, no new findings pass is expected');
+      expect(content).toContain('skip, no MR/PR-level synthesis pass is expected');
+      expect(content).toContain('skip, no code-change summary update is expected');
     });
 
     it('shows general comments section for non-resolvable human threads', async () => {
@@ -825,6 +1032,7 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('T-001');
       expect(content).toContain('## General Comments');
       expect(content).toContain('T-002');
+      expect(content).toContain('@reviewer');
       expect(content).toContain('Great work on this MR overall!');
     });
 
@@ -856,6 +1064,62 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('Reply');
       expect(content).toContain('Finding');
       expect(content).toContain('src/auth.ts');
+    });
+
+    it('shows resolve type and oldLine fallback in Previous Actions', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        publishedActions: [
+          {
+            type: 'resolve',
+            providerThreadId: 'resolved-thread-1',
+            title: 'Resolved issue',
+            publishedAt: '2026-01-01T12:00:00Z',
+          },
+          {
+            type: 'finding',
+            location: { oldPath: 'src/legacy.ts', newPath: 'src/legacy.ts', oldLine: 99 },
+            severity: 'medium',
+            category: 'style',
+            title: 'Deprecated pattern',
+            publishedAt: '2026-01-01T12:01:00Z',
+          },
+        ],
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // Action column should show 'Resolve' as the type label (distinct from title "Resolved issue")
+      expect(content).toMatch(/\| Resolve \|.*resolved-thread-1/);
+      expect(content).toContain('resolved-thread-1');
+      // oldLine fallback (no newLine) should show :99
+      expect(content).toContain(':99');
+      expect(content).toContain('Deprecated pattern');
+    });
+
+    it('uses oldPath fallback and ? for missing line numbers in actions', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        publishedActions: [
+          {
+            type: 'finding',
+            location: { oldPath: 'src/deleted.ts', newPath: '', oldLine: undefined, newLine: undefined },
+            severity: 'low',
+            category: 'documentation',
+            title: 'Missing docs',
+            publishedAt: '2026-01-02T00:00:00Z',
+          },
+        ],
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // newPath is empty so falls back to oldPath
+      expect(content).toContain('src/deleted.ts');
+      // Both line numbers missing → shows '?'
+      expect(content).toContain(':?');
     });
 
     it('tags SELF on threads created by published findings', async () => {
@@ -1000,6 +1264,123 @@ describe('WorkspaceManager', () => {
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('description.md');
+    });
+
+    it('shows threads directory entry only when threads exist', async () => {
+      // No threads → no threads count entry in file map
+      const { threadIndex: ti0 } = await createBundle(manager, makeTarget(), []);
+      const ctx0 = await manager.writeContext(makeTarget(), [], [makeDiff()], ti0);
+      const content0 = await fs.readFile(ctx0, 'utf-8');
+      expect(content0).not.toContain('thread(s)');
+
+      // With a resolvable thread + a general comment → shows total count
+      const thread: ReviewThread = { ...makeThread(), resolvable: true, resolved: false };
+      const general: ReviewThread = { ...makeThread(), threadId: 'gen-1', resolvable: false };
+      const threads = [thread, general];
+      const { threadIndex: ti1 } = await createBundle(manager, makeTarget(), threads);
+      const ctx1 = await manager.writeContext(makeTarget(), threads, [], ti1);
+      const content1 = await fs.readFile(ctx1, 'utf-8');
+      expect(content1).toContain('2 thread(s)');
+    });
+
+    it('excludes resolved threads from Unresolved Threads section', async () => {
+      const resolved: ReviewThread = { ...makeThread(), threadId: 'res-1', resolved: true, resolvable: true };
+      const unresolved: ReviewThread = { ...makeThread(), threadId: 'unres-1', resolved: false, resolvable: true };
+      const threads = [resolved, unresolved];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+      const ctx = await manager.writeContext(makeTarget(), threads, [], threadIndex);
+      const content = await fs.readFile(ctx, 'utf-8');
+      const unresolvedSection = content.split('## Unresolved Threads')[1]?.split('##')[0] ?? '';
+      expect(unresolvedSection).toContain('T-002');
+      expect(unresolvedSection).not.toContain('T-001');
+    });
+
+    it('excludes non-resolvable threads from Unresolved Threads section', async () => {
+      const nonResolvable: ReviewThread = { ...makeThread(), threadId: 'nr-1', resolved: false, resolvable: false };
+      const resolvable: ReviewThread = { ...makeThread(), threadId: 'r-1', resolved: false, resolvable: true };
+      const threads = [nonResolvable, resolvable];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+      const ctx = await manager.writeContext(makeTarget(), threads, [], threadIndex);
+      const content = await fs.readFile(ctx, 'utf-8');
+      const unresolvedSection = content.split('## Unresolved Threads')[1]?.split('##')[0] ?? '';
+      expect(unresolvedSection).toContain('T-002');
+      expect(unresolvedSection).not.toContain('T-001');
+    });
+
+    it('does not flag SELF or REPLIED on threads with only human comments', async () => {
+      const humanOnly: ReviewThread = {
+        ...makeThread(),
+        threadId: 'human-only',
+        resolvable: true,
+        resolved: false,
+        comments: [
+          {
+            id: 'h1',
+            body: 'Please fix',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+          {
+            id: 'h2',
+            body: 'Agreed',
+            author: 'other',
+            createdAt: '2026-01-01T01:00:00Z',
+            updatedAt: '2026-01-01T01:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [humanOnly]);
+      const ctx = await manager.writeContext(makeTarget(), [humanOnly], [], threadIndex);
+      const content = await fs.readFile(ctx, 'utf-8');
+      expect(content).not.toContain('SELF');
+      expect(content).not.toContain('REPLIED');
+    });
+
+    it('omits Unresolved Threads section when all threads are resolved', async () => {
+      const resolved: ReviewThread = { ...makeThread(), resolved: true, resolvable: true };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [resolved]);
+      const ctx = await manager.writeContext(makeTarget(), [resolved], [], threadIndex);
+      const content = await fs.readFile(ctx, 'utf-8');
+      expect(content).not.toContain('## Unresolved Threads');
+    });
+
+    it('omits General Comments section when no non-resolvable threads', async () => {
+      const resolvable: ReviewThread = { ...makeThread(), resolvable: true, resolved: false };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [resolvable]);
+      const ctx = await manager.writeContext(makeTarget(), [resolvable], [], threadIndex);
+      const content = await fs.readFile(ctx, 'utf-8');
+      expect(content).not.toContain('## General Comments');
+    });
+
+    it('handles system-only unresolved thread without crashing', async () => {
+      const systemOnly: ReviewThread = {
+        ...makeThread(),
+        threadId: 'sys-only',
+        resolvable: true,
+        resolved: false,
+        comments: [
+          {
+            id: 's1',
+            body: 'auto-resolved',
+            author: 'gitlab',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: true,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [systemOnly]);
+      const ctx = await manager.writeContext(makeTarget(), [systemOnly], [], threadIndex);
+      const content = await fs.readFile(ctx, 'utf-8');
+      // Should render without crashing, with fallback values
+      expect(content).toContain('## Unresolved Threads');
+      expect(content).toContain('T-001');
     });
   });
 
@@ -1231,7 +1612,1879 @@ describe('WorkspaceManager', () => {
       expect((threadJson.targetRef as Record<string, unknown>).author).toBeUndefined();
     });
   });
+
+  describe('resolveThreadRef with threadIndex', () => {
+    it('resolves T-NNN via threadIndex without reading disk', async () => {
+      await createBundle(manager, makeTarget(), [makeThread()]);
+      const threadIndex: Map<string, string> = new Map([['sha-123', 'T-001']]);
+      const resolved = await manager.resolveThreadRef('T-001', threadIndex);
+      expect(resolved).toBe('sha-123');
+    });
+
+    it('is case-insensitive for T-NNN matching', async () => {
+      await createBundle(manager, makeTarget(), [makeThread()]);
+      const threadIndex: Map<string, string> = new Map([['sha-abc', 'T-002']]);
+      const resolved = await manager.resolveThreadRef('t-002', threadIndex);
+      expect(resolved).toBe('sha-abc');
+    });
+
+    it('falls back to disk when threadIndex does not contain the ref', async () => {
+      await createBundle(manager, makeTarget(), [makeThread()]);
+      const threadIndex: Map<string, string> = new Map([['sha-other', 'T-999']]);
+      // T-001.json exists on disk from createBundle
+      const resolved = await manager.resolveThreadRef('T-001', threadIndex);
+      expect(resolved).toBe('thread-abc');
+    });
+
+    it('throws when ref not in index and not on disk', async () => {
+      await createBundle(manager, makeTarget(), []);
+      const threadIndex: Map<string, string> = new Map();
+      await expect(manager.resolveThreadRef('T-999', threadIndex)).rejects.toThrow(
+        'Cannot resolve thread reference "T-999"',
+      );
+    });
+
+    it('throws when thread JSON file has no threadId field', async () => {
+      await createBundle(manager, makeTarget(), []);
+      // Write a malformed thread JSON
+      const jsonPath = path.join(tmpDir, '.revpack', 'threads', 'T-050.json');
+      await fs.writeFile(jsonPath, JSON.stringify({ noThreadId: true }), 'utf-8');
+      await expect(manager.resolveThreadRef('T-050')).rejects.toThrow('Cannot resolve thread reference "T-050"');
+    });
+
+    it('throws when thread JSON file has a non-string threadId field', async () => {
+      await createBundle(manager, makeTarget(), []);
+      const jsonPath = path.join(tmpDir, '.revpack', 'threads', 'T-051.json');
+      await fs.writeFile(jsonPath, JSON.stringify({ threadId: 123 }), 'utf-8');
+      await expect(manager.resolveThreadRef('T-051')).rejects.toThrow('Cannot resolve thread reference "T-051"');
+    });
+  });
+
+  describe('getOutputState', () => {
+    it('returns empty when no bundle state exists', async () => {
+      const state = await manager.getOutputState('summary');
+      expect(state).toBe('empty');
+    });
+
+    it('returns empty when output file does not exist', async () => {
+      await createBundleWithState(manager);
+      const state = await manager.getOutputState('summary');
+      expect(state).toBe('empty');
+    });
+
+    it('returns empty when output file is whitespace only', async () => {
+      await createBundleWithState(manager);
+      await manager.writeOutput('summary.md', '   \n  ');
+      const state = await manager.getOutputState('summary');
+      expect(state).toBe('empty');
+    });
+
+    it('returns pending when content exists but not yet published', async () => {
+      await createBundleWithState(manager);
+      await manager.writeOutput('summary.md', '# Summary\nSome content');
+      const state = await manager.getOutputState('summary');
+      expect(state).toBe('pending');
+    });
+
+    it('returns published when content matches last published hash', async () => {
+      await createBundleWithState(manager);
+      const content = '# Summary\nSome content';
+      await manager.writeOutput('summary.md', content);
+      await manager.updateOutputPublishState('summary', computeContentHash(content), 'sha-head');
+      const state = await manager.getOutputState('summary');
+      expect(state).toBe('published');
+    });
+
+    it('returns modified since publish when content differs from published hash', async () => {
+      await createBundleWithState(manager);
+      await manager.writeOutput('summary.md', '# Original');
+      await manager.updateOutputPublishState('summary', computeContentHash('# Original'), 'sha-head');
+      await manager.writeOutput('summary.md', '# Updated content');
+      const state = await manager.getOutputState('summary');
+      expect(state).toBe('modified since publish');
+    });
+  });
+
+  describe('updateOutputPublishState', () => {
+    it('returns false when no bundle state exists', async () => {
+      const result = await manager.updateOutputPublishState('summary', 'hash', 'sha');
+      expect(result).toBe(false);
+    });
+
+    it('stores hash, timestamp, and targetHeadSha', async () => {
+      await createBundleWithState(manager);
+      const result = await manager.updateOutputPublishState('review', 'abc123', 'head-sha');
+      expect(result).toBe(true);
+
+      const state = await manager.loadBundleState();
+      expect(state!.outputs.review.lastPublishedHash).toBe('abc123');
+      expect(state!.outputs.review.lastPublishedTargetHeadSha).toBe('head-sha');
+      expect(state!.outputs.review.lastPublishedAt).toBeTruthy();
+    });
+
+    it('stores providerNoteId when provided', async () => {
+      await createBundleWithState(manager);
+      await manager.updateOutputPublishState('summary', 'hash', 'sha', 'note-42');
+      const state = await manager.loadBundleState();
+      expect(state!.outputs.summary.providerNoteId).toBe('note-42');
+    });
+
+    it('does not set providerNoteId when not provided', async () => {
+      await createBundleWithState(manager);
+      await manager.updateOutputPublishState('summary', 'hash', 'sha');
+      const state = await manager.loadBundleState();
+      expect(state!.outputs.summary.providerNoteId).toBeUndefined();
+    });
+
+    it('preserves existing providerNoteId when not provided in subsequent call', async () => {
+      await createBundleWithState(manager);
+      await manager.updateOutputPublishState('summary', 'h1', 'sha1', 'note-42');
+      await manager.updateOutputPublishState('summary', 'h2', 'sha2');
+      const state = await manager.loadBundleState();
+      expect(state!.outputs.summary.providerNoteId).toBe('note-42');
+    });
+  });
+
+  describe('prefillOutputIfEmpty', () => {
+    it('writes content when output file does not exist', async () => {
+      await createBundle(manager, makeTarget(), []);
+      // Remove the default file
+      const summaryPath = path.join(tmpDir, '.revpack', 'outputs', 'summary.md');
+      await fs.rm(summaryPath, { force: true });
+
+      await manager.prefillOutputIfEmpty('summary.md', '# Prefilled');
+      const content = await fs.readFile(summaryPath, 'utf-8');
+      expect(content).toBe('# Prefilled');
+    });
+
+    it('writes content when output file is empty', async () => {
+      await createBundleWithState(manager);
+      await manager.writeOutput('summary.md', '');
+      await manager.prefillOutputIfEmpty('summary.md', '# Prefilled');
+      const content = await manager.readOutput('summary.md');
+      expect(content).toBe('# Prefilled');
+    });
+
+    it('does not overwrite existing non-empty content', async () => {
+      await createBundleWithState(manager);
+      await manager.writeOutput('summary.md', '# Existing');
+      await manager.prefillOutputIfEmpty('summary.md', '# New');
+      const content = await manager.readOutput('summary.md');
+      expect(content).toBe('# Existing');
+    });
+
+    it('overwrites whitespace-only content', async () => {
+      await createBundleWithState(manager);
+      await manager.writeOutput('summary.md', '  \n  ');
+      await manager.prefillOutputIfEmpty('summary.md', '# Prefilled');
+      const content = await manager.readOutput('summary.md');
+      expect(content).toBe('# Prefilled');
+    });
+
+    it('updates publish hash so status does not show pending', async () => {
+      await createBundleWithState(manager);
+      await manager.prefillOutputIfEmpty('summary.md', '# Prefilled');
+      const state = await manager.getOutputState('summary');
+      expect(state).toBe('published');
+    });
+
+    it('works for files without a tracked output state key', async () => {
+      await createBundleWithState(manager);
+      const filePath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+      await fs.writeFile(filePath, '', 'utf-8');
+      await manager.prefillOutputIfEmpty('replies.json', '[]');
+      const content = await fs.readFile(filePath, 'utf-8');
+      expect(content).toBe('[]');
+    });
+  });
+
+  describe('discardOutputs', () => {
+    it('resets output files to empty defaults', async () => {
+      await createBundle(manager, makeTarget(), []);
+      await manager.writeOutput('summary.md', '# Written content');
+      await manager.writeOutput('review.md', '# Review content');
+      await manager.discardOutputs();
+      expect(await manager.readOutput('summary.md')).toBe('');
+      expect(await manager.readOutput('review.md')).toBe('');
+    });
+
+    it('resets replies.json and new-findings.json to empty arrays', async () => {
+      await createBundle(manager, makeTarget(), []);
+      await manager.writeOutput('replies.json', '[{"threadId":"T-001","body":"hi","resolve":true}]');
+      await manager.discardOutputs();
+      expect(await manager.readOutput('replies.json')).toBe('[]');
+    });
+  });
+
+  describe('pruneStaleReplies edge cases', () => {
+    it('returns 0 for invalid JSON in replies file', async () => {
+      await createBundle(manager, makeTarget(), []);
+      const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+      await fs.writeFile(repliesPath, 'not json', 'utf-8');
+      const pruned = await manager.pruneStaleReplies(new Set(), new Map());
+      expect(pruned).toBe(0);
+    });
+
+    it('returns 0 when replies content is not an array', async () => {
+      await createBundle(manager, makeTarget(), []);
+      const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+      await fs.writeFile(repliesPath, '{"notAnArray": true}', 'utf-8');
+      const pruned = await manager.pruneStaleReplies(new Set(), new Map());
+      expect(pruned).toBe(0);
+    });
+
+    it('normalizes threadId case and trims whitespace before matching', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+      const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+      await fs.writeFile(
+        repliesPath,
+        JSON.stringify([{ threadId: ' t-001 ', body: 'reply', resolve: false }]),
+        'utf-8',
+      );
+      const activeIds = new Set(['thread-abc']);
+      const pruned = await manager.pruneStaleReplies(activeIds, threadIndex);
+      expect(pruned).toBe(0); // should be kept after normalization
+    });
+
+    it('does not rewrite file when nothing was pruned', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+      const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+      const original = JSON.stringify([{ threadId: 'T-001', body: 'reply', resolve: true }]);
+      await fs.writeFile(repliesPath, original, 'utf-8');
+      const activeIds = new Set(['thread-abc']);
+      await manager.pruneStaleReplies(activeIds, threadIndex);
+      // File should be unchanged (not reformatted)
+      const content = await fs.readFile(repliesPath, 'utf-8');
+      expect(content).toBe(original);
+    });
+  });
+
+  describe('writeNoCodeChangeIncrementalPatch', () => {
+    it('writes a placeholder message', async () => {
+      await createBundle(manager, makeTarget(), []);
+      await manager.writeNoCodeChangeIncrementalPatch();
+      const content = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'incremental.patch'), 'utf-8');
+      expect(content).toContain('No code changes since last review checkpoint');
+    });
+  });
+
+  describe('writeUnavailableIncrementalPatch', () => {
+    it('writes the reason as a comment', async () => {
+      await createBundle(manager, makeTarget(), []);
+      await manager.writeUnavailableIncrementalPatch('History was force-pushed');
+      const content = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'incremental.patch'), 'utf-8');
+      expect(content).toBe('# History was force-pushed\n');
+    });
+  });
+
+  describe('buildBundleState details', () => {
+    it('includes tool metadata', () => {
+      const state = manager.buildBundleState(makeTarget(), [], [], new Map(), makePrepareSummary(), makeLocal());
+      expect(state.tool).toMatchObject({ name: 'revpack' });
+    });
+
+    it('uses first version as providerVersionId', () => {
+      const versions: ReviewVersion[] = [
+        makeVersion('v-latest', '2026-01-02T00:00:00Z'),
+        makeVersion('v-older', '2026-01-01T00:00:00Z'),
+      ];
+      const state = manager.buildBundleState(makeTarget(), [], versions, new Map(), makePrepareSummary(), makeLocal());
+      expect(state.target.providerVersionId).toBe('v-latest');
+    });
+
+    it('sets providerVersionId to undefined when no versions', () => {
+      const state = manager.buildBundleState(makeTarget(), [], [], new Map(), makePrepareSummary(), makeLocal());
+      expect(state.target.providerVersionId).toBeUndefined();
+    });
+
+    it('sets incrementalPatch to null when no code change', () => {
+      const ps = makePrepareSummary();
+      ps.comparison.targetCodeChangedSinceCheckpoint = false;
+      const state = manager.buildBundleState(makeTarget(), [], [], new Map(), ps, makeLocal());
+      expect(state.paths.incrementalPatch).toBeNull();
+    });
+
+    it('sets incrementalPatch path when code changed', () => {
+      const ps = makePrepareSummary();
+      ps.comparison.targetCodeChangedSinceCheckpoint = true;
+      const state = manager.buildBundleState(makeTarget(), [], [], new Map(), ps, makeLocal());
+      expect(state.paths.incrementalPatch).toBe('.revpack/diffs/incremental.patch');
+    });
+
+    it('uses previousActions and previousOutputs when provided', () => {
+      const actions = [
+        { type: 'reply' as const, providerThreadId: 'x', title: 'T', publishedAt: '2026-01-01T00:00:00Z' },
+      ];
+      const outputs = {
+        summary: { path: 'custom/summary.md', lastPublishedHash: 'abc' },
+        review: { path: 'custom/review.md' },
+      };
+      const state = manager.buildBundleState(
+        makeTarget(),
+        [],
+        [],
+        new Map(),
+        makePrepareSummary(),
+        makeLocal(),
+        actions,
+        outputs,
+      );
+      expect(state.publishedActions).toBe(actions);
+      expect(state.outputs.summary.lastPublishedHash).toBe('abc');
+    });
+
+    it('populates thread items with latestCommentAt from most recent non-system comment', () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: 'early',
+            author: 'a',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+          {
+            id: 'c2',
+            body: 'later',
+            author: 'b',
+            createdAt: '2026-01-02T00:00:00Z',
+            updatedAt: '2026-01-02T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const threadIndex = WorkspaceManager.buildThreadIndex([thread]);
+      const state = manager.buildBundleState(
+        makeTarget(),
+        [thread],
+        [],
+        threadIndex,
+        makePrepareSummary(),
+        makeLocal(),
+      );
+      expect(state.threads.items[0].latestCommentAt).toBe('2026-01-02T00:00:00Z');
+    });
+
+    it('filters system-only threads from items', () => {
+      const systemThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'sys-thread',
+        comments: [
+          {
+            id: 's1',
+            body: 'system',
+            author: 'gitlab',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: true,
+          },
+        ],
+      };
+      const threadIndex = WorkspaceManager.buildThreadIndex([makeThread(), systemThread]);
+      const state = manager.buildBundleState(
+        makeTarget(),
+        [makeThread(), systemThread],
+        [],
+        threadIndex,
+        makePrepareSummary(),
+        makeLocal(),
+      );
+      expect(state.threads.items).toHaveLength(1);
+      expect(state.threads.items[0].providerThreadId).toBe('thread-abc');
+    });
+  });
+
+  describe('threadToMarkdown via createBundle', () => {
+    it('embeds diff context when thread position matches a diff line', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
+        diff: [
+          '@@ -8,5 +8,6 @@ function main()',
+          ' const a = 1;',
+          ' const b = 2;',
+          '-const c = a + b;',
+          '+const c = compute(a, b);',
+          ' return c;',
+          '+log(c);',
+        ].join('\n'),
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', newLine: 10 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      // Thread markdown starts with the expected header
+      expect(md).toMatch(/^# T-001: Thread thread-abc/);
+      expect(md).toContain('## Diff Context');
+      expect(md).toContain('```diff');
+      expect(md).toContain('compute(a, b)');
+      expect(md).toContain('◀');
+      // Verify diff context format: prefix characters match line types
+      expect(md).toContain('+ '); // added line prefix
+      expect(md).toContain('- '); // removed line prefix
+      // The targeted line (newLine 10) maps to 'const c = compute(a, b)' which is added
+      // Verify the marker ◀ appears on the correct line
+      const diffBlock = md.split('```diff')[1].split('```')[0];
+      const markedLine = diffBlock.split('\n').find((l) => l.includes('◀'));
+      expect(markedLine).toContain('compute(a, b)');
+      // Only one line should have the ◀ marker
+      expect(diffBlock.split('◀').length).toBe(2); // one occurrence = 2 parts
+      // First line of diff context starts with a valid prefix (space, +, or -)
+      const firstContextLine = diffBlock.split('\n').find((l) => l.trim().length > 0);
+      expect(firstContextLine).toMatch(/^[ +-]/);
+      // Context window extends beyond the marked line (verifies +1 after marker)
+      expect(diffBlock).toContain('return c');
+    });
+
+    it('shows correct context window with 3 lines above and 1 below', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
+        diff: [
+          '@@ -5,9 +5,9 @@ header',
+          ' line5',
+          ' line6',
+          ' line7',
+          ' line8',
+          ' line9',
+          '-oldLine10',
+          '+newLine10',
+          ' line11',
+          ' line12',
+        ].join('\n'),
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', newLine: 10 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      const diffBlock = md.split('```diff')[1].split('```')[0];
+      const diffLines = diffBlock.trim().split('\n');
+      // Context window should show indices 3-7 (line8, line9, -oldLine10, +newLine10, line11)
+      // Verify removed and added prefixes appear
+      expect(diffLines.some((l) => l.startsWith('-') && l.includes('oldLine10'))).toBe(true);
+      expect(diffLines.some((l) => l.startsWith('+') && l.includes('newLine10'))).toBe(true);
+      // Verify context line (space prefix) is included
+      expect(diffLines.some((l) => l.trimStart().includes('| line8'))).toBe(true);
+      // The ◀ marker should be on the newLine10 line (the target)
+      expect(diffLines.find((l) => l.includes('◀'))).toContain('newLine10');
+      // Lines before the window (line5, line6, line7) should NOT appear
+      expect(diffBlock).not.toContain('line5');
+      expect(diffBlock).not.toContain('line6');
+    });
+
+    it('uses oldLine for position matching when newLine is absent', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
+        diff: ['@@ -8,4 +8,3 @@ function run()', ' line8', ' line9', '-removedLine10', ' line11'].join('\n'),
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', oldLine: 10 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('## Diff Context');
+      expect(md).toContain('removedLine10');
+      const diffBlock = md.split('```diff')[1].split('```')[0];
+      expect(diffBlock).toContain('◀');
+    });
+
+    it('shows stale revision warning when headSha does not match', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', newLine: 10, headSha: 'old-sha' },
+      };
+      const target = makeTarget(); // diffRefs.headSha = 'bbb'
+      await createBundle(manager, target, [thread], [makeDiff()]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('older revision');
+      expect(md).toContain('old-sha');
+      expect(md).toContain('bbb');
+    });
+
+    it('renders system comments with informational prefix', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'sys-1',
+            body: 'added 2 commits',
+            author: 'gitlab',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: true,
+          },
+          {
+            id: 'note-1',
+            body: 'Fix this',
+            author: 'bob',
+            createdAt: '2026-01-01T01:00:00Z',
+            updatedAt: '2026-01-01T01:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      await createBundle(manager, makeTarget(), [thread], []);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('ℹ️ **System event**');
+      expect(md).toContain('2026-01-01T00:00:00Z');
+      expect(md).toContain('> gitlab added 2 commits');
+      expect(md).toContain('informational context only');
+      expect(md).toContain('### bob (human)');
+    });
+
+    it('omits diff context when thread has no position', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: undefined,
+      };
+      await createBundle(manager, makeTarget(), [thread], [makeDiff()]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).not.toContain('## Diff Context');
+    });
+
+    it('renders resolved status and resolvable flag in header', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        resolved: true,
+        resolvable: false,
+        position: undefined,
+      };
+      await createBundle(manager, makeTarget(), [thread], []);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('- **Status**: Resolved');
+      expect(md).toContain('- **Resolvable**: false');
+    });
+
+    it('renders unresolved status and resolvable true in header', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        resolved: false,
+        resolvable: true,
+        position: undefined,
+      };
+      await createBundle(manager, makeTarget(), [thread], []);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('- **Status**: Unresolved');
+      expect(md).toContain('- **Resolvable**: true');
+    });
+
+    it('renders file path and line number from position', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/foo.ts', newLine: 42 },
+      };
+      await createBundle(manager, makeTarget(), [thread], []);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('- **File**: `src/foo.ts`');
+      expect(md).toContain('- **Line**: 42');
+    });
+
+    it('falls back to oldLine when newLine is absent', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/bar.ts', oldLine: 7 },
+      };
+      await createBundle(manager, makeTarget(), [thread], []);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('- **Line**: 7');
+    });
+
+    it('omits line when both newLine and oldLine are absent', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/baz.ts' },
+      };
+      await createBundle(manager, makeTarget(), [thread], []);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('- **File**: `src/baz.ts`');
+      expect(md).not.toContain('- **Line**');
+    });
+  });
+
+  describe('diffToGitPatch', () => {
+    it('adds new file mode header for new files', () => {
+      const diff: ReviewDiff = {
+        oldPath: 'a.ts',
+        newPath: 'a.ts',
+        diff: '+content',
+        newFile: true,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const patch = WorkspaceManager.diffToGitPatch(diff);
+      expect(patch).toContain('new file mode 100644');
+      expect(patch).not.toContain('deleted file');
+    });
+
+    it('adds deleted file mode header for deleted files', () => {
+      const diff: ReviewDiff = {
+        oldPath: 'a.ts',
+        newPath: 'a.ts',
+        diff: '-content',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: true,
+      };
+      const patch = WorkspaceManager.diffToGitPatch(diff);
+      expect(patch).toContain('deleted file mode 100644');
+      expect(patch).not.toContain('new file');
+    });
+
+    it('adds rename metadata for renamed files', () => {
+      const diff: ReviewDiff = {
+        oldPath: 'old.ts',
+        newPath: 'new.ts',
+        diff: '',
+        newFile: false,
+        renamedFile: true,
+        deletedFile: false,
+      };
+      const patch = WorkspaceManager.diffToGitPatch(diff);
+      expect(patch).toContain('rename from old.ts');
+      expect(patch).toContain('rename to new.ts');
+    });
+
+    it('emits Binary files marker for empty new file diff', () => {
+      const diff: ReviewDiff = {
+        oldPath: 'img.png',
+        newPath: 'img.png',
+        diff: '',
+        newFile: true,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const patch = WorkspaceManager.diffToGitPatch(diff);
+      expect(patch).toContain('Binary files /dev/null and b/img.png differ');
+    });
+
+    it('emits Binary files marker for empty deleted file diff', () => {
+      const diff: ReviewDiff = {
+        oldPath: 'img.png',
+        newPath: 'img.png',
+        diff: '',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: true,
+      };
+      const patch = WorkspaceManager.diffToGitPatch(diff);
+      expect(patch).toContain('Binary files a/img.png and /dev/null differ');
+    });
+
+    it('does not emit Binary marker for non-new non-deleted empty diff', () => {
+      const diff: ReviewDiff = {
+        oldPath: 'a.ts',
+        newPath: 'a.ts',
+        diff: '',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const patch = WorkspaceManager.diffToGitPatch(diff);
+      expect(patch).not.toContain('Binary files');
+    });
+  });
+
+  describe('splitPatchByFile', () => {
+    it('splits multi-file patch into sections', () => {
+      const patch = [
+        'diff --git a/a.ts b/a.ts',
+        '--- a/a.ts',
+        '+++ b/a.ts',
+        '@@ -1,2 +1,3 @@',
+        ' line1',
+        '+line2',
+        'diff --git a/b.ts b/b.ts',
+        '--- a/b.ts',
+        '+++ b/b.ts',
+        '@@ -1 +1,2 @@',
+        ' existing',
+        '+added',
+      ].join('\n');
+      const sections = WorkspaceManager.splitPatchByFile(patch);
+      expect(sections).toHaveLength(2);
+      expect(sections[0]).toContain('a/a.ts');
+      expect(sections[0]).not.toContain('a/b.ts');
+      expect(sections[1]).toContain('a/b.ts');
+      expect(sections[1]).not.toContain('a/a.ts');
+    });
+
+    it('returns empty array for empty input', () => {
+      expect(WorkspaceManager.splitPatchByFile('')).toEqual([]);
+    });
+
+    it('returns single section for single-file patch', () => {
+      const patch = 'diff --git a/only.ts b/only.ts\n+content\n';
+      const sections = WorkspaceManager.splitPatchByFile(patch);
+      expect(sections).toHaveLength(1);
+      expect(sections[0]).toContain('only.ts');
+    });
+  });
+
+  describe('buildInstructionRoute via writeContext', () => {
+    it('outputs-only mode when nothing changed', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'n',
+            headSha: 'aaa',
+            baseSha: 'x',
+            startSha: 'x',
+            threadsDigest: 'd',
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { targetHeadSha: 'aaa', localHeadSha: 'aaa', threadsDigest: 'd' },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: false,
+            threadsChangedSinceCheckpoint: false,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('| Mode | Outputs-only follow-up |');
+      expect(content).toContain('skip, no thread/reply updates since the last checkpoint');
+      expect(content).toContain('skip, no new target code to review proactively');
+      expect(content).toContain('skip, no new findings pass is expected');
+      expect(content).toContain('skip, no MR/PR-level synthesis pass is expected');
+      expect(content).toContain('skip, no code-change summary update is expected');
+      expect(content).toContain('Inspect pending outputs');
+    });
+
+    it('incremental code review mode when only code changed', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'n',
+            headSha: 'aaa',
+            baseSha: 'x',
+            startSha: 'x',
+            threadsDigest: 'd',
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: 'd' },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: true,
+            threadsChangedSinceCheckpoint: false,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('| Mode | Incremental code review |');
+      expect(content).toContain('| Type | GitLab merge request |');
+      expect(content).toContain('`.revpack/instructions/02-thread-replies.md`');
+      expect(content).toContain('`.revpack/instructions/03-new-findings-and-anchors.md`');
+      expect(content).toContain('Use `.revpack/diffs/incremental.patch` as the primary review surface');
+      // Checkpoint-specific guidance
+      expect(content).toContain('Target code has changed since the last review checkpoint');
+      expect(content).toContain('Focus proactive review on the code changes since the last checkpoint');
+      // All instructions required → no "Skipped" section
+      expect(content).not.toContain('Skipped this run');
+      // Instructions numbered starting from 1
+      expect(content).toMatch(/^1\. `\.revpack\/instructions\/01-review-workflow/m);
+      // Proactive review reading order includes per-file patches
+      expect(content).toContain('Use `.revpack/diffs/latest.patch`, `.revpack/diffs/patches/by-file/`');
+      // Bundle Contents table includes incremental.patch entry
+      expect(content).toContain('| `.revpack/diffs/incremental.patch` |');
+    });
+
+    it('skips thread-replies when threads exist but no updates since checkpoint', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'n',
+            headSha: 'aaa',
+            baseSha: 'x',
+            startSha: 'x',
+            threadsDigest: 'd',
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { targetHeadSha: 'aaa', localHeadSha: 'aaa', threadsDigest: 'd' },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: false,
+            threadsChangedSinceCheckpoint: false,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('skip, no thread/reply updates since the last checkpoint');
+    });
+
+    it('fresh review suggests latest.patch, not incremental.patch', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
+      // No prepareSummary → fresh review → proactiveReview=true but no checkpoint comparison
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // Context file starts with the Review Context heading
+      expect(content).toMatch(/^# Review Context/);
+      // Reading order step 7 suggests latest.patch (unique wording not in Bundle Contents table)
+      expect(content).toContain('for the overall change and cross-file context');
+      expect(content).not.toContain('incremental.patch');
+      // URL row present (makeTarget has webUrl)
+      expect(content).toContain('| URL |');
+      // Proactive review reading order includes line-map step
+      expect(content).toContain('validate review anchors before creating findings');
+    });
+  });
+
+  describe('writeContext target types', () => {
+    it('renders GitHub pull request type correctly', async () => {
+      const target: ReviewTarget = {
+        ...makeTarget(),
+        provider: 'github',
+        targetType: 'pull_request',
+        targetId: '7',
+      };
+      const { threadIndex } = await createBundle(manager, target, []);
+      const contextPath = await manager.writeContext(target, [], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('GitHub pull request');
+      expect(content).toContain('#7');
+    });
+
+    it('renders local provider type correctly', async () => {
+      const target: ReviewTarget = {
+        ...makeTarget(),
+        provider: 'local',
+        targetType: 'local_review',
+        targetId: 'feature/x',
+      };
+      const { threadIndex } = await createBundle(manager, target, []);
+      const contextPath = await manager.writeContext(target, [], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('Local Git review');
+      // Local provider does not @ prefix the author
+      expect(content).toContain('| Author | alice |');
+    });
+
+    it('does not include URL row when webUrl is empty', async () => {
+      const target: ReviewTarget = { ...makeTarget(), webUrl: '' };
+      const { threadIndex } = await createBundle(manager, target, []);
+      const contextPath = await manager.writeContext(target, [], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).not.toContain('| URL |');
+    });
+
+    it('includes deleted and renamed file tags', async () => {
+      const deletedDiff: ReviewDiff = {
+        oldPath: 'old.ts',
+        newPath: 'old.ts',
+        diff: '',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: true,
+      };
+      const renamedDiff: ReviewDiff = {
+        oldPath: 'from.ts',
+        newPath: 'to.ts',
+        diff: '',
+        newFile: false,
+        renamedFile: true,
+        deletedFile: false,
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [], [deletedDiff, renamedDiff]);
+      const contextPath = await manager.writeContext(makeTarget(), [], [deletedDiff, renamedDiff], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('deleted');
+      expect(content).toContain('renamed');
+    });
+  });
+
+  describe('writeContext checkpoint summary text', () => {
+    it('shows fresh review guidance when no checkpoint', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex, {
+        prepareSummary: {
+          mode: 'fresh',
+          checkpoint: null,
+          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: null,
+            threadsChangedSinceCheckpoint: null,
+            descriptionChangedSinceCheckpoint: null,
+          },
+        },
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('No previous revpack review checkpoint');
+      expect(content).toContain('Treat this as a fresh review');
+    });
+
+    it('shows no-changes guidance when checkpoint exists but nothing changed', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'n',
+            headSha: 'bbb',
+            baseSha: 'x',
+            startSha: 'x',
+            threadsDigest: 'd',
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: 'd' },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: false,
+            threadsChangedSinceCheckpoint: false,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('No target code or thread/reply changes');
+      expect(content).toContain('| Target code changed since checkpoint | no |');
+    });
+
+    it('shows thread-only guidance when only threads changed', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'n',
+            headSha: 'bbb',
+            baseSha: 'x',
+            startSha: 'x',
+            threadsDigest: 'old',
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: 'new' },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: false,
+            threadsChangedSinceCheckpoint: true,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('threads or replies have been updated');
+    });
+
+    it('shows unknown when threadsChanged and descriptionChanged are null', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            providerNoteId: 'n',
+            headSha: 'aaa',
+            baseSha: 'x',
+            startSha: 'x',
+            threadsDigest: null,
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: true,
+            threadsChangedSinceCheckpoint: null,
+            descriptionChangedSinceCheckpoint: null,
+          },
+        },
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('Threads/replies changed since checkpoint | unknown');
+      expect(content).toContain('Description changed since checkpoint | unknown');
+    });
+  });
+
+  describe('writeContext cleanSnippet logic', () => {
+    it('strips revpack marker and shows meaningful line in thread table', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'bot-1',
+            body: '<!-- revpack -->\n_🔴 High_ | _security_\nActual finding text here',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // The snippet should skip the marker and badge line, showing the actual text
+      expect(content).toContain('Actual finding text here');
+      // Should NOT contain the severity badge as the snippet
+      expect(content).not.toMatch(/\| _🔴 High_ \| _security_/);
+    });
+
+    it('truncates long snippets in thread tables', async () => {
+      const longBody = 'A'.repeat(200);
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'n1',
+            body: longBody,
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // Table should have truncated snippet (max 80 chars)
+      expect(content).not.toContain('A'.repeat(81));
+    });
+
+    it('shows thread location with file path and line number', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/main.ts', newLine: 42 },
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('`src/main.ts`:42');
+    });
+
+    it('shows file path without line when position has no line numbers', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/config.ts' },
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('`src/config.ts`');
+      expect(content).not.toContain('`src/config.ts`:');
+    });
+
+    it('uses oldLine fallback for thread location when newLine is absent', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/old.ts', oldLine: 7 },
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('`src/old.ts`:7');
+    });
+
+    it('shows general for threads without position', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: undefined,
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('| general |');
+    });
+  });
+
+  describe('per-file patch writing', () => {
+    it('writes patch files with correct naming convention', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/my-service.ts',
+        newPath: 'src/my-service.ts',
+        diff: '@@ -1,2 +1,3 @@\n line1\n+line2\n line3\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      await createBundle(manager, makeTarget(), [], [diff]);
+      const patchDir = path.join(tmpDir, '.revpack', 'diffs', 'patches', 'by-file');
+      const files = await fs.readdir(patchDir);
+      expect(files).toContain('F001-my-service.patch');
+      const patchContent = await fs.readFile(path.join(patchDir, 'F001-my-service.patch'), 'utf-8');
+      expect(patchContent).toContain('diff --git');
+      expect(patchContent.endsWith('\n')).toBe(true);
+      // Should have exactly one trailing newline (trimEnd + \n)
+      expect(patchContent.endsWith('\n\n')).toBe(false);
+    });
+
+    it('sanitizes special characters in patch file names', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/weird file (copy).ts',
+        newPath: 'src/weird file (copy).ts',
+        diff: '@@ -1 +1,2 @@\n line\n+added\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      await createBundle(manager, makeTarget(), [], [diff]);
+      const patchDir = path.join(tmpDir, '.revpack', 'diffs', 'patches', 'by-file');
+      const files = await fs.readdir(patchDir);
+      // Special chars replaced, only alphanumeric, _, - remain
+      expect(files[0]).toMatch(/^F001-[a-zA-Z0-9_-]+\.patch$/);
+    });
+  });
+
+  describe('clearThreadFiles', () => {
+    it('removes old thread files when bundle is recreated', async () => {
+      const thread1 = makeThread();
+      const thread2 = { ...makeThread(), threadId: 'thread-2', comments: thread1.comments };
+      await createBundle(manager, makeTarget(), [thread1, thread2]);
+
+      const threadDir = path.join(tmpDir, '.revpack', 'threads');
+      expect((await fs.readdir(threadDir)).filter((f) => f.endsWith('.json'))).toHaveLength(2);
+
+      // Recreate with only one thread - old files should be cleared
+      await createBundle(manager, makeTarget(), [thread1]);
+      const files = (await fs.readdir(threadDir)).filter((f) => f.endsWith('.json'));
+      expect(files).toHaveLength(1);
+    });
+  });
+
+  describe('cleanSnippet regex coverage', () => {
+    // cleanSnippet is exercised through writeContext thread tables.
+    // These tests target specific regex mutation survivors.
+
+    it('skips empty lines to find first meaningful line', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '\n\n\nActual meaningful content',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // Empty lines should be skipped, showing the first non-empty line
+      expect(content).toContain('Actual meaningful content');
+    });
+
+    it('skips badge line with leading whitespace', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->\n  _High_ | _security_\nActual content here',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // Badge line with leading spaces should still be trimmed and skipped
+      expect(content).toContain('Actual content here');
+      expect(content).not.toContain('_High_');
+    });
+
+    it('does not strip marker that appears mid-line (^ anchor)', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: 'prefix text <!-- revpack -->\nContent after',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // The ^ anchor means the marker only matches at start; mid-line marker preserved as meaningful content
+      expect(content).toContain('prefix text <!-- revpack -->');
+    });
+
+    it('strips marker preceded by multiple whitespace chars', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '   <!-- revpack -->\nReal content here',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // Multiple whitespace before marker should still be stripped (\s*)
+      expect(content).toContain('Real content here');
+      expect(content).not.toContain('<!-- revpack -->');
+    });
+
+    it('strips marker with trailing whitespace before newline', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->   \nTrailing ws content',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('Trailing ws content');
+    });
+
+    it('strips marker without trailing newline', async () => {
+      // Body is just "<!-- revpack -->Content" with no newline between
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->Content on same line',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // \n? means newline is optional - content right after marker should be found
+      expect(content).toContain('Content on same line');
+      // Marker itself should be stripped from the snippet
+      expect(content).not.toMatch(/<!-- revpack -->Content/);
+    });
+
+    it('returns empty snippet when body has only badges and empty lines', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->\n_🔴 High_ | _security_\n\n_Low_\n',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // All non-empty lines are badge patterns - meaningful is undefined, returns ''
+      // The table row should have empty snippet cell
+      const threadTable = content.split('## Unresolved Threads')[1]?.split('##')[0] ?? '';
+      const dataRows = threadTable.split('\n').filter((l) => l.startsWith('|') && !l.includes('---'));
+      // Last cell should be empty (just spaces between pipes)
+      const lastRow = dataRows[dataRows.length - 1] ?? '';
+      const cells = lastRow.split('|').map((c) => c.trim());
+      expect(cells[cells.length - 2]).toBe(''); // snippet cell is empty
+    });
+
+    it('trims whitespace from meaningful line', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->\n   Padded content   ',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // .trim() should remove whitespace around the meaningful line
+      expect(content).toContain('Padded content');
+      expect(content).not.toContain('   Padded');
+    });
+
+    it('does not skip non-badge lines that contain underscores', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->\n_badge_ | _cat_\n_bold_ some text after',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // "_bold_ some text after" doesn't match the badge-only regex (has text after)
+      expect(content).toContain('_bold_ some text after');
+    });
+
+    it('skips single badge without pipe separator', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->\n_Medium_\nThe real finding',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // Single badge "_Medium_" matches /^_[^_]+_(\s*\|\s*_[^_]+_)*\s*$/ with zero repetitions
+      expect(content).toContain('The real finding');
+      expect(content).not.toMatch(/\| _Medium_ \|/);
+    });
+
+    it('skips triple-badge line with multiple pipes', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->\n_🔴 High_ | _security_ | _urgent_\nActual issue',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('Actual issue');
+    });
+
+    it('skips badges with no spaces around pipe separator', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->\n_🔴 High_|_security_\nReal finding text',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // \s* allows zero spaces around pipe - badge still detected
+      expect(content).toContain('Real finding text');
+      expect(content).not.toContain('_🔴 High_|_security_');
+    });
+
+    it('does not skip line containing badge-like text after prefix text', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '<!-- revpack -->\nSee _High_\nFallback',
+            author: 'bot',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // ^ anchor requires line to START with underscore - "See _High_" has prefix text
+      expect(content).toContain('See _High_');
+    });
+
+    it('trims lines before badge detection so leading-whitespace badges are skipped', async () => {
+      // Body without <!-- revpack --> marker — the trim on the find predicate matters
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          {
+            id: 'c1',
+            body: '  _High_ | _security_\nActual finding',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // The whitespace-prefixed badge line should be trimmed and detected as badge, not used as snippet
+      expect(content).toContain('Actual finding');
+      expect(content).not.toMatch(/\|\s*_High_/);
+    });
+  });
+
+  describe('extractDiffContext boundary conditions', () => {
+    it('shows all lines when thread is at the first line of diff', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
+        diff: ['@@ -1,4 +1,4 @@', '+newFirst', ' line2', ' line3', ' line4'].join('\n'),
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', newLine: 1 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      const diffBlock = md.split('```diff')[1].split('```')[0];
+      // lineIdx=0, start=max(0,0-3)=0, end=min(3,0+1)=1
+      // Should show at most 2 lines: the target + 1 below
+      expect(diffBlock).toContain('newFirst');
+      expect(diffBlock).toContain('◀');
+      expect(diffBlock).toContain('line2');
+    });
+
+    it('shows context when thread is at the last line of diff', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
+        diff: ['@@ -1,4 +1,4 @@', ' line1', ' line2', ' line3', '+lastLine'].join('\n'),
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', newLine: 4 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      const diffBlock = md.split('```diff')[1].split('```')[0];
+      // lineIdx=3 (last), start=max(0,3-3)=0, end=min(3,3+1)=3
+      expect(diffBlock).toContain('lastLine');
+      expect(diffBlock).toContain('◀');
+      // All 3 context lines above should be shown
+      expect(diffBlock).toContain('line1');
+      expect(diffBlock).toContain('line2');
+      expect(diffBlock).toContain('line3');
+    });
+
+    it('formats removed lines with - prefix and correct line numbers', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
+        diff: ['@@ -5,3 +5,2 @@', ' keep', '-deleted', ' after'].join('\n'),
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', oldLine: 6 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      const diffBlock = md.split('```diff')[1].split('```')[0];
+      const lines = diffBlock.split('\n').filter((l) => l.length > 0);
+      // Removed line should have - prefix at position 0
+      const removedLine = lines.find((l) => l.includes('deleted'));
+      expect(removedLine).toBeDefined();
+      expect(removedLine![0]).toBe('-');
+      expect(removedLine).toContain('◀');
+      // Removed line uses oldLine number since newLine is undefined
+      expect(removedLine).toContain('6');
+      // Context line should have space prefix at position 0
+      const contextLine = lines.find((l) => l.includes('keep'));
+      expect(contextLine).toBeDefined();
+      expect(contextLine![0]).toBe(' ');
+      // Context line shows its line number
+      expect(contextLine).toContain('5');
+      // After line is also context
+      const afterLine = lines.find((l) => l.includes('after'));
+      expect(afterLine).toBeDefined();
+      expect(afterLine![0]).toBe(' ');
+    });
+
+    it('returns no diff context when position does not match any line', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
+        diff: '@@ -1,2 +1,2 @@\n line1\n+line2\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', newLine: 999 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      // No diff context section when line not found
+      expect(md).not.toContain('## Diff Context');
+    });
+
+    it('returns no diff context when position file does not match diff paths', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/other.ts',
+        newPath: 'src/other.ts',
+        diff: '@@ -1,2 +1,2 @@\n line1\n+line2\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', newLine: 1 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).not.toContain('## Diff Context');
+    });
+
+    it('uses newPath matching for file lookup', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/old-name.ts',
+        newPath: 'src/new-name.ts',
+        diff: '@@ -1,2 +1,2 @@\n context\n+added\n',
+        newFile: false,
+        renamedFile: true,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/new-name.ts', newLine: 2 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('## Diff Context');
+      expect(md).toContain('added');
+    });
+  });
+
+  describe('per-file patch naming edge cases', () => {
+    it('truncates long filenames to 40 characters', async () => {
+      const longName = 'a-very-long-component-name-that-exceeds-the-limit.ts';
+      const diff: ReviewDiff = {
+        oldPath: `src/${longName}`,
+        newPath: `src/${longName}`,
+        diff: '@@ -1 +1,2 @@\n line\n+added\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      await createBundle(manager, makeTarget(), [], [diff]);
+      const patchDir = path.join(tmpDir, '.revpack', 'diffs', 'patches', 'by-file');
+      const files = await fs.readdir(patchDir);
+      // safeName is sliced to 40 chars
+      const safePart = files[0].replace(/^F\d+-/, '').replace('.patch', '');
+      expect(safePart.length).toBeLessThanOrEqual(40);
+    });
+
+    it('sanitizes special characters in filenames', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app[dev].ts',
+        newPath: 'src/app[dev].ts',
+        diff: '@@ -1 +1,2 @@\n line\n+added\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      await createBundle(manager, makeTarget(), [], [diff]);
+      const patchDir = path.join(tmpDir, '.revpack', 'diffs', 'patches', 'by-file');
+      const files = await fs.readdir(patchDir);
+      // Brackets should be replaced with underscores
+      expect(files[0]).toContain('app_dev_');
+      expect(files[0]).not.toContain('[');
+      expect(files[0]).not.toContain(']');
+    });
+
+    it('matches files.json naming when filename has no basename after extension removal', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/.gitignore',
+        newPath: 'src/.gitignore',
+        diff: '@@ -1 +1,2 @@\n line\n+added\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      await createBundle(manager, makeTarget(), [], [diff]);
+      const patchDir = path.join(tmpDir, '.revpack', 'diffs', 'patches', 'by-file');
+      const files = await fs.readdir(patchDir);
+      // .gitignore -> pop() = '.gitignore', replace(/\.[^.]+$/, '') = ''
+      expect(files[0]).toBe('F001-.patch');
+    });
+
+    it('strips only the final extension from multi-dot filenames', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.module.ts',
+        newPath: 'src/app.module.ts',
+        diff: '@@ -1 +1,2 @@\n line\n+added\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      await createBundle(manager, makeTarget(), [], [diff]);
+      const patchDir = path.join(tmpDir, '.revpack', 'diffs', 'patches', 'by-file');
+      const files = await fs.readdir(patchDir);
+      // 'app.module.ts' → strip '.ts' → 'app.module' → sanitize dots → 'app_module'
+      expect(files[0]).toContain('app_module');
+    });
+
+    it('files.json patchFile uses correctly sanitized multi-dot name', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.spec.ts',
+        newPath: 'src/app.spec.ts',
+        diff: '@@ -1 +1,2 @@\n line\n+added\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      await createBundle(manager, makeTarget(), [], [diff]);
+      const filesJson = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'files.json'), 'utf-8'));
+      // strip last extension only: 'app.spec.ts' → 'app.spec' → sanitize → 'app_spec'
+      expect(filesJson.files[0].patchFile).toContain('app_spec');
+      expect(filesJson.files[0].patchFile).not.toContain('app_spec_');
+    });
+  });
+
+  describe('changed threads section in writeContext', () => {
+    it('lists both resolved and unresolved changed threads', async () => {
+      const unresolvedThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'changed-unresolved',
+        resolved: false,
+        position: { filePath: 'src/a.ts', newLine: 5 },
+      };
+      const resolvedThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'changed-resolved',
+        resolved: true,
+        position: { filePath: 'src/b.ts', newLine: 10 },
+      };
+      const unchangedThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'unchanged',
+        resolved: false,
+      };
+      const allThreads = [unresolvedThread, resolvedThread, unchangedThread];
+      const { threadIndex } = await createBundle(manager, makeTarget(), allThreads);
+      const contextPath = await manager.writeContext(makeTarget(), allThreads, [], threadIndex, {
+        changedThreadIds: new Set(['changed-unresolved', 'changed-resolved']),
+        allThreads,
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Changed Threads Since Last Checkpoint');
+      expect(content).toContain('unresolved');
+      expect(content).toContain('resolved');
+      expect(content).toContain('`src/a.ts`:5');
+      expect(content).toContain('`src/b.ts`:10');
+      // Each thread appears exactly once (no duplicates from filter removal)
+      const changedSection = content.split('## Changed Threads Since Last Checkpoint')[1]?.split('##')[0] ?? '';
+      const dataRows = changedSection
+        .split('\n')
+        .filter((l) => l.startsWith('|') && !l.includes('---') && !l.includes('Thread'));
+      expect(dataRows).toHaveLength(2);
+    });
+
+    it('omits section when no changed thread IDs match any thread', async () => {
+      const thread: ReviewThread = { ...makeThread(), threadId: 'normal' };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex, {
+        changedThreadIds: new Set(['nonexistent-id']),
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).not.toContain('## Changed Threads Since Last Checkpoint');
+    });
+
+    it('omits section when changedThreadIds is empty', async () => {
+      const thread: ReviewThread = { ...makeThread() };
+      const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
+      const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex, {
+        changedThreadIds: new Set(),
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).not.toContain('## Changed Threads Since Last Checkpoint');
+    });
+
+    it('uses allThreads for filtering when provided', async () => {
+      const visibleThread: ReviewThread = { ...makeThread(), threadId: 'visible' };
+      const hiddenThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'hidden-changed',
+        resolved: false,
+        comments: [
+          {
+            id: 'h1',
+            body: 'Hidden thread body content xyz',
+            author: 'reviewer',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      // Pass only visibleThread as the "threads" arg, but hiddenThread in allThreads
+      const { threadIndex } = await createBundle(manager, makeTarget(), [visibleThread, hiddenThread]);
+      const contextPath = await manager.writeContext(makeTarget(), [visibleThread], [], threadIndex, {
+        changedThreadIds: new Set(['hidden-changed']),
+        allThreads: [visibleThread, hiddenThread],
+      });
+      const content = await fs.readFile(contextPath, 'utf-8');
+      // hiddenThread should appear in changed threads table via allThreads
+      expect(content).toContain('Hidden thread body content xyz');
+    });
+  });
 });
+
+// ─── Test helpers ─────────────────────────────────────────
+
+function makePrepareSummary(): PrepareSummary {
+  return {
+    mode: 'fresh',
+    checkpoint: null,
+    current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+    comparison: {
+      targetCodeChangedSinceCheckpoint: null,
+      threadsChangedSinceCheckpoint: null,
+      descriptionChangedSinceCheckpoint: null,
+    },
+  };
+}
+
+function makeLocal(): BundleLocal {
+  return {
+    repositoryRoot: '/tmp/test',
+    branch: 'feature/test',
+    headSha: 'bbb',
+    matchesTargetSourceBranch: true,
+    matchesTargetHead: true,
+    workingTreeClean: true,
+    checkedAt: '2026-01-01T00:00:00Z',
+  };
+}
+
+/** Create bundle + save state for tests that need bundle.json to exist */
+async function createBundleWithState(m: WorkspaceManager) {
+  const target = makeTarget();
+  const threadIndex = WorkspaceManager.buildThreadIndex([]);
+  await m.createBundle(target, [], [], [], threadIndex);
+  const state = m.buildBundleState(target, [], [], threadIndex, makePrepareSummary(), makeLocal());
+  await m.saveBundleState(state);
+}
 
 async function fileExists(p: string): Promise<boolean> {
   try {

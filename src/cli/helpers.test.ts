@@ -22,7 +22,7 @@ const { createOrchestrator } = await import('./helpers.js');
 
 describe('cli helpers', () => {
   let tmpDir: string;
-  let cwdSpy: MockInstance<[], string>;
+  let cwdSpy: MockInstance<() => string>;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revpack-helpers-'));
