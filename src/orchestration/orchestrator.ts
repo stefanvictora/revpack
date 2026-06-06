@@ -166,14 +166,12 @@ export class ReviewOrchestrator {
     let localHeadSha: string;
     let localBranch: string;
     let localRepoRoot: string;
-    let localClean: boolean;
 
     try {
-      [localHeadSha, localBranch, localRepoRoot, localClean] = await Promise.all([
+      [localHeadSha, localBranch, localRepoRoot] = await Promise.all([
         this.git.headSha(),
         this.git.currentBranch(),
         this.git.repositoryRoot(),
-        this.git.isClean(),
       ]);
     } catch {
       throw new Error(
@@ -281,7 +279,6 @@ export class ReviewOrchestrator {
       headSha: localHeadSha,
       matchesTargetSourceBranch: localBranch === target.sourceBranch,
       matchesTargetHead: localHeadSha === mrHeadSha,
-      workingTreeClean: localClean,
       checkedAt: new Date().toISOString(),
     };
 
@@ -523,17 +520,9 @@ export class ReviewOrchestrator {
   }
 
   /**
-   * Publish review: advance the checkpoint via the description state block,
-   * and optionally publish review.md as a visible comment/note.
-   *
-   * - Hidden state is always written to the MR/PR description/body.
-   * - If visibleContent is non-empty, publishes it as a new normal comment/note.
-   * - If visibleContent is empty, no visible review artifact is created.
+   * Publish review.md as a visible comment/note.
    */
   async publishReview(visibleContent: string, defaultRepo?: string): Promise<{ created: boolean; noteId?: string }> {
-    await this.advanceCheckpoint(defaultRepo);
-
-    // Publish visible review body if non-empty
     if (visibleContent.trim()) {
       const targetRef = await this.resolveRef(undefined, defaultRepo);
       const markedBody = `${REVIEW_NOTE_MARKER}\n${visibleContent.trim()}${REVIEW_NOTE_FOOTER}`;
@@ -546,7 +535,6 @@ export class ReviewOrchestrator {
 
   /**
    * Publish review as part of a GitHub PR review batch (with findings as inline comments).
-   * Advances the checkpoint via the description state block.
    */
   async publishReviewBatch(
     findings: NewFinding[],
@@ -571,20 +559,19 @@ export class ReviewOrchestrator {
       await this.provider.submitReview(targetRef, comments, body, 'COMMENT');
     }
 
-    await this.advanceCheckpoint(defaultRepo);
-
     return { created: findings.length > 0 || !!reviewBody.trim() };
   }
 
   /**
    * Snapshot current MR/PR state and write the checkpoint into the description body.
    */
-  private async advanceCheckpoint(defaultRepo?: string): Promise<void> {
+  async publishCheckpoint(defaultRepo?: string): Promise<void> {
     const targetRef = await this.resolveRef(undefined, defaultRepo);
 
-    const [target, rawThreads] = await Promise.all([
+    const [target, rawThreads, versions] = await Promise.all([
       this.provider.getTargetSnapshot(targetRef),
       this.provider.listAllThreads(targetRef),
+      this.provider.getDiffVersions(targetRef),
     ]);
 
     // Identify existing review note for thread filtering
@@ -601,7 +588,6 @@ export class ReviewOrchestrator {
     const currentDescriptionDigest = computeContentHash(sanitizeDescriptionForAgent(target.description ?? ''));
     const threadDigests = computeThreadDigestMap(allThreads);
 
-    const versions = await this.provider.getDiffVersions(targetRef);
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
 
     const checkpointState = buildCheckpointState(

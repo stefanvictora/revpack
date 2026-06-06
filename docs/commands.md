@@ -27,7 +27,7 @@ Local mode:
 - `revpack prepare --local` reviews committed branch changes against an inferred base branch (`origin/main`, `main`, `origin/master`, `master`, `origin/develop`, `develop`, `origin/trunk`, or `trunk`).
 - Uncommitted working tree changes are ignored and are not included in the agent context.
 - Local findings are stored as local review threads under `.revpack/local/` and appear in the normal `.revpack/threads/T-NNN.*` files after refresh.
-- `revpack publish findings`, `revpack publish replies`, and `revpack publish review` work against the active local bundle. Publishing review records the local review state.
+- `revpack publish findings`, `revpack publish replies`, `revpack publish review`, and `revpack publish checkpoint` work against the active local bundle. Publishing the checkpoint records the local review state.
 
 ## `checkout <ref>`
 
@@ -49,7 +49,7 @@ Notes:
 
 ## `status [ref]`
 
-Shows PR/MR state, branches, labels, dates, output status, prepare summary, and published actions.
+Shows PR/MR state, branches, bundle freshness, local checkout status, agent outputs, and publish history.
 
 ```bash
 revpack status
@@ -58,6 +58,8 @@ revpack status !42 --json
 ```
 
 When a bundle exists, `status` reads from `.revpack/bundle.json`. Otherwise, it fetches from the provider API.
+The bundle section shows the PR/MR head commit that was reviewed and the checkout commit captured at prepare time.
+The publish history section reports earlier `revpack publish` actions recorded in the bundle; `status` itself does not publish anything.
 
 ## `publish`
 
@@ -67,12 +69,17 @@ Publishes agent outputs back to the PR/MR.
 revpack publish all
 revpack publish replies
 revpack publish findings
-revpack publish description
+revpack publish summary
 revpack publish review
+revpack publish checkpoint
 ```
 
 After publishing, revpack refreshes the bundle by default so the new provider comments are reflected locally.
 This publish-triggered refresh preserves other pending output files; run `revpack prepare` explicitly when you want stale replies pruned against the latest thread state.
+
+`revpack publish description` is kept as a compatibility alias for `revpack publish summary`.
+`revpack publish review` publishes `.revpack/outputs/review.md` as a visible review note.
+`revpack publish checkpoint` records review state for future incremental runs.
 
 ## `clean`
 

@@ -166,17 +166,27 @@ revpack status
 Example:
 
 ```text
-─ Output status ─
-  Replies:  2 pending
-  Findings: 1 pending
-  Summary:  pending
-  Review:   empty
+─ Publish status ─
+  Replies:     2 pending
+  Findings:    1 pending
+  Summary:     pending
+  Review note: empty
+  Checkpoint:  needs update
 
 Next:
+  Review .revpack/outputs/
   revpack publish all
+
+Or publish selected:
+  revpack publish replies
+  revpack publish findings
+  revpack publish summary
+
+After publishing selected outputs, record the review state:
+  revpack publish checkpoint
 ```
 
-`pending` means the agent wrote proposed review content under `.revpack/outputs/`. `empty` is also valid; for example, `Review: empty` means the agent did not write a PR/MR-level review note.
+`pending` means revpack found proposed review content under `.revpack/outputs/` that can be published. `empty` is also valid; for example, `Review note: empty` means the agent did not write a PR/MR-level review note. The checkpoint records what remote PR/MR state has been reviewed.
 
 You can publish everything after a quick check:
 
@@ -301,13 +311,14 @@ The agent writes its results under `.revpack/outputs/`. Those files stay local u
 
 You choose what gets posted to GitHub or GitLab.
 
-| To publish                   | Run                           |
-| ---------------------------- | ----------------------------- |
-| Replies to existing threads  | `revpack publish replies`     |
-| New line comments            | `revpack publish findings`    |
-| PR/MR description summary    | `revpack publish description` |
-| Review note and review state | `revpack publish review`      |
-| All pending output           | `revpack publish all`         |
+| To publish                  | Run                          |
+| --------------------------- | ---------------------------- |
+| Replies to existing threads | `revpack publish replies`    |
+| New line comments           | `revpack publish findings`   |
+| PR/MR summary               | `revpack publish summary`    |
+| Review note                 | `revpack publish review`     |
+| Review checkpoint           | `revpack publish checkpoint` |
+| Everything ready            | `revpack publish all`        |
 
 Common variants:
 
@@ -317,7 +328,7 @@ revpack publish replies T-001
 ```
 
 > [!IMPORTANT]
-> When publishing outputs one by one, publish `review` last. It records the review state used for future incremental runs.
+> When publishing outputs one by one, publish `checkpoint` last. It records the reviewed PR/MR state used for future incremental runs.
 >
 > Publishing refreshes the bundle by default but preserves other pending outputs.
 

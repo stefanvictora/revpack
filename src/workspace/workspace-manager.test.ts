@@ -558,7 +558,6 @@ describe('WorkspaceManager', () => {
         headSha: 'bbb',
         matchesTargetSourceBranch: true,
         matchesTargetHead: true,
-        workingTreeClean: true,
         checkedAt: '2026-01-01T00:00:00Z',
       },
       undefined,
@@ -1410,7 +1409,6 @@ describe('WorkspaceManager', () => {
           headSha: 'bbb',
           matchesTargetSourceBranch: true,
           matchesTargetHead: true,
-          workingTreeClean: true,
           checkedAt: '2026-01-01T00:00:00Z',
         },
       );
@@ -1453,7 +1451,6 @@ describe('WorkspaceManager', () => {
           headSha: 'bbb',
           matchesTargetSourceBranch: true,
           matchesTargetHead: true,
-          workingTreeClean: true,
           checkedAt: '2026-01-01T00:00:00Z',
         },
       );
@@ -3472,7 +3469,6 @@ function makeLocal(): BundleLocal {
     headSha: 'bbb',
     matchesTargetSourceBranch: true,
     matchesTargetHead: true,
-    workingTreeClean: true,
     checkedAt: '2026-01-01T00:00:00Z',
   };
 }

@@ -120,7 +120,6 @@ describe('ReviewOrchestrator', () => {
   let headShaSpy: MockInstance<(...args: any[]) => any>;
   let currentBranchSpy: MockInstance<(...args: any[]) => any>;
   let repositoryRootSpy: MockInstance<(...args: any[]) => any>;
-  let isCleanSpy: MockInstance<(...args: any[]) => any>;
   let isAncestorSpy: MockInstance<(...args: any[]) => any>;
   let hasCommitSpy: MockInstance<(...args: any[]) => any>;
   let fetchCommitSpy: MockInstance<(...args: any[]) => any>;
@@ -136,7 +135,6 @@ describe('ReviewOrchestrator', () => {
     headShaSpy = vi.spyOn(GitHelper.prototype, 'headSha').mockResolvedValue('bbb');
     currentBranchSpy = vi.spyOn(GitHelper.prototype, 'currentBranch').mockResolvedValue('feature/test');
     repositoryRootSpy = vi.spyOn(GitHelper.prototype, 'repositoryRoot').mockResolvedValue(tmpDir);
-    isCleanSpy = vi.spyOn(GitHelper.prototype, 'isClean').mockResolvedValue(true);
     isAncestorSpy = vi.spyOn(GitHelper.prototype, 'isAncestor').mockResolvedValue(false);
     hasCommitSpy = vi.spyOn(GitHelper.prototype, 'hasCommit').mockResolvedValue(true);
     fetchCommitSpy = vi.spyOn(GitHelper.prototype, 'fetchCommit').mockResolvedValue(undefined);
@@ -150,7 +148,6 @@ describe('ReviewOrchestrator', () => {
     headShaSpy.mockRestore();
     currentBranchSpy.mockRestore();
     repositoryRootSpy.mockRestore();
-    isCleanSpy.mockRestore();
     isAncestorSpy.mockRestore();
     hasCommitSpy.mockRestore();
     fetchCommitSpy.mockRestore();
@@ -364,13 +361,11 @@ describe('ReviewOrchestrator', () => {
       expect(err.message).toContain('base: aaa');
     });
 
-    it('uses commit-to-commit local diff without requiring a clean working tree', async () => {
-      isCleanSpy.mockResolvedValue(false);
-
+    it('uses commit-to-commit local diff without fetching when commits are available', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
 
-      expect(result.bundleState.local.workingTreeClean).toBe(false);
+      expect(result.bundleState.local.headSha).toBe('bbb');
       expect(fetchCommitSpy).not.toHaveBeenCalled();
       expect(fetchSpy).not.toHaveBeenCalled();
       expect(fetchBranchSpy).not.toHaveBeenCalled();
@@ -1159,7 +1154,6 @@ describe('ReviewOrchestrator', () => {
       expect(result.bundleState.local.branch).toBe('feature/test');
       expect(result.bundleState.local.matchesTargetHead).toBe(true);
       expect(result.bundleState.local.matchesTargetSourceBranch).toBe(true);
-      expect(result.bundleState.local.workingTreeClean).toBe(true);
     });
 
     it('succeeds on detached HEAD with matchesTargetSourceBranch false', async () => {
@@ -1606,7 +1600,7 @@ describe('ReviewOrchestrator', () => {
   // ─── Publish review tests ──────────────────────────────
 
   describe('publishReview', () => {
-    it('creates visible comment and advances checkpoint when review content is non-empty', async () => {
+    it('creates visible comment without advancing checkpoint when review content is non-empty', async () => {
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
       (mockProvider.createNote as ReturnType<typeof vi.fn>).mockResolvedValue('new-note-id');
 
@@ -1627,19 +1621,10 @@ describe('ReviewOrchestrator', () => {
       expect(noteBody).not.toContain('<!-- revpack:state');
       expect(noteBody).toContain(REVIEW_NOTE_MARKER);
 
-      expect(mockProvider.updateDescription).toHaveBeenCalledWith(
-        expect.objectContaining({ targetId: '42' }),
-        expect.stringContaining('<!-- revpack:state'),
-      );
-
-      const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      const state = parseDescriptionState(updatedDesc);
-      expect(state).not.toBeNull();
-      expect(state!.checkpoint.headSha).toBe('bbb');
-      expect(state!.target.id).toBe('42');
+      expect(mockProvider.updateDescription).not.toHaveBeenCalled();
     });
 
-    it('with empty review.md publishes no visible comment but advances checkpoint', async () => {
+    it('with empty review.md publishes no visible comment and does not advance checkpoint', async () => {
       (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
@@ -1649,13 +1634,8 @@ describe('ReviewOrchestrator', () => {
 
       expect(result.created).toBe(false);
       expect(result.noteId).toBeUndefined();
-      // No visible comment created
       expect(mockProvider.createNote).not.toHaveBeenCalled();
-      // But description state block was advanced
-      expect(mockProvider.updateDescription).toHaveBeenCalledWith(
-        expect.objectContaining({ targetId: '42' }),
-        expect.stringContaining('<!-- revpack:state'),
-      );
+      expect(mockProvider.updateDescription).not.toHaveBeenCalled();
     });
 
     it('with whitespace-only content publishes no visible comment', async () => {
@@ -1677,7 +1657,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
-      await orchestrator.publishReview('', 'group/project');
+      await orchestrator.publishCheckpoint('group/project');
 
       // Description state was written — parse it and check versionId is absent
       const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
@@ -2033,8 +2013,7 @@ describe('ReviewOrchestrator', () => {
       );
 
       expect(result.created).toBe(true);
-      // updateDescription should still be called (advanceCheckpoint runs)
-      expect(providerWithoutSubmit.updateDescription).toHaveBeenCalled();
+      expect(providerWithoutSubmit.updateDescription).not.toHaveBeenCalled();
     });
 
     it('trims whitespace from reviewBody in submitted review', async () => {
@@ -2162,6 +2141,7 @@ describe('ReviewOrchestrator', () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
       await orchestrator.publishReview('Some review', 'group/project');
+      await orchestrator.publishCheckpoint('group/project');
 
       // The description state should reflect the digest WITHOUT the review note thread
       const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
@@ -2272,7 +2252,7 @@ describe('ReviewOrchestrator', () => {
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
-      await orchestrator.publishReview('', 'group/project');
+      await orchestrator.publishCheckpoint('group/project');
 
       const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
       const state = parseDescriptionState(updatedDesc);
@@ -2291,7 +2271,7 @@ describe('ReviewOrchestrator', () => {
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
-      await orchestrator.publishReview('', 'group/project');
+      await orchestrator.publishCheckpoint('group/project');
 
       const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
       const state = parseDescriptionState(updatedDesc);

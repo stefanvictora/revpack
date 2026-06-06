@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import chalk from 'chalk';
 import { formatTargetDisplayId, formatTargetKind } from '../../core/display.js';
 import { createLocalOrchestrator, createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
+import { formatGuidanceLine } from '../output.js';
 
 export function registerPrepareCommand(program: Command): void {
   program
@@ -54,14 +55,14 @@ export function registerPrepareCommand(program: Command): void {
           const targetLabel = formatTargetKind(target);
           const targetDisplayId = formatTargetDisplayId(target);
 
-          const modeLabel = mode === 'fresh' ? '' : ' (refresh)';
-          console.log(chalk.green(`✓ Bundle prepared${modeLabel}`));
+          const action = mode === 'fresh' ? 'prepared' : 'refreshed';
+          console.log(chalk.green(`✓ Bundle ${action}`));
           console.log('');
           console.log(`  ${chalk.bold(targetDisplayId)}: ${target.title}`);
           console.log(`  ${chalk.dim('State:')}       ${stateColor(target.state)}`);
           console.log(`  ${chalk.dim('Author:')}      ${isLocal ? target.author : `@${target.author}`}`);
           console.log(`  ${chalk.dim('Branch:')}      ${target.sourceBranch} → ${target.targetBranch}`);
-          console.log(`  ${chalk.dim('Updated:')}     ${formatDate(target.updatedAt)}`);
+          console.log(`  ${chalk.dim(`${targetLabel} updated:`)}  ${formatDate(target.updatedAt)}`);
           console.log(`  ${chalk.dim('Threads:')}     ${bundle.threads.length} unresolved`);
           console.log(`  ${chalk.dim('Files:')}       ${bundle.diffs.length} changed`);
           console.log('');
@@ -81,21 +82,21 @@ export function registerPrepareCommand(program: Command): void {
               console.log(`    ${chalk.dim('Stale replies pruned:')} ${result.prunedReplies}`);
             }
             if (result.publishedActionCount > 0) {
-              console.log(`    ${chalk.dim('Published actions:')} ${result.publishedActionCount} previous`);
+              console.log(`    ${chalk.dim('Previously published:')} ${result.publishedActionCount} previous`);
             }
             console.log('');
 
             // Focus guidance
             if (result.targetCodeChanged) {
-              console.log(`  ${chalk.dim('Focus: updated diff and unresolved thread updates')}`);
+              console.log(`  ${chalk.dim('Focus:')} updated diff and unresolved thread updates`);
             } else if (result.threadsChanged) {
-              console.log(`  ${chalk.dim('Focus: updated threads/replies and pending outputs')}`);
+              console.log(`  ${chalk.dim('Focus:')} updated threads/replies and pending outputs`);
             } else {
-              console.log(`  ${chalk.dim('Focus: no remote changes since the last recorded review state')}`);
+              console.log(`  ${chalk.dim('Focus:')} no remote changes since the last recorded review state`);
             }
             console.log('');
           } else if (mode !== 'fresh') {
-            console.log(`  ${chalk.dim('No recorded review state found — treat as fresh review')}`);
+            console.log(`  ${chalk.dim('Review mode:')} fresh review — no recorded review state found`);
             console.log('');
           }
 
@@ -115,10 +116,12 @@ export function registerPrepareCommand(program: Command): void {
           }
 
           // Next steps
-          console.log(chalk.dim('Next steps:'));
-          console.log(chalk.dim('  • Give your agent .revpack/CONTEXT.md'));
-          console.log(chalk.dim('  • Or use a Copilot prompt: /revpack-review'));
-          console.log(chalk.dim('  • Re-run `revpack prepare` after changes to refresh'));
+          console.log(formatGuidanceLine('Next:'));
+          console.log(formatGuidanceLine('  Ask your agent to read .revpack/CONTEXT.md'));
+          console.log(formatGuidanceLine('  Or run `/revpack-review` if installed'));
+          console.log('');
+          console.log(formatGuidanceLine('After new commits or review comments:'));
+          console.log(formatGuidanceLine('  revpack prepare'));
         } catch (err) {
           handleError(err);
         }
@@ -154,10 +157,13 @@ function formatDate(iso: string): string {
     const diffMs = now.getTime() - d.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    const formatted = d.toLocaleDateString('en-US', {
+    const formatted = d.toLocaleString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
     });
 
     if (diffDays === 0) return `${formatted} (today)`;
