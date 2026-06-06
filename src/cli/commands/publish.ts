@@ -412,13 +412,12 @@ async function publishReviewCmd(opts: { from?: string; repo?: string }): Promise
   return result.created ? 1 : 0;
 }
 
-async function publishCheckpointCmd(opts: { repo?: string }): Promise<number> {
+async function publishCheckpointCmd(opts: { repo?: string }): Promise<void> {
   const orchestrator = await createOrchestrator();
   const defaultRepo = opts.repo ?? (await getRepoFromGit());
 
   await orchestrator.publishCheckpoint(defaultRepo);
   console.log(chalk.green('✓ Checkpoint recorded'));
-  return 1;
 }
 
 function isNoReviewNoteToPublishError(err: unknown): boolean {
