@@ -100,3 +100,17 @@ Inspect `reports/mutation/mutation.json`, group surviving or uncovered mutants b
 - Source files are UTF-8 and may contain Unicode CLI symbols such as `✓`, `→`, and `─`. Preserve them unless the task explicitly changes output text.
 - Do not treat mojibake in terminal output as file content; PowerShell may display UTF-8 incorrectly. Prefer editing by ASCII anchors such as function names, variable names, and nearby TypeScript structure.
 - Avoid broad rewrites around Unicode-heavy output blocks. Use small patches, or read/write with explicit UTF-8 handling when scripting edits.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for `stefanvictora/revpack`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default mattpocock/skills triage labels unchanged. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repo: use root `CONTEXT.md` and root `docs/adr/` when present. See `docs/agents/domain.md`.
