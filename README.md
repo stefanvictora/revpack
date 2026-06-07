@@ -54,7 +54,7 @@ revpack setup agent cursor
 revpack setup agent copilot
 ```
 
-This writes project-level instruction files, such as an agent command, skill, prompt, or rules file. It does not install or run the agent.
+This writes project-level instruction files, such as an agent command, skill, or prompt. It does not install or run the agent.
 
 Use `--dry-run` to preview generated files before writing them.
 
@@ -62,7 +62,10 @@ Prepare, review, inspect, and publish:
 
 ```bash
 revpack prepare
-# Run /revpack-review in Claude or Copilot, or ask Cursor/Codex to perform a revpack review.
+# Start the review in your agent:
+# Claude, Copilot, or Cursor: /revpack-review
+# Codex: $revpack-review
+# Or ask any agent to perform a revpack review.
 revpack status
 revpack publish all
 ```

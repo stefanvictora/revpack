@@ -43,8 +43,15 @@ describe('runSetup', () => {
   it('installs the Cursor adapter at the canonical revpack-review path', async () => {
     await runSetupAgent({ cwd, target: 'cursor' });
 
-    await expect(fileExists(path.join('.cursor', 'rules', 'revpack-review.mdc'))).resolves.toBe(true);
+    await expect(fileExists(path.join('.cursor', 'commands', 'revpack-review.md'))).resolves.toBe(true);
+    await expect(fileExists(path.join('.cursor', 'rules', 'revpack-review.mdc'))).resolves.toBe(false);
     await expect(fileExists(path.join('.cursor', 'rules', 'revpack.mdc'))).resolves.toBe(false);
+
+    const content = await fs.readFile(path.join(cwd, '.cursor', 'commands', 'revpack-review.md'), 'utf-8');
+    expect(content).toContain('# Revpack Review');
+    expect(content).toContain('A prepared revpack review bundle is available in this workspace.');
+    expect(content).toContain('## Find the review bundle');
+    expect(content).not.toContain('{{revpack-review-instructions}}');
   });
 
   it('installs the Codex skill at the canonical revpack-review path', async () => {

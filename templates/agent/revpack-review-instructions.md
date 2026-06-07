@@ -1,3 +1,5 @@
+A prepared revpack review bundle is available in this workspace. The bundle may be at the workspace root or inside a child project.
+
 ## Find the review bundle
 
 If the user provides a bundle path, check that location first; otherwise discover the bundle automatically.

@@ -4,6 +4,4 @@ description: Review a prepared PR/MR workspace by following its revpack CONTEXT.
 
 # Revpack Review
 
-A prepared revpack review bundle is available in this workspace. The bundle may be at the workspace root or inside a child project.
-
 {{revpack-review-instructions}}

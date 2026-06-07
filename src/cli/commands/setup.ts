@@ -61,9 +61,9 @@ const AGENT_FILES: Record<AgentTarget, SetupFile> = {
     label: 'Copilot prompt: revpack-review',
   },
   cursor: {
-    target: path.join('.cursor', 'rules', 'revpack-review.mdc'),
-    source: path.join('cursor', 'rules', 'revpack-review.mdc'),
-    label: 'Cursor rule: revpack-review',
+    target: path.join('.cursor', 'commands', 'revpack-review.md'),
+    source: path.join('cursor', 'commands', 'revpack-review.md'),
+    label: 'Cursor command: revpack-review',
   },
 };
 

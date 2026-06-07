@@ -114,7 +114,7 @@ Generated harness files:
 - `agent claude`: `.claude/skills/revpack-review/SKILL.md`
 - `agent codex`: `.agents/skills/revpack-review/SKILL.md`
 - `agent copilot`: `.github/prompts/revpack-review.prompt.md`
-- `agent cursor`: `.cursor/rules/revpack-review.mdc`
+- `agent cursor`: `.cursor/commands/revpack-review.md`
 
 ## `config`
 
