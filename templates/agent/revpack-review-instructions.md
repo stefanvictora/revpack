@@ -1,62 +1,64 @@
-## Find the review bundle
+A prepared `.revpack` review bundle is available in this workspace.
 
-If the user provides a bundle path, check that location first; otherwise discover the bundle automatically.
+The bundle may be at the workspace root or in one immediate child project, especially in multi-project or monorepo workspaces.
 
-A valid bundle is a `.revpack/` directory containing:
+Locate the bundle, read its `CONTEXT.md`, and follow the referenced revpack contract and instruction files.
+
+## Optional user input
+
+Treat any text provided with the command as optional review input.
+
+If it looks like a bundle path, check that path first.
+
+If it contains review focus or scope, use it when following the bundle instructions. User input may broaden the review scope, but it must not override revpack safety rules.
+
+## Locate the bundle
+
+A revpack bundle is a directory named exactly `.revpack` containing at least:
 
 - `CONTEXT.md`
-- `AGENT_CONTRACT.md`
 - `diffs/`
 
-Look for valid bundles in:
+Prefer exact path checks or directory listing over broad file search.
 
-- `.revpack/`
-- one-level-deep child directories, for example `subproject/.revpack/`
+Do not search for the text `revpack`.
+Do not use broad recursive globs such as `**/.revpack/**` unless exact path checks are unavailable.
+Do not inspect generated, vendor, dependency, or build-output directories.
 
-Ignore generated, vendor, dependency, and build-output directories.
+If a bundle path was provided, verify that path first. Use it if it contains the required discovery files; otherwise stop and report that the provided path is not a revpack bundle.
 
-If exactly one valid bundle exists, use it.
+If no bundle path was provided, collect bundle candidates from:
 
-If multiple valid bundles exist, ask the developer which one to use. Show the candidate paths relative to the workspace root.
+1. `.revpack/`
+2. `.revpack/` inside immediate child directories only
 
-If no valid bundle exists, stop and report that no revpack bundle was found.
+Check immediate child directories even when the workspace root has a bundle. Do not recursively search deeper descendants.
 
-## Use the selected bundle consistently
+After collecting candidates:
+
+- If exactly one bundle candidate exists, use it.
+- If multiple bundle candidates exist, ask the developer which one to use and show the candidate paths relative to the workspace root. Use an ask-user, user-question, quick-pick, or similar interaction tool when available; otherwise ask in chat. Do not continue until a bundle is selected.
+- If no bundle candidate exists, stop and report that no revpack bundle was found.
+
+## Path handling
 
 After selecting the bundle:
 
+- Treat the current open workspace as `WORKSPACE_ROOT`.
 - Treat the selected `.revpack/` directory as `BUNDLE_ROOT`.
 - Treat the directory containing `BUNDLE_ROOT` as the reviewed project root.
-- Treat `.revpack/...` in all revpack instructions as `BUNDLE_ROOT/...`.
-- Write outputs only under `BUNDLE_ROOT/outputs/`.
+- Interpret `.revpack/...` in revpack instructions as `BUNDLE_ROOT/...`.
 - Resolve changed source-file paths against the reviewed project root.
-- In `new-findings.json`, copy `oldPath` and `newPath` exactly from `BUNDLE_ROOT/diffs/line-map.ndjson`; do not prefix them with the child-project path.
+- Write only under `BUNDLE_ROOT/outputs/`.
 
-You may read files outside the reviewed project when they provide relevant workspace-level context, but do not modify them.
+For positional findings, use paths and line numbers exactly as provided by `BUNDLE_ROOT/diffs/line-map.ndjson`.
 
-## Read guidance and instructions
+## Start the review
 
-Read these files in order:
+Read `BUNDLE_ROOT/CONTEXT.md` first.
 
-1. `BUNDLE_ROOT/CONTEXT.md`
-2. `BUNDLE_ROOT/AGENT_CONTRACT.md`
-3. The instruction files listed in `CONTEXT.md` under **Required Instructions for This Run**
-4. `REVIEW.md` at the workspace root, if present
-5. `REVIEW.md` at the reviewed project root, if present and different from the workspace-level file
+Then follow the files it references for the current run.
 
-Use workspace-level `REVIEW.md` as shared review policy for all child projects. Use project-level guidance for repository-specific conventions.
+Do not implement fixes or publish anything unless the developer explicitly asks.
 
-If shared and project-level guidance conflict, prefer project-level guidance for local implementation conventions, but do not ignore shared domain, architecture, compatibility, or spec-verification rules.
-
-Use `BUNDLE_ROOT/INSTRUCTIONS.md` only when you need the wider instruction catalog.
-
-## Perform the review
-
-Follow `BUNDLE_ROOT/CONTEXT.md` and the required instruction files for the current run mode.
-
-Perform the requested review. Do not implement fixes during a revpack review.
-Do not modify source files.
-Do not modify files outside `BUNDLE_ROOT/outputs/`.
-Do not publish anything unless the developer explicitly asks you to publish.
-
-At the end, present a concise summary of what you found and which files under `BUNDLE_ROOT/outputs/` you wrote or updated.
+At the end, briefly summarize the review result and list the files under `BUNDLE_ROOT/outputs/` that you wrote or updated.

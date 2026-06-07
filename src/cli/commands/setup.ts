@@ -37,8 +37,6 @@ interface SetupAgentOptions {
 
 const SUPPORTED_AGENT_TARGETS: AgentTarget[] = ['claude', 'codex', 'copilot', 'cursor'];
 const REVIEW_INCLUDE = '{{revpack-review-instructions}}';
-const CODEX_BEGIN_MARKER = '<!-- revpack:begin -->';
-const CODEX_END_MARKER = '<!-- revpack:end -->';
 
 const REVIEW_CONFIG_FILE: SetupFile = {
   target: 'REVIEW.md',
@@ -46,11 +44,16 @@ const REVIEW_CONFIG_FILE: SetupFile = {
   label: 'Review guidelines',
 };
 
-const AGENT_FILES: Record<Exclude<AgentTarget, 'codex'>, SetupFile> = {
+const AGENT_FILES: Record<AgentTarget, SetupFile> = {
   claude: {
     target: path.join('.claude', 'skills', 'revpack-review', 'SKILL.md'),
     source: path.join('claude', 'skills', 'revpack-review', 'SKILL.md'),
     label: 'Claude skill: revpack-review',
+  },
+  codex: {
+    target: path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'),
+    source: path.join('codex', 'skills', 'revpack-review', 'SKILL.md'),
+    label: 'Codex skill: revpack-review',
   },
   copilot: {
     target: path.join('.github', 'prompts', 'revpack-review.prompt.md'),
@@ -58,16 +61,10 @@ const AGENT_FILES: Record<Exclude<AgentTarget, 'codex'>, SetupFile> = {
     label: 'Copilot prompt: revpack-review',
   },
   cursor: {
-    target: path.join('.cursor', 'rules', 'revpack-review.mdc'),
-    source: path.join('cursor', 'rules', 'revpack-review.mdc'),
-    label: 'Cursor rule: revpack-review',
+    target: path.join('.cursor', 'commands', 'revpack-review.md'),
+    source: path.join('cursor', 'commands', 'revpack-review.md'),
+    label: 'Cursor command: revpack-review',
   },
-};
-
-const CODEX_FILE: SetupFile = {
-  target: 'AGENTS.md',
-  source: path.join('codex', 'agents-block.md'),
-  label: 'Codex instructions: revpack block',
 };
 
 export function registerSetupCommand(program: Command): void {
@@ -85,8 +82,8 @@ export function registerSetupCommand(program: Command): void {
     .description('Install an agent harness adapter')
     .argument('<target>', `Agent harness target (${SUPPORTED_AGENT_TARGETS.join(', ')})`, parseAgentTarget)
     .option('--dry-run', 'Show what would be created or updated without writing files')
-    .action(async (target: AgentTarget, opts: { dryRun?: boolean }) => {
-      await runSetupAgent({ cwd: process.cwd(), target, dryRun: opts.dryRun });
+    .action(async (target: AgentTarget, _opts: { dryRun?: boolean }, cmd: Command) => {
+      await runSetupAgent({ cwd: process.cwd(), target, dryRun: cmd.optsWithGlobals<{ dryRun?: boolean }>().dryRun });
     });
 }
 
@@ -116,10 +113,7 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
 
 export async function runSetupAgent(opts: SetupAgentOptions): Promise<void> {
   const templatesDir = resolveTemplatesDir();
-  const results =
-    opts.target === 'codex'
-      ? [await installCodexBlock(opts.cwd, templatesDir, opts.dryRun)]
-      : await installCopiedFiles(opts.cwd, templatesDir, [AGENT_FILES[opts.target]], opts.dryRun);
+  const results = await installCopiedFiles(opts.cwd, templatesDir, [AGENT_FILES[opts.target]], opts.dryRun);
 
   printResults(results, opts.dryRun);
   printAgentUsage(opts.target);
@@ -154,46 +148,6 @@ async function installCopiedFiles(
   }
 
   return results;
-}
-
-async function installCodexBlock(cwd: string, templatesDir: string, dryRun = false): Promise<SetupResult> {
-  const targetPath = path.join(cwd, CODEX_FILE.target);
-  const block = ensureTrailingNewline(normalizeLineEndings(await readTemplate(templatesDir, CODEX_FILE.source)).trim());
-
-  if (!(await fileExists(targetPath))) {
-    if (!dryRun) {
-      await fs.writeFile(targetPath, block, 'utf-8');
-    }
-    return { target: CODEX_FILE.target, label: CODEX_FILE.label, status: 'created' };
-  }
-
-  const content = normalizeLineEndings(await fs.readFile(targetPath, 'utf-8'));
-  const begin = content.indexOf(CODEX_BEGIN_MARKER);
-  const end = content.indexOf(CODEX_END_MARKER, begin === -1 ? 0 : begin + CODEX_BEGIN_MARKER.length);
-
-  if (begin === -1 && end === -1) {
-    const nextContent = ensureTrailingNewline(`${content.trimEnd()}\n\n${block.trimEnd()}`);
-    if (!dryRun) {
-      await fs.writeFile(targetPath, nextContent, 'utf-8');
-    }
-    return { target: CODEX_FILE.target, label: CODEX_FILE.label, status: 'updated' };
-  }
-
-  if (begin === -1 || end === -1 || end < begin) {
-    throw new Error('AGENTS.md contains a partial revpack block.');
-  }
-
-  const blockEnd = end + CODEX_END_MARKER.length;
-  const currentBlock = content.slice(begin, blockEnd);
-  if (normalizeLineEndings(currentBlock).trim() === block.trim()) {
-    return { target: CODEX_FILE.target, label: CODEX_FILE.label, status: 'skipped-current' };
-  }
-
-  const nextContent = ensureTrailingNewline(`${content.slice(0, begin)}${block.trimEnd()}${content.slice(blockEnd)}`);
-  if (!dryRun) {
-    await fs.writeFile(targetPath, nextContent, 'utf-8');
-  }
-  return { target: CODEX_FILE.target, label: CODEX_FILE.label, status: 'updated' };
 }
 
 async function renderTemplate(templatesDir: string, source: string): Promise<string> {
@@ -258,7 +212,8 @@ function printAgentUsage(target: AgentTarget): void {
       console.log(formatGuidanceLine('  /revpack-review'));
       break;
     case 'codex':
-      console.log(formatGuidanceLine('Codex will read AGENTS.md automatically in this repository.'));
+      console.log(formatGuidanceLine('Use it in Codex with:'));
+      console.log(formatGuidanceLine('  $revpack-review'));
       break;
     case 'copilot':
       console.log(formatGuidanceLine('Use it in Copilot Chat with:'));
@@ -281,10 +236,6 @@ function parseAgentTarget(value: string): AgentTarget {
 
 function normalizeLineEndings(content: string): string {
   return content.replace(/\r\n?/g, '\n');
-}
-
-function ensureTrailingNewline(content: string): string {
-  return `${content.replace(/\s+$/u, '')}\n`;
 }
 
 function resolveTemplatesDir(): string {

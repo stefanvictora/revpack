@@ -1209,6 +1209,41 @@ describe('WorkspaceManager', () => {
       expect(content).toMatch(/T-002 \| REPLIED/);
     });
 
+    it('does not tag bot-authored threads as SELF without the revpack marker', async () => {
+      const codeRabbitThread: ReviewThread = {
+        ...makeThread(),
+        provider: 'github',
+        targetRef: {
+          provider: 'github',
+          repository: 'group/project',
+          targetType: 'pull_request',
+          targetId: '42',
+        },
+        threadId: 'coderabbit-thread',
+        comments: [
+          {
+            id: 'coderabbit-note',
+            body: 'This check can report a false positive here.',
+            author: 'coderabbitai',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            origin: 'bot',
+            system: false,
+          },
+        ],
+      };
+      const threads = [codeRabbitThread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(threads);
+      await manager.createBundle(makeTarget(), threads, [], [], threadIndex);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toMatch(/\| T-001 \| {2}\| @coderabbitai \|/);
+      expect(content).not.toContain('SELF');
+      expect(content).not.toContain('REPLIED');
+    });
+
     it('tags REPLIED on threads that have a bot reply', async () => {
       const repliedThread: ReviewThread = {
         ...makeThread(),
