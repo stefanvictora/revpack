@@ -47,72 +47,32 @@ describe('runSetup', () => {
     await expect(fileExists(path.join('.cursor', 'rules', 'revpack.mdc'))).resolves.toBe(false);
   });
 
-  it('creates AGENTS.md with the managed Codex block', async () => {
+  it('installs the Codex skill at the canonical revpack-review path', async () => {
     await runSetupAgent({ cwd, target: 'codex' });
 
-    const content = await fs.readFile(path.join(cwd, 'AGENTS.md'), 'utf-8');
-    expect(content).toContain('<!-- revpack:begin -->');
-    expect(content).toContain('## Revpack review bundles');
-    expect(content).toContain('<!-- revpack:end -->');
+    await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(true);
+    await expect(fileExists('AGENTS.md')).resolves.toBe(false);
+
+    const content = await fs.readFile(path.join(cwd, '.agents', 'skills', 'revpack-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('# Revpack Review');
+    expect(content).toContain('## Find the review bundle');
+    expect(content).not.toContain('{{revpack-review-instructions}}');
   });
 
-  it('appends the managed Codex block to an existing AGENTS.md', async () => {
-    await fs.writeFile(path.join(cwd, 'AGENTS.md'), '# Team instructions\n\nKeep this line.\n', 'utf-8');
+  it('does not rewrite an already existing Codex skill', async () => {
+    await runSetupAgent({ cwd, target: 'codex' });
+    const skillPath = path.join(cwd, '.agents', 'skills', 'revpack-review', 'SKILL.md');
+    const first = await fs.readFile(skillPath, 'utf-8');
 
     await runSetupAgent({ cwd, target: 'codex' });
 
-    const content = await fs.readFile(path.join(cwd, 'AGENTS.md'), 'utf-8');
-    expect(content.startsWith('# Team instructions\n\nKeep this line.\n\n<!-- revpack:begin -->')).toBe(true);
-  });
-
-  it('updates an existing managed Codex block', async () => {
-    await fs.writeFile(
-      path.join(cwd, 'AGENTS.md'),
-      '# Team instructions\n\n<!-- revpack:begin -->\nold\n<!-- revpack:end -->\n',
-      'utf-8',
-    );
-
-    await runSetupAgent({ cwd, target: 'codex' });
-
-    const content = await fs.readFile(path.join(cwd, 'AGENTS.md'), 'utf-8');
-    expect(content).toContain('# Team instructions');
-    expect(content).toContain('## Revpack review bundles');
-    expect(content).not.toContain('\nold\n');
-  });
-
-  it('does not rewrite an already current Codex block', async () => {
-    await runSetupAgent({ cwd, target: 'codex' });
-    const first = await fs.readFile(path.join(cwd, 'AGENTS.md'), 'utf-8');
-
-    await runSetupAgent({ cwd, target: 'codex' });
-
-    await expect(fs.readFile(path.join(cwd, 'AGENTS.md'), 'utf-8')).resolves.toBe(first);
+    await expect(fs.readFile(skillPath, 'utf-8')).resolves.toBe(first);
   });
 
   it('does not write files during dry runs', async () => {
     await runSetupAgent({ cwd, target: 'claude', dryRun: true });
 
     await expect(fileExists(path.join('.claude', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(false);
-  });
-
-  it('throws when AGENTS.md has a lone begin marker', async () => {
-    await fs.writeFile(
-      path.join(cwd, 'AGENTS.md'),
-      '# Team instructions\n\n<!-- revpack:begin -->\nno end marker here\n',
-      'utf-8',
-    );
-
-    await expect(runSetupAgent({ cwd, target: 'codex' })).rejects.toThrow(
-      'AGENTS.md contains a partial revpack block.',
-    );
-  });
-
-  it('throws when AGENTS.md has a lone end marker', async () => {
-    await fs.writeFile(path.join(cwd, 'AGENTS.md'), '<!-- revpack:end -->\n', 'utf-8');
-
-    await expect(runSetupAgent({ cwd, target: 'codex' })).rejects.toThrow(
-      'AGENTS.md contains a partial revpack block.',
-    );
   });
 
   async function fileExists(relativePath: string): Promise<boolean> {

@@ -1,28 +1,5 @@
 # Agent instructions
 
-## Choose task mode
-
-- **Revpack review**: the user asks to run a revpack review, inspect a revpack bundle, or work with `.revpack/`.
-- **Repository development**: the user asks to change, fix, refactor, document, or verify this repository.
-
-For revpack reviews, the revpack rules below override all repository development and verification guidance.
-
-<!-- revpack:begin -->
-
-## Revpack review bundles
-
-When asked to run a revpack review or inspect a bundle:
-
-1. Locate `.revpack/`: first at the workspace root, then one level deep, such as `subproject/.revpack/`. If multiple bundles exist, ask which one to use.
-2. Read `.revpack/CONTEXT.md` first, then follow the referenced contract and instruction files.
-3. Only write files under `.revpack/outputs/`.
-4. Do not modify source files.
-5. Do not run build, test, lint, format, package-manager, migration, Docker, startup, Git-hook, publishing, or repository-audit commands.
-6. Review tests by reading diffs and test files, not by executing them.
-7. If you accidentally modify files outside `.revpack/outputs/`, stop and report it.
-
-<!-- revpack:end -->
-
 ## Repository development
 
 This is a TypeScript ESM CLI project. Prefer small, focused changes that follow the existing `src/<area>/*.ts` plus colocated `*.test.ts` pattern.
@@ -92,7 +69,6 @@ Inspect `reports/mutation/mutation.json`, group surviving or uncovered mutants b
 
 ## Extra guardrails
 
-- Preserve the `<!-- revpack:begin -->` and `<!-- revpack:end -->` markers when editing this file; revpack setup manages that block.
 - For CLI changes, consider both human-readable output and `--json` output. Update tests, README/docs, and `CHANGELOG.md` when workflows change.
 - Keep filesystem and path handling cross-platform. Prefer Node path utilities over hard-coded `/` or `\` separators.
 - Never print, snapshot, or commit provider tokens, resolved credentials, or secret environment variable values. Redact secrets in errors, logs, tests, and fixtures.
