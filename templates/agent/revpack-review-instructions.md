@@ -1,8 +1,21 @@
 A prepared revpack review bundle is available in this workspace. The bundle may be at the workspace root or inside a child project.
 
-## Find the review bundle
+## Use optional user input
 
-If the user provides a bundle path, check that location first; otherwise discover the bundle automatically.
+Treat any text provided with the command as optional review input.
+
+It may be:
+
+* a bundle path
+* a review instruction, such as requesting a full review
+
+If the user provides a bundle path, check that location first.
+
+If the user requests a broader review scope, apply it when deciding what to inspect. For example, if the user asks for a full review, review the full MR/PR change even when `CONTEXT.md` describes an incremental or outputs-only run.
+
+User-provided scope may broaden what you inspect, but it does not override revpack safety rules: do not modify source files, do not write outside `BUNDLE_ROOT/outputs/`, do not publish anything, and use valid positional anchors from `BUNDLE_ROOT/diffs/line-map.ndjson`.
+
+## Find the review bundle
 
 A valid bundle is a `.revpack/` directory containing:
 
@@ -10,16 +23,16 @@ A valid bundle is a `.revpack/` directory containing:
 - `AGENT_CONTRACT.md`
 - `diffs/`
 
-Look for valid bundles in:
+If no bundle path was provided, look for valid bundles in:
 
 - `.revpack/`
 - one-level-deep child directories, for example `subproject/.revpack/`
 
 Ignore generated, vendor, dependency, and build-output directories.
 
-If exactly one valid bundle exists, use it.
+Use the bundle if exactly one valid bundle exists.
 
-If multiple valid bundles exist, ask the developer which one to use. Show the candidate paths relative to the workspace root.
+If multiple valid bundles exist, ask the developer which one to use and show the candidate paths relative to the workspace root.
 
 If no valid bundle exists, stop and report that no revpack bundle was found.
 
@@ -29,7 +42,7 @@ After selecting the bundle:
 
 - Treat the selected `.revpack/` directory as `BUNDLE_ROOT`.
 - Treat the directory containing `BUNDLE_ROOT` as the reviewed project root.
-- Treat `.revpack/...` in all revpack instructions as `BUNDLE_ROOT/...`.
+- Treat `.revpack/...` in revpack instructions as `BUNDLE_ROOT/...`.
 - Write outputs only under `BUNDLE_ROOT/outputs/`.
 - Resolve changed source-file paths against the reviewed project root.
 - In `new-findings.json`, copy `oldPath` and `newPath` exactly from `BUNDLE_ROOT/diffs/line-map.ndjson`; do not prefix them with the child-project path.
@@ -46,7 +59,7 @@ Read these files in order:
 4. `REVIEW.md` at the workspace root, if present
 5. `REVIEW.md` at the reviewed project root, if present and different from the workspace-level file
 
-Use workspace-level `REVIEW.md` as shared review policy for all child projects. Use project-level guidance for repository-specific conventions.
+Use workspace-level `REVIEW.md` as shared review policy for all child projects. Use project-level `REVIEW.md` for local conventions.
 
 If shared and project-level guidance conflict, prefer project-level guidance for local implementation conventions, but do not ignore shared domain, architecture, compatibility, or spec-verification rules.
 
@@ -57,8 +70,7 @@ Use `BUNDLE_ROOT/INSTRUCTIONS.md` only when you need the wider instruction catal
 Follow `BUNDLE_ROOT/CONTEXT.md` and the required instruction files for the current run mode.
 
 Perform the requested review. Do not implement fixes during a revpack review.
-Do not modify source files.
-Do not modify files outside `BUNDLE_ROOT/outputs/`.
-Do not publish anything unless the developer explicitly asks you to publish.
+
+Do not modify source files. Do not modify files outside `BUNDLE_ROOT/outputs/`. Do not publish anything unless the developer explicitly asks you to publish.
 
 At the end, present a concise summary of what you found and which files under `BUNDLE_ROOT/outputs/` you wrote or updated.
