@@ -1,18 +1,22 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSetup, runSetupAgent } from './setup.js';
+import { registerSetupCommand, runSetup, runSetupAgent } from './setup.js';
 
 describe('runSetup', () => {
   let cwd: string;
+  let originalCwd: string;
 
   beforeEach(async () => {
+    originalCwd = process.cwd();
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'revpack-setup-'));
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
     vi.restoreAllMocks();
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -81,6 +85,19 @@ describe('runSetup', () => {
     await runSetupAgent({ cwd, target: 'claude', dryRun: true });
 
     await expect(fileExists(path.join('.claude', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(false);
+  });
+
+  it('honors --dry-run on the parsed setup agent command', async () => {
+    process.chdir(cwd);
+    const program = new Command();
+    program.exitOverride();
+    registerSetupCommand(program);
+
+    await program.parseAsync(['node', 'revpack', 'setup', 'agent', 'codex', '--dry-run']);
+
+    await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(false);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Would create:'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Dry run - no files written.'));
   });
 
   async function fileExists(relativePath: string): Promise<boolean> {

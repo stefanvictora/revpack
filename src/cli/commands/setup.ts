@@ -82,8 +82,8 @@ export function registerSetupCommand(program: Command): void {
     .description('Install an agent harness adapter')
     .argument('<target>', `Agent harness target (${SUPPORTED_AGENT_TARGETS.join(', ')})`, parseAgentTarget)
     .option('--dry-run', 'Show what would be created or updated without writing files')
-    .action(async (target: AgentTarget, opts: { dryRun?: boolean }) => {
-      await runSetupAgent({ cwd: process.cwd(), target, dryRun: opts.dryRun });
+    .action(async (target: AgentTarget, _opts: { dryRun?: boolean }, cmd: Command) => {
+      await runSetupAgent({ cwd: process.cwd(), target, dryRun: cmd.optsWithGlobals<{ dryRun?: boolean }>().dryRun });
     });
 }
 

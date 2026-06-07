@@ -54,6 +54,8 @@ Update `[Unreleased]` for user-visible changes: commands, flags, behavior, compa
 
 Do not edit released sections except for clear typos or formatting mistakes. Skip internal refactors, test-only changes, formatting, small wording tweaks, and maintenance with no visible user effect.
 
+Do not add fixes we performed for unreleased behavior.
+
 ## Mutation testing
 
 Mutation testing is useful but slow. Do not run the full suite by default.
