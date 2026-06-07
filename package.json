@@ -46,10 +46,7 @@
     "merge-request",
     "github",
     "gitlab",
-    "cli",
-    "coding-agent",
-    "llm",
-    "review-automation"
+    "cli"
   ],
   "license": "MIT",
   "repository": {
