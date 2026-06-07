@@ -1,4 +1,6 @@
-A prepared `.revpack` review bundle is available in this workspace. The bundle may be at the workspace root or inside a child project.
+A prepared `.revpack` review bundle is available in this workspace.
+
+The bundle may be at the workspace root or in one immediate child project, especially in multi-project or monorepo workspaces.
 
 Locate the bundle, read its `CONTEXT.md`, and follow the referenced revpack contract and instruction files.
 
@@ -6,30 +8,37 @@ Locate the bundle, read its `CONTEXT.md`, and follow the referenced revpack cont
 
 Treat any text provided with the command as optional review input.
 
-If it looks like a bundle path, check that location first.
+If it looks like a bundle path, check that path first.
 
-If it contains review focus or scope, use it when following the bundle instructions. User input may broaden the review scope, but it must not override the bundle’s safety rules.
+If it contains review focus or scope, use it when following the bundle instructions. User input may broaden the review scope, but it must not override revpack safety rules.
 
 ## Locate the bundle
 
-A valid bundle is a `.revpack/` directory containing:
+A revpack bundle is a directory named exactly `.revpack` containing at least:
 
 - `CONTEXT.md`
-- `AGENT_CONTRACT.md`
 - `diffs/`
 
-If no bundle path was provided, check:
+Prefer exact path checks or directory listing over broad file search.
 
-- `.revpack/`
-- one-level-deep child directories, such as `subproject/.revpack/`
+Do not search for the text `revpack`.
+Do not use broad recursive globs such as `**/.revpack/**` unless exact path checks are unavailable.
+Do not inspect generated, vendor, dependency, or build-output directories.
 
-Ignore generated, vendor, dependency, and build-output directories.
+If a bundle path was provided, verify that path first. Use it if it contains the required discovery files; otherwise stop and report that the provided path is not a revpack bundle.
 
-If exactly one valid bundle exists, use it.
+If no bundle path was provided, collect bundle candidates from:
 
-If multiple valid bundles exist, ask which one to use and show the candidate paths relative to the workspace root.
+1. `.revpack/`
+2. `.revpack/` inside immediate child directories only
 
-If no valid bundle exists, stop and report that no revpack bundle was found.
+Check immediate child directories even when the workspace root has a bundle. Do not recursively search deeper descendants.
+
+After collecting candidates:
+
+- If exactly one bundle candidate exists, use it.
+- If multiple bundle candidates exist, ask the developer which one to use and show the candidate paths relative to the workspace root. Use an ask-user, user-question, quick-pick, or similar interaction tool when available; otherwise ask in chat. Do not continue until a bundle is selected.
+- If no bundle candidate exists, stop and report that no revpack bundle was found.
 
 ## Path handling
 
