@@ -36,10 +36,10 @@ If no valid bundle exists, stop and report that no revpack bundle was found.
 After selecting the bundle:
 
 - Treat the current open workspace as `WORKSPACE_ROOT`.
--Treat the selected `.revpack/` directory as `BUNDLE_ROOT`.
--Treat the directory containing `BUNDLE_ROOT` as the reviewed project root.
--Interpret `.revpack/...` in revpack instructions as `BUNDLE_ROOT/...`.
--Resolve changed source-file paths against the reviewed project root.
+- Treat the selected `.revpack/` directory as `BUNDLE_ROOT`.
+- Treat the directory containing `BUNDLE_ROOT` as the reviewed project root.
+- Interpret `.revpack/...` in revpack instructions as `BUNDLE_ROOT/...`.
+- Resolve changed source-file paths against the reviewed project root.
 - Write only under `BUNDLE_ROOT/outputs/`.
 
 For positional findings, use paths and line numbers exactly as provided by `BUNDLE_ROOT/diffs/line-map.ndjson`.
