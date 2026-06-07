@@ -105,7 +105,7 @@ revpack setup --prompts
 revpack setup --dry-run
 ```
 
-`revpack setup` creates `REVIEW.md`. `revpack setup agent <target>` installs one agent harness adapter and does not create `REVIEW.md`.
+`revpack setup agent <target>` writes project-level instruction files for one agent target and does not create `REVIEW.md`.
 
 `--prompts` is kept as a deprecated compatibility flag. It creates `REVIEW.md` and installs the Copilot `/revpack-review` prompt.
 
@@ -158,3 +158,6 @@ Configurable keys:
 ```text
 provider, url, tokenEnv, remotePatterns, caFile, tlsVerify, sshClone
 ```
+
+> [!TIP]
+> The setup commands write the profiles to: `~/.config/revpack/config.json`
