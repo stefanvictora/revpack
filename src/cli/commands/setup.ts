@@ -212,7 +212,8 @@ function printAgentUsage(target: AgentTarget): void {
       console.log(formatGuidanceLine('  /revpack-review'));
       break;
     case 'codex':
-      console.log(formatGuidanceLine('Use it in Codex by asking for a revpack review.'));
+      console.log(formatGuidanceLine('Use it in Codex with:'));
+      console.log(formatGuidanceLine('  $revpack-review'));
       break;
     case 'copilot':
       console.log(formatGuidanceLine('Use it in Copilot Chat with:'));

@@ -58,6 +58,8 @@ describe('runSetup', () => {
 
     await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(true);
     await expect(fileExists('AGENTS.md')).resolves.toBe(false);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Use it in Codex with:'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('  $revpack-review'));
 
     const content = await fs.readFile(path.join(cwd, '.agents', 'skills', 'revpack-review', 'SKILL.md'), 'utf-8');
     expect(content).toContain('# Revpack Review');
