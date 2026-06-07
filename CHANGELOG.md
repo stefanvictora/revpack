@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Improved checkout support on Windows by automatically using `core.longpaths=true` for git commands.
 - Fixed resolved threads appearing in the incremental "changed threads since last checkpoint" context section.
 - Fixed GitHub bot-user detection so bot comments are not incorrectly treated as human review comments or findings.
+- Fixed unresolved thread flags so comments from other bots such as CodeRabbit are not labeled as revpack `SELF` threads.
 
 ### Deprecated
 

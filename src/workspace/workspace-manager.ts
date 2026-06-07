@@ -673,14 +673,16 @@ export class WorkspaceManager {
       }
     };
 
-    // Derive SELF/REPLIED from comment origins (marker-based)
+    const hasRevpackCommentMarker = (body: string): boolean => body.startsWith('<!-- revpack');
+
+    // Derive SELF/REPLIED from revpack's hidden comment marker.
     const selfThreadIds = new Set<string>();
     const repliedThreadIds = new Set<string>();
     for (const t of threads) {
       const nonSystem = nonSystemThreadComments(t);
-      if (nonSystem.length > 0 && nonSystem[0].origin === 'bot') {
+      if (nonSystem.length > 0 && hasRevpackCommentMarker(nonSystem[0].body)) {
         selfThreadIds.add(t.threadId);
-      } else if (nonSystem.some((c) => c.origin === 'bot')) {
+      } else if (nonSystem.some((c) => hasRevpackCommentMarker(c.body))) {
         repliedThreadIds.add(t.threadId);
       }
     }
