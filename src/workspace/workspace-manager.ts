@@ -848,7 +848,7 @@ export class WorkspaceManager {
         'Read this context file.',
         'Read `.revpack/AGENT_CONTRACT.md`.',
         'Read the files listed in **Required Instructions for This Run**.',
-        'Read `REVIEW.md` in the repository root if present.',
+        'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
         'Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.',
         'Read relevant changed or unresolved thread files in `.revpack/threads/`.',
         'Use `.revpack/diffs/latest.patch` only for full MR/PR context when needed.',
@@ -864,7 +864,7 @@ export class WorkspaceManager {
       'Read this context file.',
       'Read `.revpack/AGENT_CONTRACT.md`.',
       'Read the files listed in **Required Instructions for This Run**.',
-      'Read `REVIEW.md` in the repository root if present for project-specific review guidance.',
+      'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
       'Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
       'Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
     ];

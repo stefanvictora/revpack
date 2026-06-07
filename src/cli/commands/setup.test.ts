@@ -49,8 +49,7 @@ describe('runSetup', () => {
 
     const content = await fs.readFile(path.join(cwd, '.cursor', 'commands', 'revpack-review.md'), 'utf-8');
     expect(content).toContain('# Revpack Review');
-    expect(content).toContain('A prepared revpack review bundle is available in this workspace.');
-    expect(content).toContain('## Find the review bundle');
+    expect(content).toContain('## Locate the bundle');
     expect(content).not.toContain('{{revpack-review-instructions}}');
   });
 
@@ -62,7 +61,7 @@ describe('runSetup', () => {
 
     const content = await fs.readFile(path.join(cwd, '.agents', 'skills', 'revpack-review', 'SKILL.md'), 'utf-8');
     expect(content).toContain('# Revpack Review');
-    expect(content).toContain('## Find the review bundle');
+    expect(content).toContain('## Locate the bundle');
     expect(content).not.toContain('{{revpack-review-instructions}}');
   });
 
