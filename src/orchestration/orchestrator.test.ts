@@ -1359,7 +1359,7 @@ describe('ReviewOrchestrator', () => {
   // ─── Output publish state ──────────────────────────────
 
   describe('output publish state', () => {
-    it('tracks pending, published, modified, and empty output states', async () => {
+    it('tracks summary publish hashes and review note pending state separately', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
       const ws = new WorkspaceManager(tmpDir);
@@ -1368,7 +1368,7 @@ describe('ReviewOrchestrator', () => {
       const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
 
       expect(await ws.getOutputState('summary')).toBe('empty');
-      expect(await ws.getOutputState('review')).toBe('empty');
+      expect(await ws.getPendingOutputState('review')).toBe('empty');
 
       const summary = '# Summary\nThis is a test';
       await fs.writeFile(summaryPath, summary, 'utf-8');
@@ -1382,13 +1382,7 @@ describe('ReviewOrchestrator', () => {
 
       const review = '## Notes\nReview notes';
       await fs.writeFile(reviewPath, review, 'utf-8');
-      expect(await ws.getOutputState('review')).toBe('pending');
-
-      await ws.updateOutputPublishState('review', computeContentHash(review), 'bbb');
-      expect(await ws.getOutputState('review')).toBe('published');
-
-      await fs.writeFile(reviewPath, '## Notes\nEdited', 'utf-8');
-      expect(await ws.getOutputState('review')).toBe('modified since publish');
+      expect(await ws.getPendingOutputState('review')).toBe('pending');
     });
 
     it('prefills summary from published description marker and marks it as published', async () => {

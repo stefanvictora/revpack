@@ -260,6 +260,12 @@ async function trackFindingActions(ws: WorkspaceManager, findings: NewFinding[],
   }
 }
 
+async function clearDefaultReviewOutput(clearDefaultOutput = true): Promise<void> {
+  if (clearDefaultOutput) {
+    await fs.writeFile(workspacePath(DEFAULT_REVIEW_FILE), '', 'utf-8');
+  }
+}
+
 async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
   const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
   const { findings, resolvedPath } = await loadAndValidateFindings(filePath);
@@ -307,6 +313,7 @@ async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefres
 async function publishDescription(opts: { from?: string; replace?: boolean; repo?: string }): Promise<number> {
   let content: string;
   let usedSummary = false;
+  let ws: WorkspaceManager | undefined;
   if (opts.from) {
     content = await fs.readFile(workspacePath(opts.from), 'utf-8');
   } else {
@@ -318,6 +325,15 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
     }
   }
   requirePublishableContent(content, usedSummary ? DEFAULT_SUMMARY_FILE : (opts.from ?? 'description content'));
+
+  if (usedSummary && !opts.replace) {
+    ws = new WorkspaceManager(process.cwd());
+    const summaryState = await ws.getOutputState('summary');
+    if (summaryState === 'published') {
+      console.log(chalk.dim('  (summary already published)'));
+      return 0;
+    }
+  }
 
   const orchestrator = await createOrchestrator();
   const defaultRepo = opts.repo ?? (await getRepoFromGit());
@@ -335,7 +351,7 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
 
   // Store publish hash for summary tracking
   if (usedSummary) {
-    const ws = new WorkspaceManager(process.cwd());
+    ws ??= new WorkspaceManager(process.cwd());
     const bundleState = await ws.loadBundleState();
     if (bundleState) {
       const summaryContent = await fs.readFile(workspacePath(DEFAULT_SUMMARY_FILE), 'utf-8');
@@ -349,7 +365,7 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
 
 /**
  * GitHub-specific: load, validate, and submit findings + review.md as a single PR review batch.
- * Updates the stored review state. Returns the number of findings published.
+ * Clears successfully published outputs. Returns the number of findings published.
  */
 async function publishFindingsAndReviewBatch(reviewContent: string): Promise<number> {
   const { findings, resolvedPath } = await loadAndValidateFindings(DEFAULT_FINDINGS_FILE);
@@ -372,11 +388,7 @@ async function publishFindingsAndReviewBatch(reviewContent: string): Promise<num
   await trackFindingActions(ws, annotated);
 
   if (reviewContent.trim()) {
-    const bundleState = await ws.loadBundleState();
-    if (bundleState) {
-      const hash = computeContentHash(reviewContent);
-      await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha);
-    }
+    await clearDefaultReviewOutput();
   }
 
   return findings.length;
@@ -406,11 +418,9 @@ async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty
     console.log(chalk.dim('No review note published'));
   }
 
-  const ws = new WorkspaceManager(process.cwd());
-  const bundleState = await ws.loadBundleState();
-  if (bundleState) {
-    const hash = computeContentHash(content);
-    await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha, result.noteId);
+  const isDefaultReviewFile = workspacePath(filePath) === workspacePath(DEFAULT_REVIEW_FILE);
+  if (result.created && isDefaultReviewFile) {
+    await clearDefaultReviewOutput();
   }
 
   return result.created ? 1 : 0;
@@ -446,6 +456,7 @@ export const __testing = {
   isNoReviewNoteToPublishError,
   publishReplies,
   publishDescription,
+  publishFindingsAndReviewBatch,
   publishReviewCmd,
   requirePublishableContent,
   autoRefresh,

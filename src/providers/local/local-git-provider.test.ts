@@ -900,7 +900,6 @@ describe('LocalGitProvider orchestrator boundary', () => {
         },
         review: {
           path: '.revpack/outputs/review.md',
-          lastPublishedHash: 'sha256:old-review',
         },
       },
       publishedActions: [
@@ -945,6 +944,6 @@ describe('LocalGitProvider orchestrator boundary', () => {
     expect(result.bundle.target.diffRefs.headSha).toBe('head-sha');
     expect(result.bundleState.publishedActions).toEqual([]);
     expect(result.bundleState.outputs.summary.lastPublishedHash).toBeUndefined();
-    expect(result.bundleState.outputs.review.lastPublishedHash).toBeUndefined();
+    expect(result.bundleState.outputs.review).toEqual({ path: '.revpack/outputs/review.md' });
   });
 });
