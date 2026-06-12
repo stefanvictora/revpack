@@ -102,12 +102,12 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
     }
     if (!opts.prompts) {
       console.log(formatGuidanceLine('  Tip: install an agent adapter, for example:'));
-      console.log(formatGuidanceLine('  `revpack setup agent codex`'));
+      console.log(formatGuidanceLine('  revpack setup agent codex'));
     } else {
       console.log(formatGuidanceLine('  Tip: `revpack setup --prompts` is deprecated; use:'));
-      console.log(formatGuidanceLine('  `revpack setup agent copilot`'));
+      console.log(formatGuidanceLine('  revpack setup agent copilot'));
     }
-    console.log(formatGuidanceLine('  `revpack prepare`'));
+    console.log(formatGuidanceLine('  revpack prepare'));
   }
 }
 
@@ -120,7 +120,7 @@ export async function runSetupAgent(opts: SetupAgentOptions): Promise<void> {
 
   if (!(await fileExists(path.join(opts.cwd, 'REVIEW.md')))) {
     console.log(formatGuidanceLine('Tip: add project-specific review guidance in REVIEW.md.'));
-    console.log(formatGuidanceLine('  `revpack setup`'));
+    console.log(formatGuidanceLine('  revpack setup'));
   }
 }
 
@@ -209,15 +209,15 @@ function printAgentUsage(target: AgentTarget): void {
   switch (target) {
     case 'claude':
       console.log(formatGuidanceLine('Use it in Claude Code with:'));
-      console.log(formatGuidanceLine('  `/revpack-review`'));
+      console.log(formatGuidanceLine('  /revpack-review'));
       break;
     case 'codex':
       console.log(formatGuidanceLine('Use it in Codex with:'));
-      console.log(formatGuidanceLine('  `$revpack-review`'));
+      console.log(formatGuidanceLine('  $revpack-review'));
       break;
     case 'copilot':
       console.log(formatGuidanceLine('Use it in Copilot Chat with:'));
-      console.log(formatGuidanceLine('  `/revpack-review`'));
+      console.log(formatGuidanceLine('  /revpack-review'));
       break;
     case 'cursor':
       console.log(formatGuidanceLine('Use it in Cursor by asking for a revpack review.'));

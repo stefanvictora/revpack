@@ -76,7 +76,7 @@ export function registerCheckoutCommand(program: Command): void {
         console.log(formatGuidanceLine('Next:'));
         console.log(formatGuidanceLine('  Open .revpack/CONTEXT.md and point your agent at it'));
         if (clonedTo) {
-          console.log(formatGuidanceLine(`  \`cd ${clonedTo}\``));
+          console.log(formatGuidanceLine(`  cd ${clonedTo}`));
         }
       } catch (err) {
         handleError(err);

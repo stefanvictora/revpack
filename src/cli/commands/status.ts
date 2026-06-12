@@ -161,7 +161,7 @@ export function registerStatusCommand(program: Command): void {
 
           if (bundleIsOutdated) {
             console.log(formatGuidanceLine('Next:'));
-            console.log(formatGuidanceLine('  `revpack prepare`'));
+            console.log(formatGuidanceLine('  revpack prepare'));
             const pendingOlderBundleLines = buildPendingOlderBundleLines({
               repliesReady: pendingReplies > 0,
               findingsReady: pendingFindings > 0,
@@ -202,7 +202,7 @@ export function registerStatusCommand(program: Command): void {
           console.log(formatGuidanceLine('No bundle prepared.'));
           console.log('');
           console.log(formatGuidanceLine('Next:'));
-          console.log(formatGuidanceLine('  `revpack prepare`'));
+          console.log(formatGuidanceLine('  revpack prepare'));
         }
       } catch (err) {
         handleError(err);

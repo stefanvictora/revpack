@@ -118,7 +118,7 @@ export function registerPrepareCommand(program: Command): void {
           // Next steps
           console.log(formatGuidanceLine('Next:'));
           console.log(formatGuidanceLine('  Ask your agent to read .revpack/CONTEXT.md'));
-          console.log(formatGuidanceLine('  Or invoke `/revpack-review` skill if installed'));
+          console.log(formatGuidanceLine('  Or run `/revpack-review` if installed'));
           console.log('');
           console.log(formatGuidanceLine('After new commits or review comments:'));
           console.log(formatGuidanceLine('  revpack prepare'));
