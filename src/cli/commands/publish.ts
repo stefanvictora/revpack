@@ -326,7 +326,7 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
   }
   requirePublishableContent(content, usedSummary ? DEFAULT_SUMMARY_FILE : (opts.from ?? 'description content'));
 
-  if (usedSummary) {
+  if (usedSummary && !opts.replace) {
     ws = new WorkspaceManager(process.cwd());
     const summaryState = await ws.getOutputState('summary');
     if (summaryState === 'published') {
@@ -419,7 +419,9 @@ async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty
   }
 
   const isDefaultReviewFile = workspacePath(filePath) === workspacePath(DEFAULT_REVIEW_FILE);
-  await clearDefaultReviewOutput(isDefaultReviewFile);
+  if (result.created && isDefaultReviewFile) {
+    await clearDefaultReviewOutput();
+  }
 
   return result.created ? 1 : 0;
 }

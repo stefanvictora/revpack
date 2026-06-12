@@ -197,6 +197,24 @@ describe('publish command internals', () => {
     await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('');
   });
 
+  it('keeps the default review note when no review note is created', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await writeBundleState();
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    await fs.writeFile(reviewPath, 'Review body', 'utf-8');
+
+    const orchestrator = {
+      publishReview: vi.fn().mockResolvedValue({ created: false }),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishReviewCmd({})).resolves.toBe(0);
+
+    await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('Review body');
+    const bundleState = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'bundle.json'), 'utf-8'));
+    expect(bundleState.outputs.review.lastPublishedHash).toBeUndefined();
+  });
+
   it('does not clear the default review note when publishing from a custom file', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await writeBundleState();
@@ -267,6 +285,24 @@ describe('publish command internals', () => {
 
     expect(createOrchestrator).not.toHaveBeenCalled();
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('summary already published'));
+  });
+
+  it('replaces the description from the default summary even when it is already published', async () => {
+    const summary = 'Generated summary';
+    await writeBundleState('gitlab', { summaryHash: computeContentHash(summary) });
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), summary, 'utf-8');
+
+    const orchestrator = {
+      open: vi.fn(),
+      updateDescription: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishDescription({ replace: true })).resolves.toBe(1);
+
+    expect(orchestrator.open).not.toHaveBeenCalled();
+    expect(orchestrator.updateDescription).toHaveBeenCalledWith(undefined, summary, 'group/project');
   });
 
   it('publishes a custom description file even when the default summary is already published', async () => {
