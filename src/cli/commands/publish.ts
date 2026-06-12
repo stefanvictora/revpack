@@ -260,6 +260,12 @@ async function trackFindingActions(ws: WorkspaceManager, findings: NewFinding[],
   }
 }
 
+async function clearDefaultReviewOutput(clearDefaultOutput = true): Promise<void> {
+  if (clearDefaultOutput) {
+    await fs.writeFile(workspacePath(DEFAULT_REVIEW_FILE), '', 'utf-8');
+  }
+}
+
 async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
   const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
   const { findings, resolvedPath } = await loadAndValidateFindings(filePath);
@@ -349,7 +355,7 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
 
 /**
  * GitHub-specific: load, validate, and submit findings + review.md as a single PR review batch.
- * Updates the stored review state. Returns the number of findings published.
+ * Clears successfully published outputs. Returns the number of findings published.
  */
 async function publishFindingsAndReviewBatch(reviewContent: string): Promise<number> {
   const { findings, resolvedPath } = await loadAndValidateFindings(DEFAULT_FINDINGS_FILE);
@@ -372,11 +378,7 @@ async function publishFindingsAndReviewBatch(reviewContent: string): Promise<num
   await trackFindingActions(ws, annotated);
 
   if (reviewContent.trim()) {
-    const bundleState = await ws.loadBundleState();
-    if (bundleState) {
-      const hash = computeContentHash(reviewContent);
-      await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha);
-    }
+    await clearDefaultReviewOutput();
   }
 
   return findings.length;
@@ -406,12 +408,8 @@ async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty
     console.log(chalk.dim('No review note published'));
   }
 
-  const ws = new WorkspaceManager(process.cwd());
-  const bundleState = await ws.loadBundleState();
-  if (bundleState) {
-    const hash = computeContentHash(content);
-    await ws.updateOutputPublishState('review', hash, bundleState.target.diffRefs.headSha, result.noteId);
-  }
+  const isDefaultReviewFile = workspacePath(filePath) === workspacePath(DEFAULT_REVIEW_FILE);
+  await clearDefaultReviewOutput(isDefaultReviewFile);
 
   return result.created ? 1 : 0;
 }
@@ -446,6 +444,7 @@ export const __testing = {
   isNoReviewNoteToPublishError,
   publishReplies,
   publishDescription,
+  publishFindingsAndReviewBatch,
   publishReviewCmd,
   requirePublishableContent,
   autoRefresh,

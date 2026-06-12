@@ -27,7 +27,7 @@ export function registerStatusCommand(program: Command): void {
 
         // Compute output states
         const summaryState = await ws.getOutputState('summary');
-        const reviewState = await ws.getOutputState('review');
+        const reviewState = await ws.getPendingOutputState('review');
 
         if (opts.json) {
           const target = ref

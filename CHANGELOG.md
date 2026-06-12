@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed `revpack publish` leaving `review.md` populated after publishing, which could republish the same review note during later incremental reviews.
+
 ## [0.4.0] - 2026-06-07
 
 ### Added

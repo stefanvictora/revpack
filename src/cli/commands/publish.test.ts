@@ -29,6 +29,59 @@ describe('publish command internals', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
+  async function writeBundleState(provider = 'gitlab'): Promise<void> {
+    await fs.mkdir(path.join(tmpDir, '.revpack'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.revpack', 'bundle.json'),
+      JSON.stringify(
+        {
+          target: { provider, diffRefs: { headSha: 'head-sha' } },
+          outputs: {
+            review: { path: '.revpack/outputs/review.md' },
+            summary: { path: '.revpack/outputs/summary.md' },
+          },
+          publishedActions: [],
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    );
+  }
+
+  async function writeValidFindingBundle(): Promise<void> {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'diffs'), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.revpack', 'diffs', 'latest.patch'),
+      [
+        'diff --git a/src/app.ts b/src/app.ts',
+        'index 1111111..2222222 100644',
+        '--- a/src/app.ts',
+        '+++ b/src/app.ts',
+        '@@ -1 +1,2 @@',
+        ' const value = read();',
+        '+audit(value);',
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+    await fs.writeFile(
+      path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'),
+      JSON.stringify([
+        {
+          oldPath: 'src/app.ts',
+          newPath: 'src/app.ts',
+          newLine: 2,
+          body: 'Audit call can throw unexpectedly.',
+          severity: 'medium',
+          category: 'correctness',
+        },
+      ]),
+      'utf-8',
+    );
+  }
+
   it('matches T-NNN reply refs case-insensitively', () => {
     const entries = [{ threadId: 'T-001', body: 'reply' }];
 
@@ -104,6 +157,80 @@ describe('publish command internals', () => {
 
     await expect(__testing.publishReviewCmd({})).rejects.toThrow('review.md is empty');
     expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
+  it('clears the default review note after publishing it', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await writeBundleState();
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    await fs.writeFile(reviewPath, 'Review body', 'utf-8');
+
+    const orchestrator = {
+      publishReview: vi.fn().mockResolvedValue({ created: true, noteId: 'note-1' }),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishReviewCmd({})).resolves.toBe(1);
+
+    await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('');
+    const bundleState = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'bundle.json'), 'utf-8'));
+    expect(bundleState.outputs.review.lastPublishedHash).toBeUndefined();
+    expect(bundleState.outputs.review.providerNoteId).toBeUndefined();
+  });
+
+  it('clears the default review note even when bundle state is unavailable', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    await fs.writeFile(reviewPath, 'Review body', 'utf-8');
+
+    const orchestrator = {
+      publishReview: vi.fn().mockResolvedValue({ created: true, noteId: 'note-1' }),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishReviewCmd({})).resolves.toBe(1);
+
+    await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('');
+  });
+
+  it('does not clear the default review note when publishing from a custom file', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await writeBundleState();
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    const customPath = path.join(tmpDir, 'custom-review.md');
+    await fs.writeFile(reviewPath, 'Pending default review', 'utf-8');
+    await fs.writeFile(customPath, 'Custom review body', 'utf-8');
+
+    const orchestrator = {
+      publishReview: vi.fn().mockResolvedValue({ created: true, noteId: 'note-1' }),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishReviewCmd({ from: customPath })).resolves.toBe(1);
+
+    await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('Pending default review');
+    await expect(fs.readFile(customPath, 'utf-8')).resolves.toBe('Custom review body');
+  });
+
+  it('clears the default review note after including it in a GitHub review batch', async () => {
+    await writeBundleState('github');
+    await writeValidFindingBundle();
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    await fs.writeFile(reviewPath, 'Batch review body', 'utf-8');
+
+    const orchestrator = {
+      publishReviewBatch: vi.fn().mockResolvedValue({ created: true }),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishFindingsAndReviewBatch('Batch review body')).resolves.toBe(1);
+
+    await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('');
+    await expect(fs.readFile(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'), 'utf-8')).resolves.toBe(
+      '[]',
+    );
+    const bundleState = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'bundle.json'), 'utf-8'));
+    expect(bundleState.outputs.review.lastPublishedHash).toBeUndefined();
   });
 
   it('uses summary.md as the default description source', async () => {

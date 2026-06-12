@@ -288,14 +288,16 @@ export type OutputState = 'empty' | 'pending' | 'published' | 'modified since pu
 
 export interface BundleOutputEntry {
   path: string;
+}
+
+export interface HashTrackedBundleOutputEntry extends BundleOutputEntry {
   lastPublishedHash?: string;
   lastPublishedAt?: string;
   lastPublishedTargetHeadSha?: string;
-  providerNoteId?: string;
 }
 
 export interface BundleOutputs {
-  summary: BundleOutputEntry;
+  summary: HashTrackedBundleOutputEntry;
   review: BundleOutputEntry;
 }
 

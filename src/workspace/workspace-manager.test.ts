@@ -1736,6 +1736,38 @@ describe('WorkspaceManager', () => {
     });
   });
 
+  describe('getPendingOutputState', () => {
+    it('returns empty when no bundle state exists', async () => {
+      const state = await manager.getPendingOutputState('review');
+      expect(state).toBe('empty');
+    });
+
+    it('returns empty when output file does not exist', async () => {
+      await createBundleWithState(manager);
+      const state = await manager.getPendingOutputState('review');
+      expect(state).toBe('empty');
+    });
+
+    it('returns empty when output file is whitespace only', async () => {
+      await createBundleWithState(manager);
+      await manager.writeOutput('review.md', '   \n  ');
+      const state = await manager.getPendingOutputState('review');
+      expect(state).toBe('empty');
+    });
+
+    it('returns pending when review note content exists regardless of legacy publish hash', async () => {
+      await createBundleWithState(manager);
+      const state = await manager.loadBundleState();
+      (state!.outputs.review as { lastPublishedHash?: string }).lastPublishedHash =
+        computeContentHash('## Notes\nReview notes');
+      await manager.saveBundleState(state!);
+
+      await manager.writeOutput('review.md', '## Notes\nReview notes');
+
+      await expect(manager.getPendingOutputState('review')).resolves.toBe('pending');
+    });
+  });
+
   describe('updateOutputPublishState', () => {
     it('returns false when no bundle state exists', async () => {
       const result = await manager.updateOutputPublishState('summary', 'hash', 'sha');
@@ -1744,35 +1776,13 @@ describe('WorkspaceManager', () => {
 
     it('stores hash, timestamp, and targetHeadSha', async () => {
       await createBundleWithState(manager);
-      const result = await manager.updateOutputPublishState('review', 'abc123', 'head-sha');
+      const result = await manager.updateOutputPublishState('summary', 'abc123', 'head-sha');
       expect(result).toBe(true);
 
       const state = await manager.loadBundleState();
-      expect(state!.outputs.review.lastPublishedHash).toBe('abc123');
-      expect(state!.outputs.review.lastPublishedTargetHeadSha).toBe('head-sha');
-      expect(state!.outputs.review.lastPublishedAt).toBeTruthy();
-    });
-
-    it('stores providerNoteId when provided', async () => {
-      await createBundleWithState(manager);
-      await manager.updateOutputPublishState('summary', 'hash', 'sha', 'note-42');
-      const state = await manager.loadBundleState();
-      expect(state!.outputs.summary.providerNoteId).toBe('note-42');
-    });
-
-    it('does not set providerNoteId when not provided', async () => {
-      await createBundleWithState(manager);
-      await manager.updateOutputPublishState('summary', 'hash', 'sha');
-      const state = await manager.loadBundleState();
-      expect(state!.outputs.summary.providerNoteId).toBeUndefined();
-    });
-
-    it('preserves existing providerNoteId when not provided in subsequent call', async () => {
-      await createBundleWithState(manager);
-      await manager.updateOutputPublishState('summary', 'h1', 'sha1', 'note-42');
-      await manager.updateOutputPublishState('summary', 'h2', 'sha2');
-      const state = await manager.loadBundleState();
-      expect(state!.outputs.summary.providerNoteId).toBe('note-42');
+      expect(state!.outputs.summary.lastPublishedHash).toBe('abc123');
+      expect(state!.outputs.summary.lastPublishedTargetHeadSha).toBe('head-sha');
+      expect(state!.outputs.summary.lastPublishedAt).toBeTruthy();
     });
   });
 
