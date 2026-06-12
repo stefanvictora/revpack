@@ -77,9 +77,11 @@ export function registerStatusCommand(program: Command): void {
 
           console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${t.title}`));
           console.log(`  ${chalk.dim('Repository:')} ${t.repository}`);
+          console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
           console.log(`  ${chalk.dim('Author:')}     @${t.author}`);
           console.log(`  ${chalk.dim('Branch:')}     ${t.sourceBranch} → ${t.targetBranch}`);
-          console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
+          console.log(`  ${chalk.dim(`Updated:`)}    ${formatDate(t.updatedAt)}`);
+
           if (t.webUrl) {
             console.log(`  ${chalk.dim('URL:')}        ${t.webUrl}`);
           }
@@ -147,13 +149,6 @@ export function registerStatusCommand(program: Command): void {
           console.log(`  ${chalk.dim('Review note:')}      ${formatOutputState(reviewState)}`);
           const checkpointState = getCheckpointState(bundleState);
           console.log(`  ${chalk.dim('Checkpoint:')}       ${formatCheckpointState(checkpointState)}`);
-
-          // Publish history
-          if (bundleState.publishedActions.length > 0) {
-            console.log('');
-            console.log(chalk.dim('─ Publish history ─'));
-            console.log(`  ${formatCount(bundleState.publishedActions.length, 'action')} previously published`);
-          }
 
           // Next step
           console.log('');
@@ -375,8 +370,4 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
-}
-
-function formatCount(count: number, singular: string, plural = `${singular}s`): string {
-  return `${count} ${count === 1 ? singular : plural}`;
 }
