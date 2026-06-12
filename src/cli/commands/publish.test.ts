@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { __testing } from './publish.js';
 import { createOrchestrator, getRepoFromGit } from '../helpers.js';
+import { computeContentHash } from '../../workspace/thread-digest.js';
 
 vi.mock('../helpers.js', () => ({
   createOrchestrator: vi.fn(),
@@ -29,7 +30,7 @@ describe('publish command internals', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  async function writeBundleState(provider = 'gitlab'): Promise<void> {
+  async function writeBundleState(provider = 'gitlab', options?: { summaryHash?: string }): Promise<void> {
     await fs.mkdir(path.join(tmpDir, '.revpack'), { recursive: true });
     await fs.writeFile(
       path.join(tmpDir, '.revpack', 'bundle.json'),
@@ -38,7 +39,10 @@ describe('publish command internals', () => {
           target: { provider, diffRefs: { headSha: 'head-sha' } },
           outputs: {
             review: { path: '.revpack/outputs/review.md' },
-            summary: { path: '.revpack/outputs/summary.md' },
+            summary: {
+              path: '.revpack/outputs/summary.md',
+              ...(options?.summaryHash ? { lastPublishedHash: options.summaryHash } : {}),
+            },
           },
           publishedActions: [],
         },
@@ -249,6 +253,41 @@ describe('publish command internals', () => {
     expect(orchestrator.updateDescription).toHaveBeenCalledWith(
       undefined,
       expect.stringContaining('Generated summary'),
+      'group/project',
+    );
+  });
+
+  it('skips the default summary when it is already published', async () => {
+    const summary = 'Generated summary';
+    await writeBundleState('gitlab', { summaryHash: computeContentHash(summary) });
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), summary, 'utf-8');
+
+    await expect(__testing.publishDescription({})).resolves.toBe(0);
+
+    expect(createOrchestrator).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('summary already published'));
+  });
+
+  it('publishes a custom description file even when the default summary is already published', async () => {
+    const summary = 'Generated summary';
+    await writeBundleState('gitlab', { summaryHash: computeContentHash(summary) });
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), summary, 'utf-8');
+    const customPath = path.join(tmpDir, 'custom-summary.md');
+    await fs.writeFile(customPath, 'Custom summary', 'utf-8');
+
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ description: 'Existing description' }),
+      updateDescription: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishDescription({ from: customPath })).resolves.toBe(1);
+
+    expect(orchestrator.updateDescription).toHaveBeenCalledWith(
+      undefined,
+      expect.stringContaining('Custom summary'),
       'group/project',
     );
   });

@@ -313,6 +313,7 @@ async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefres
 async function publishDescription(opts: { from?: string; replace?: boolean; repo?: string }): Promise<number> {
   let content: string;
   let usedSummary = false;
+  let ws: WorkspaceManager | undefined;
   if (opts.from) {
     content = await fs.readFile(workspacePath(opts.from), 'utf-8');
   } else {
@@ -324,6 +325,15 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
     }
   }
   requirePublishableContent(content, usedSummary ? DEFAULT_SUMMARY_FILE : (opts.from ?? 'description content'));
+
+  if (usedSummary) {
+    ws = new WorkspaceManager(process.cwd());
+    const summaryState = await ws.getOutputState('summary');
+    if (summaryState === 'published') {
+      console.log(chalk.dim('  (summary already published)'));
+      return 0;
+    }
+  }
 
   const orchestrator = await createOrchestrator();
   const defaultRepo = opts.repo ?? (await getRepoFromGit());
@@ -341,7 +351,7 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
 
   // Store publish hash for summary tracking
   if (usedSummary) {
-    const ws = new WorkspaceManager(process.cwd());
+    ws ??= new WorkspaceManager(process.cwd());
     const bundleState = await ws.loadBundleState();
     if (bundleState) {
       const summaryContent = await fs.readFile(workspacePath(DEFAULT_SUMMARY_FILE), 'utf-8');
