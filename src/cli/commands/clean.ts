@@ -24,11 +24,10 @@ export function registerCleanCommand(program: Command): void {
           console.log(chalk.dim('Nothing to clean — .revpack/ does not exist.'));
         }
         console.log('');
-        console.log(
-          chalk.dim('.revpack/ is disposable local state. This does not affect the MR/PR or published comments.'),
-        );
+        console.log(chalk.dim('.revpack/ is disposable local state.'));
+        console.log(chalk.dim('This does not affect the MR/PR or published comments.'));
         console.log(formatGuidanceLine('Next:'));
-        console.log(formatGuidanceLine('  revpack prepare'));
+        console.log(formatGuidanceLine('  `revpack prepare`'));
       } catch (err) {
         handleError(err);
       }

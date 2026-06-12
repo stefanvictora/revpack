@@ -1,15 +1,9 @@
 import chalk from 'chalk';
 
-const COMMAND_LINE_PATTERN = /^\s*(?:revpack\b|cd\b|export\b|\/revpack-review\b|\$revpack-review)/u;
 const INLINE_CODE_PATTERN = /`([^`\r\n]+)`/gu;
 
 export function formatGuidanceLine(line: string): string {
   if (line === '') return '';
-
-  // Full command lines stay fully visible.
-  if (COMMAND_LINE_PATTERN.test(line)) {
-    return line;
-  }
 
   let result = '';
   let lastIndex = 0;
