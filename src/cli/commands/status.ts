@@ -276,16 +276,25 @@ function formatBundleFreshnessState(
     : chalk.green(`current — matches latest ${targetKind} head`);
 }
 
-async function compareCheckoutToTargetHead(
+export async function compareCheckoutToTargetHead(
   git: GitHelper,
   comparisonTargetHead: string,
   currentHead: string,
 ): Promise<CheckoutRelation> {
-  const targetIsAncestorOfCurrent = await git.isAncestor(comparisonTargetHead, currentHead).catch(() => false);
-  const currentIsAncestorOfTarget = await git.isAncestor(currentHead, comparisonTargetHead).catch(() => false);
   if (currentHead === comparisonTargetHead) {
     return 'current';
   }
+
+  const [targetExists, currentExists] = await Promise.all([
+    git.hasCommit(comparisonTargetHead),
+    git.hasCommit(currentHead),
+  ]);
+  if (!targetExists || !currentExists) {
+    return 'unknown';
+  }
+
+  const targetIsAncestorOfCurrent = await git.isAncestor(comparisonTargetHead, currentHead);
+  const currentIsAncestorOfTarget = await git.isAncestor(currentHead, comparisonTargetHead);
   if (targetIsAncestorOfCurrent) {
     return 'ahead';
   }

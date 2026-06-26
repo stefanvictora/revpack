@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildPendingOlderBundleLines, buildStatusNextLines } from './status.js';
+import type { GitHelper } from '../../workspace/git-helper.js';
+import { buildPendingOlderBundleLines, buildStatusNextLines, compareCheckoutToTargetHead } from './status.js';
 
 describe('buildStatusNextLines', () => {
   // Checkpoint guidance is intentionally omitted when exactly one content output is ready.
@@ -177,5 +178,48 @@ describe('buildPendingOlderBundleLines', () => {
         reviewReady: false,
       }),
     ).toEqual([]);
+  });
+});
+
+describe('compareCheckoutToTargetHead', () => {
+  function gitDouble(options: {
+    hasCommit: (sha: string) => boolean | Promise<boolean>;
+    isAncestor?: (ancestorSha: string, descendantRef?: string) => boolean | Promise<boolean>;
+  }) {
+    return {
+      hasCommit: options.hasCommit,
+      isAncestor: options.isAncestor ?? (() => false),
+    } as unknown as GitHelper;
+  }
+
+  it('reports unknown when the comparison target commit is not available locally', async () => {
+    const git = gitDouble({
+      hasCommit: (sha) => sha === 'current-head',
+      isAncestor: () => {
+        throw new Error('ancestry should not be checked for missing commits');
+      },
+    });
+
+    await expect(compareCheckoutToTargetHead(git, 'missing-target-head', 'current-head')).resolves.toBe('unknown');
+  });
+
+  it('reports unknown when the current commit cannot be inspected locally', async () => {
+    const git = gitDouble({
+      hasCommit: (sha) => sha === 'target-head',
+      isAncestor: () => {
+        throw new Error('ancestry should not be checked for missing commits');
+      },
+    });
+
+    await expect(compareCheckoutToTargetHead(git, 'target-head', 'missing-current-head')).resolves.toBe('unknown');
+  });
+
+  it('reports diverged only after both commits are available for ancestry checks', async () => {
+    const git = gitDouble({
+      hasCommit: () => true,
+      isAncestor: () => false,
+    });
+
+    await expect(compareCheckoutToTargetHead(git, 'target-head', 'current-head')).resolves.toBe('diverged');
   });
 });
