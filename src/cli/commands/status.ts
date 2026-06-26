@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
+import type { BundleTarget, ReviewTarget } from '../../core/types.js';
 import { formatTargetDisplayId, formatTargetKind } from '../../core/display.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { GitHelper } from '../../workspace/git-helper.js';
@@ -71,19 +72,20 @@ export function registerStatusCommand(program: Command): void {
             targetType: t.type,
             targetId: t.id,
           });
-          const stateColor = getStateColor(latestTarget?.state ?? t.state);
+          const displayTarget = buildBundleStatusDisplayTarget(t, latestTarget);
+          const stateColor = getStateColor(displayTarget.state);
           const hasPublishableSummary = isPublishableOutputState(summaryState);
           const hasPublishableReview = isPublishableOutputState(reviewState);
 
-          console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${t.title}`));
-          console.log(`  ${chalk.dim('Repository:')} ${t.repository}`);
-          console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
-          console.log(`  ${chalk.dim('Author:')}     @${t.author}`);
-          console.log(`  ${chalk.dim('Branch:')}     ${t.sourceBranch} → ${t.targetBranch}`);
-          console.log(`  ${chalk.dim(`Updated:`)}    ${formatDate(t.updatedAt)}`);
+          console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${displayTarget.title}`));
+          console.log(`  ${chalk.dim('Repository:')} ${displayTarget.repository}`);
+          console.log(`  ${chalk.dim('State:')}      ${stateColor(displayTarget.state)}`);
+          console.log(`  ${chalk.dim('Author:')}     @${displayTarget.author}`);
+          console.log(`  ${chalk.dim('Branch:')}     ${displayTarget.sourceBranch} → ${displayTarget.targetBranch}`);
+          console.log(`  ${chalk.dim(`Updated:`)}    ${formatDate(displayTarget.updatedAt)}`);
 
-          if (t.webUrl) {
-            console.log(`  ${chalk.dim('URL:')}        ${t.webUrl}`);
+          if (displayTarget.webUrl) {
+            console.log(`  ${chalk.dim('URL:')}        ${displayTarget.webUrl}`);
           }
           console.log('');
 
@@ -227,6 +229,30 @@ async function countJsonArray(filePath: string): Promise<number> {
 
 type CheckpointState = 'none' | 'current' | 'outdated' | 'unknown';
 type CheckoutRelation = 'current' | 'ahead' | 'behind' | 'diverged' | 'unknown';
+type BundleStatusDisplayTarget = Pick<
+  BundleTarget,
+  'title' | 'repository' | 'state' | 'author' | 'sourceBranch' | 'targetBranch' | 'updatedAt' | 'webUrl'
+>;
+
+export function buildBundleStatusDisplayTarget(
+  bundleTarget: BundleTarget,
+  latestTarget: ReviewTarget | null,
+): BundleStatusDisplayTarget {
+  if (!latestTarget) {
+    return bundleTarget;
+  }
+
+  return {
+    title: latestTarget.title,
+    repository: latestTarget.repository,
+    state: latestTarget.state,
+    author: latestTarget.author,
+    sourceBranch: latestTarget.sourceBranch,
+    targetBranch: latestTarget.targetBranch,
+    updatedAt: latestTarget.updatedAt,
+    webUrl: latestTarget.webUrl,
+  };
+}
 
 function getCheckpointState(bundleState: {
   prepare: {

@@ -1,6 +1,74 @@
 import { describe, expect, it } from 'vitest';
+import type { BundleTarget, ReviewTarget } from '../../core/types.js';
 import type { GitHelper } from '../../workspace/git-helper.js';
-import { buildPendingOlderBundleLines, buildStatusNextLines, compareCheckoutToTargetHead } from './status.js';
+import {
+  buildBundleStatusDisplayTarget,
+  buildPendingOlderBundleLines,
+  buildStatusNextLines,
+  compareCheckoutToTargetHead,
+} from './status.js';
+
+describe('buildBundleStatusDisplayTarget', () => {
+  const bundleTarget: BundleTarget = {
+    provider: 'github',
+    repository: 'owner/repo',
+    type: 'pull_request',
+    id: '42',
+    title: 'Prepared title',
+    descriptionPath: '.revpack/description.md',
+    author: 'octocat',
+    state: 'opened',
+    sourceBranch: 'feature',
+    targetBranch: 'main',
+    webUrl: 'https://example.com/pull/42',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    labels: [],
+    diffRefs: {
+      baseSha: 'base',
+      headSha: 'prepared-head',
+      startSha: 'start',
+    },
+  };
+
+  it('uses latest provider metadata for bundle status display when available', () => {
+    const latestTarget: ReviewTarget = {
+      provider: 'github',
+      repository: 'owner/repo',
+      targetType: 'pull_request',
+      targetId: '42',
+      title: 'Merged title',
+      description: '',
+      author: 'octocat',
+      state: 'merged',
+      sourceBranch: 'feature',
+      targetBranch: 'main',
+      webUrl: 'https://example.com/pull/42',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+      labels: [],
+      diffRefs: {
+        baseSha: 'base',
+        headSha: 'latest-head',
+        startSha: 'start',
+      },
+    };
+
+    expect(buildBundleStatusDisplayTarget(bundleTarget, latestTarget)).toMatchObject({
+      title: 'Merged title',
+      state: 'merged',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    });
+  });
+
+  it('falls back to the prepared bundle target when latest provider metadata is unavailable', () => {
+    expect(buildBundleStatusDisplayTarget(bundleTarget, null)).toMatchObject({
+      title: 'Prepared title',
+      state: 'opened',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+  });
+});
 
 describe('buildStatusNextLines', () => {
   // Checkpoint guidance is intentionally omitted when exactly one content output is ready.
