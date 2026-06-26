@@ -103,19 +103,11 @@ export function registerStatusCommand(program: Command): void {
           const git = new GitHelper(process.cwd());
           try {
             const [currentHead, currentBranch] = await Promise.all([git.headSha(), git.currentBranch()]);
-            const matchesTarget = currentHead === comparisonTargetHead;
-
-            console.log(chalk.dim('─ Local checkout ─'));
+            console.log(chalk.dim('─ Checkout ─'));
             console.log(`  ${chalk.dim('Branch:')}           ${currentBranch}`);
             console.log(`  ${chalk.dim('Current HEAD:')}     ${currentHead.slice(0, 7)}`);
-            if (matchesTarget) {
-              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}       ${chalk.green('yes')}`);
-            } else {
-              const isAncestor = await git.isAncestor(comparisonTargetHead).catch(() => false);
-              const relation = isAncestor ? `ahead of ${targetKind} head` : `behind ${targetKind} head`;
-              console.log(`  ${chalk.dim(`${targetKind} head:`)}          ${comparisonTargetHead.slice(0, 7)}`);
-              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}       ${chalk.yellow(`no — ${relation}`)}`);
-            }
+            const status = await formatCheckoutState(git, comparisonTargetHead, currentHead, targetKind);
+            console.log(`  ${chalk.dim(`Status:`)}           ${status}`);
           } catch {
             // Not a git repo — skip local checkout info
           }
@@ -275,7 +267,29 @@ function formatBundleFreshnessState(
   targetKind: string,
 ): string {
   if (!currentTargetHead) return chalk.yellow('unknown');
-  return bundleIsOutdated ? chalk.yellow(`stale — prepared for older ${targetKind} head`) : chalk.green('current');
+  return bundleIsOutdated
+    ? chalk.yellow(`stale — prepared for older ${targetKind} head`)
+    : chalk.green('current — matches latest PR head');
+}
+
+async function formatCheckoutState(
+  git: GitHelper,
+  comparisonTargetHead: string,
+  currentHead: string,
+  targetKind: string,
+) {
+  const targetIsAncestorOfCurrent = await git.isAncestor(comparisonTargetHead, currentHead).catch(() => false);
+  const currentIsAncestorOfTarget = await git.isAncestor(currentHead, comparisonTargetHead).catch(() => false);
+  if (currentHead === comparisonTargetHead) {
+    return chalk.green(`current — matches latest ${targetKind} head`);
+  }
+  if (targetIsAncestorOfCurrent) {
+    return chalk.yellow(`ahead — local HEAD is not in the ${targetKind} yet`);
+  }
+  if (currentIsAncestorOfTarget) {
+    return chalk.yellow(`behind — latest ${targetKind} head is ${comparisonTargetHead.slice(0, 7)}`);
+  }
+  return chalk.yellow(`diverged — latest ${targetKind} head is ${comparisonTargetHead.slice(0, 7)}`);
 }
 
 function isPublishableOutputState(state: string): boolean {

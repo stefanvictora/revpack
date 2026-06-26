@@ -280,10 +280,10 @@ export class GitHelper {
     return stdout.trim();
   }
 
-  /** Check if a commit is an ancestor of HEAD (i.e. HEAD includes that commit). */
-  async isAncestor(commitSha: string): Promise<boolean> {
+  /** Check if `ancestorSha` is an ancestor of `descendantRef`. */
+  async isAncestor(ancestorSha: string, descendantRef = 'HEAD'): Promise<boolean> {
     try {
-      await execGit(['merge-base', '--is-ancestor', commitSha, 'HEAD'], this.cwd);
+      await execGit(['merge-base', '--is-ancestor', ancestorSha, descendantRef], this.cwd);
       return true;
     } catch {
       return false;
