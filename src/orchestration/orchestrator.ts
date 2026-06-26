@@ -1,4 +1,4 @@
-import type { ReviewProvider } from '../providers/provider.js';
+import type { CheckoutBranchTarget, CheckoutFallbackRef, ReviewProvider } from '../providers/provider.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
@@ -182,7 +182,7 @@ export class ReviewOrchestrator {
 
     // Check branch matches MR source branch, except for provider fallback branches
     // that checkout creates when the original source branch is no longer fetchable.
-    if (!isAllowedCheckoutBranch(target, localBranch)) {
+    if (!this.isAllowedCheckoutBranch(target, localBranch)) {
       const targetKind = formatTargetKind(target);
       const targetDisplayId = formatTargetDisplayId(target);
       throw new Error(
@@ -397,7 +397,7 @@ export class ReviewOrchestrator {
     try {
       const currentBranch = await this.git.currentBranch();
       if (!currentBranch || currentBranch === 'HEAD') return null;
-      if (!isAllowedCheckoutBranch(bundleState.target, currentBranch)) {
+      if (!this.isAllowedCheckoutBranch(bundleState.target, currentBranch)) {
         return {
           currentBranch,
           expectedBranch: bundleState.target.sourceBranch,
@@ -423,7 +423,7 @@ export class ReviewOrchestrator {
     // Some providers (GitHub) expose a permanent refspec for each PR that works even
     // after the source branch is deleted from the contributor's fork.
     const sourceRefspec = this.provider.getSourceRefspec?.(targetRef);
-    const gitlabFallback = gitlabMergeRequestFallback(targetRef);
+    const checkoutFallback = this.provider.getCheckoutFallbackRef?.(targetRef) ?? null;
 
     if (!inRepo) {
       // No git repo — shallow clone into a sub-directory, similar to `git clone`.
@@ -442,20 +442,20 @@ export class ReviewOrchestrator {
         try {
           clonedDir = await GitHelper.clone(cloneUrl, target.sourceBranch, this.git.cwd);
         } catch (sourceError) {
-          if (!gitlabFallback) {
+          if (!checkoutFallback) {
             throw sourceError;
           }
 
           try {
             clonedDir = await GitHelper.cloneAndCheckoutRef(
               baseCloneUrl,
-              gitlabFallback.remoteRef,
-              gitlabFallback.localBranch,
+              checkoutFallback.remoteRef,
+              checkoutFallback.localBranch,
               this.git.cwd,
             );
-            checkedOutBranch = gitlabFallback.localBranch;
+            checkedOutBranch = checkoutFallback.localBranch;
           } catch (fallbackError) {
-            throw gitlabCheckoutUnavailableError(target, sourceError, fallbackError);
+            throw this.checkoutFallbackError(target, sourceError, fallbackError);
           }
         }
       }
@@ -475,13 +475,13 @@ export class ReviewOrchestrator {
       try {
         await this.git.fetchBranchFromUrl(forkCloneUrl, target.sourceBranch);
       } catch (sourceError) {
-        checkedOutBranch = await this.fetchGitLabMergeRequestFallback(target, gitlabFallback, sourceError);
+        checkedOutBranch = await this.fetchCheckoutFallback(target, checkoutFallback, sourceError);
       }
     } else {
       try {
         await this.git.fetchBranch(target.sourceBranch);
       } catch (sourceError) {
-        checkedOutBranch = await this.fetchGitLabMergeRequestFallback(target, gitlabFallback, sourceError);
+        checkedOutBranch = await this.fetchCheckoutFallback(target, checkoutFallback, sourceError);
       }
     }
 
@@ -814,9 +814,9 @@ export class ReviewOrchestrator {
     return checks.filter((sha): sha is string => sha !== null);
   }
 
-  private async fetchGitLabMergeRequestFallback(
+  private async fetchCheckoutFallback(
     target: ReviewTarget,
-    fallback: GitLabMergeRequestCheckoutFallback | null,
+    fallback: CheckoutFallbackRef | null,
     sourceError: unknown,
   ): Promise<string> {
     if (!fallback) {
@@ -827,8 +827,28 @@ export class ReviewOrchestrator {
       await this.git.fetchRef('origin', fallback.remoteRef, fallback.localBranch);
       return fallback.localBranch;
     } catch (fallbackError) {
-      throw gitlabCheckoutUnavailableError(target, sourceError, fallbackError);
+      throw this.checkoutFallbackError(target, sourceError, fallbackError);
     }
+  }
+
+  private checkoutFallbackError(target: ReviewTarget, sourceError: unknown, fallbackError: unknown): Error {
+    return (
+      this.provider.formatCheckoutFallbackError?.(target, sourceError, fallbackError) ??
+      new Error(
+        [
+          `Could not check out ${formatTargetKind(target)} ${formatTargetDisplayId(target)}.`,
+          '',
+          `Source branch fetch failed: ${errorMessage(sourceError)}`,
+          `Fallback ref fetch failed: ${errorMessage(fallbackError)}`,
+        ].join('\n'),
+        { cause: fallbackError },
+      )
+    );
+  }
+
+  private isAllowedCheckoutBranch(target: CheckoutBranchTarget, branch: string): boolean {
+    const fallbackBranch = this.provider.getCheckoutFallbackBranch?.(target) ?? null;
+    return branch === 'HEAD' || branch === target.sourceBranch || branch === fallbackBranch;
   }
 
   private reviewDiffsFromPatch(patchContent: string): ReviewDiff[] {
@@ -864,75 +884,6 @@ export class ReviewOrchestrator {
         `The prepared review bundle would be incomplete, so prepare was aborted.`,
     );
   }
-}
-
-interface GitLabMergeRequestCheckoutFallback {
-  remoteRef: string;
-  localBranch: string;
-}
-
-interface CheckoutBranchTarget {
-  provider: string;
-  targetType?: string;
-  type?: string;
-  targetId?: string;
-  id?: string;
-  sourceBranch: string;
-}
-
-function gitlabMergeRequestFallback(targetRef: ReviewTargetRef): GitLabMergeRequestCheckoutFallback | null {
-  if (targetRef.provider !== 'gitlab' || targetRef.targetType !== 'merge_request') {
-    return null;
-  }
-
-  return {
-    remoteRef: `refs/merge-requests/${targetRef.targetId}/head`,
-    localBranch: gitlabFallbackBranchName(targetRef.targetId),
-  };
-}
-
-function gitlabMergeRequestFallbackBranch(targetRef: {
-  provider: string;
-  targetType?: string;
-  type?: string;
-  targetId?: string;
-  id?: string;
-}): string | null {
-  const targetType = targetRef.targetType ?? targetRef.type;
-  const targetId = targetRef.targetId ?? targetRef.id;
-  if (targetRef.provider !== 'gitlab' || targetType !== 'merge_request' || !targetId) {
-    return null;
-  }
-
-  return gitlabFallbackBranchName(targetId);
-}
-
-function gitlabFallbackBranchName(targetId: string): string {
-  const safeId = targetId.replace(/[^A-Za-z0-9._-]/g, '-');
-  return `revpack/mr-${safeId}`;
-}
-
-function isAllowedCheckoutBranch(target: CheckoutBranchTarget, branch: string): boolean {
-  return branch === 'HEAD' || branch === target.sourceBranch || branch === gitlabMergeRequestFallbackBranch(target);
-}
-
-function gitlabCheckoutUnavailableError(target: ReviewTarget, sourceError: unknown, fallbackError: unknown): Error {
-  return new Error(
-    [
-      `Could not check out GitLab merge request !${target.targetId}.`,
-      '',
-      `The source branch "${target.sourceBranch}" may have been deleted.`,
-      `revpack also tried GitLab's temporary MR head ref: refs/merge-requests/${target.targetId}/head.`,
-      '',
-      'GitLab only keeps this MR head ref temporarily after a merge request is merged or closed.',
-      'On GitLab 16.6 and newer, GitLab removes the MR head ref 14 days after merge or close.',
-      'This merge request can no longer be checked out unless the source branch or head commit is still reachable.',
-      '',
-      `Source branch fetch failed: ${errorMessage(sourceError)}`,
-      `MR head ref fetch failed: ${errorMessage(fallbackError)}`,
-    ].join('\n'),
-    { cause: fallbackError },
-  );
 }
 
 function errorMessage(error: unknown): string {

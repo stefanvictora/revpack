@@ -99,6 +99,34 @@ function createMockProvider(): ReviewProvider {
     createNote: vi.fn().mockResolvedValue('note-1'),
     updateNote: vi.fn().mockResolvedValue(undefined),
     getCloneUrl: vi.fn().mockReturnValue('https://gitlab.example.com/group/project.git'),
+    getCheckoutFallbackRef: vi.fn().mockReturnValue({
+      remoteRef: 'refs/merge-requests/42/head',
+      localBranch: 'revpack/mr-42',
+    }),
+    getCheckoutFallbackBranch: vi.fn().mockImplementation((target: { id?: string; targetId?: string }) => {
+      const targetId = target.targetId ?? target.id;
+      return targetId ? `revpack/mr-${targetId}` : null;
+    }),
+    formatCheckoutFallbackError: vi
+      .fn()
+      .mockImplementation(
+        (target: ReviewTarget, sourceError: unknown, fallbackError: unknown) =>
+          new Error(
+            [
+              `Could not check out GitLab merge request !${target.targetId}.`,
+              '',
+              `The source branch "${target.sourceBranch}" may have been deleted.`,
+              `revpack also tried GitLab's temporary MR head ref: refs/merge-requests/${target.targetId}/head.`,
+              '',
+              'GitLab only keeps this MR head ref temporarily after a merge request is merged or closed.',
+              'On GitLab 16.6 and newer, GitLab removes the MR head ref 14 days after merge or close.',
+              'This merge request can no longer be checked out unless the source branch or head commit is still reachable.',
+              '',
+              `Source branch fetch failed: ${sourceError instanceof Error ? sourceError.message : String(sourceError)}`,
+              `MR head ref fetch failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+            ].join('\n'),
+          ),
+      ),
   };
 }
 

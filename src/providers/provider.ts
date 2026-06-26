@@ -14,6 +14,22 @@ export interface NewThreadPosition {
   oldLine?: number;
 }
 
+export interface CheckoutFallbackRef {
+  /** Remote ref to fetch from the base repository, such as a provider-owned PR/MR head ref. */
+  remoteRef: string;
+  /** Local branch to create from the fetched fallback ref. */
+  localBranch: string;
+}
+
+export interface CheckoutBranchTarget {
+  provider: string;
+  targetType?: string;
+  type?: string;
+  targetId?: string;
+  id?: string;
+  sourceBranch: string;
+}
+
 /**
  * Provider-neutral interface for forge operations.
  * Implementations: GitLabProvider, (future) GitHubProvider.
@@ -77,6 +93,19 @@ export interface ReviewProvider {
    * Providers that do not support permanent PR refspecs may omit this method.
    */
   getSourceRefspec?(ref: ReviewTargetRef): string;
+
+  /**
+   * Return a provider-specific checkout fallback for cases where fetching the
+   * source branch failed. Unlike getSourceRefspec, this is not necessarily
+   * permanent or preferred over the branch path.
+   */
+  getCheckoutFallbackRef?(ref: ReviewTargetRef): CheckoutFallbackRef | null;
+
+  /** Return the local fallback branch name for branch consistency checks. */
+  getCheckoutFallbackBranch?(target: CheckoutBranchTarget): string | null;
+
+  /** Format a provider-specific error when source branch and fallback checkout both fail. */
+  formatCheckoutFallbackError?(target: ReviewTarget, sourceError: unknown, fallbackError: unknown): Error;
 
   /**
    * Submit a pull request review batch with inline comments and optional body.
