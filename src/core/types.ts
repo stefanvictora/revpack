@@ -168,8 +168,8 @@ export interface NewFinding {
   body: string;
   /** Severity for prioritization. */
   severity: Severity;
-  /** Category tag. */
-  category: FindingCategory;
+  /** Category tag. Prefer FindingCategory values, but allow custom labels from agents. */
+  category: string;
 }
 
 /**

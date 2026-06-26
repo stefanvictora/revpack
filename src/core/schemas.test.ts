@@ -169,7 +169,7 @@ describe('newFindingSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects invalid category', () => {
+  it('accepts custom non-empty categories', () => {
     const result = newFindingSchema.safeParse({
       oldPath: 'src/App.java',
       newPath: 'src/App.java',
@@ -177,6 +177,18 @@ describe('newFindingSchema', () => {
       body: 'Test',
       severity: 'high',
       category: 'bug',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects empty category', () => {
+    const result = newFindingSchema.safeParse({
+      oldPath: 'src/App.java',
+      newPath: 'src/App.java',
+      newLine: 1,
+      body: 'Test',
+      severity: 'high',
+      category: '',
     });
     expect(result.success).toBe(false);
   });
@@ -349,7 +361,12 @@ describe('findingCategorySchema', () => {
     }
   });
 
-  it('rejects unknown categories', () => {
-    expect(findingCategorySchema.safeParse('bug').success).toBe(false);
+  it('accepts custom non-empty categories', () => {
+    expect(findingCategorySchema.safeParse('bug').success).toBe(true);
+  });
+
+  it('rejects empty categories', () => {
+    expect(findingCategorySchema.safeParse('').success).toBe(false);
+    expect(findingCategorySchema.safeParse('   ').success).toBe(false);
   });
 });

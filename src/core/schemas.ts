@@ -15,18 +15,7 @@ export const reviewTargetRefSchema = z.object({
 
 export const severitySchema = z.enum(['blocker', 'high', 'medium', 'low', 'nit']);
 
-export const findingCategorySchema = z.enum([
-  'security',
-  'correctness',
-  'performance',
-  'testing',
-  'architecture',
-  'style',
-  'documentation',
-  'naming',
-  'error-handling',
-  'general',
-]);
+export const findingCategorySchema = z.string().trim().min(1);
 
 export const newFindingSchema = z
   .object({

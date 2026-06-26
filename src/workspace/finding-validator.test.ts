@@ -239,21 +239,39 @@ describe('validateFindings', () => {
       expect(result.errors[0].message).toContain('(at )');
     });
 
-    it('rejects invalid category', () => {
+    it('accepts custom non-empty categories', () => {
       const findings = [
         {
           oldPath: 'src/App.java',
           newPath: 'src/App.java',
           newLine: 2,
-          body: 'Bad category',
+          body: 'Custom category',
           severity: 'high',
           category: 'bug',
         },
       ];
 
       const result = validateFindings(findings, makeLineMap());
+      expect(result.errors).toHaveLength(0);
+      expect(result.valid).toEqual(findings);
+    });
+
+    it('rejects empty category', () => {
+      const findings = [
+        {
+          oldPath: 'src/App.java',
+          newPath: 'src/App.java',
+          newLine: 2,
+          body: 'Empty category',
+          severity: 'high',
+          category: '',
+        },
+      ];
+
+      const result = validateFindings(findings, makeLineMap());
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain('Schema error');
+      expect(result.errors[0].message).toContain('(at 0.category)');
     });
 
     it('reports schema errors at the failing finding index', () => {

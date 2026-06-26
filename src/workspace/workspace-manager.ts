@@ -1505,18 +1505,9 @@ const NEW_FINDINGS_JSON_SCHEMA = {
       severity: { type: 'string', enum: ['blocker', 'high', 'medium', 'low', 'nit'] },
       category: {
         type: 'string',
-        enum: [
-          'security',
-          'correctness',
-          'performance',
-          'testing',
-          'architecture',
-          'style',
-          'documentation',
-          'naming',
-          'error-handling',
-          'general',
-        ],
+        minLength: 1,
+        description:
+          'Finding category tag. Prefer: security, correctness, performance, testing, architecture, style, documentation, naming, error-handling, general.',
       },
     },
     anyOf: [{ required: ['oldLine'] }, { required: ['newLine'] }],
