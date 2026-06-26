@@ -125,6 +125,10 @@ describe('ReviewOrchestrator', () => {
   let fetchCommitSpy: MockInstance<(...args: any[]) => any>;
   let fetchSpy: MockInstance<(...args: any[]) => any>;
   let fetchBranchSpy: MockInstance<(...args: any[]) => any>;
+  let fetchBranchFromUrlSpy: MockInstance<(...args: any[]) => any>;
+  let fetchRefSpy: MockInstance<(...args: any[]) => any>;
+  let isGitRepoSpy: MockInstance<(...args: any[]) => any>;
+  let switchBranchSpy: MockInstance<(...args: any[]) => any>;
   let diffForReviewSpy: MockInstance<(...args: any[]) => any>;
   let diffSpy: MockInstance<(...args: any[]) => any>;
 
@@ -140,6 +144,10 @@ describe('ReviewOrchestrator', () => {
     fetchCommitSpy = vi.spyOn(GitHelper.prototype, 'fetchCommit').mockResolvedValue(undefined);
     fetchSpy = vi.spyOn(GitHelper.prototype, 'fetch').mockResolvedValue(undefined);
     fetchBranchSpy = vi.spyOn(GitHelper.prototype, 'fetchBranch').mockResolvedValue(undefined);
+    fetchBranchFromUrlSpy = vi.spyOn(GitHelper.prototype, 'fetchBranchFromUrl').mockResolvedValue(undefined);
+    fetchRefSpy = vi.spyOn(GitHelper.prototype, 'fetchRef').mockResolvedValue(undefined);
+    isGitRepoSpy = vi.spyOn(GitHelper.prototype, 'isGitRepo').mockResolvedValue(true);
+    switchBranchSpy = vi.spyOn(GitHelper.prototype, 'switchBranch').mockResolvedValue(undefined);
     diffForReviewSpy = vi.spyOn(GitHelper.prototype, 'diffForReview').mockResolvedValue(localPatch());
     diffSpy = vi.spyOn(GitHelper.prototype, 'diff').mockResolvedValue(localPatch());
   });
@@ -153,6 +161,10 @@ describe('ReviewOrchestrator', () => {
     fetchCommitSpy.mockRestore();
     fetchSpy.mockRestore();
     fetchBranchSpy.mockRestore();
+    fetchBranchFromUrlSpy.mockRestore();
+    fetchRefSpy.mockRestore();
+    isGitRepoSpy.mockRestore();
+    switchBranchSpy.mockRestore();
     diffForReviewSpy.mockRestore();
     diffSpy.mockRestore();
     await fs.rm(tmpDir, { recursive: true, force: true });
@@ -197,6 +209,87 @@ describe('ReviewOrchestrator', () => {
       await orchestrator.updateDescription('!42', 'New description', 'group/project');
 
       expect(mockProvider.updateDescription).toHaveBeenCalledWith(targetRef, 'New description');
+    });
+  });
+
+  describe('checkout', () => {
+    it('checks out a GitLab MR through the normal source branch path', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.checkout('!42', 'group/project');
+
+      expect(result.branch).toBe('feature/test');
+      expect(fetchBranchSpy).toHaveBeenCalledWith('feature/test');
+      expect(fetchRefSpy).not.toHaveBeenCalled();
+      expect(switchBranchSpy).toHaveBeenCalledWith('feature/test');
+    });
+
+    it('falls back to the GitLab MR head ref when the source branch fetch fails', async () => {
+      fetchBranchSpy.mockRejectedValueOnce(new Error('could not find remote ref feature/test'));
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.checkout('!42', 'group/project');
+
+      expect(result.branch).toBe('revpack/mr-42');
+      expect(fetchBranchSpy).toHaveBeenCalledWith('feature/test');
+      expect(fetchRefSpy).toHaveBeenCalledWith('origin', 'refs/merge-requests/42/head', 'revpack/mr-42');
+      expect(switchBranchSpy).toHaveBeenCalledWith('revpack/mr-42');
+    });
+
+    it('fails with a GitLab-specific message when source branch and MR head ref fetches fail', async () => {
+      fetchBranchSpy.mockRejectedValueOnce(new Error('could not find remote ref feature/test'));
+      fetchRefSpy.mockRejectedValueOnce(new Error('could not find remote ref refs/merge-requests/42/head'));
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      const error = await captureError(orchestrator.checkout('!42', 'group/project'));
+
+      expect(error.message).toContain('Could not check out GitLab merge request !42.');
+      expect(error.message).toContain('The source branch "feature/test" may have been deleted.');
+      expect(error.message).toContain('refs/merge-requests/42/head');
+      expect(error.message).toContain('GitLab 16.6 and newer');
+      expect(error.message).toContain('14 days after merge or close');
+      expect(error.message).toContain('unless the source branch or head commit is still reachable');
+      expect(switchBranchSpy).not.toHaveBeenCalled();
+    });
+
+    it('keeps GitHub checkout on the provider source refspec path', async () => {
+      const githubRef: ReviewTargetRef = {
+        provider: 'github',
+        repository: 'owner/project',
+        targetType: 'pull_request',
+        targetId: '58',
+      };
+      const githubTarget: ReviewTarget = {
+        ...githubRef,
+        title: 'Test PR',
+        description: 'Test',
+        author: 'alice',
+        state: 'open',
+        sourceBranch: 'feature/github',
+        targetBranch: 'main',
+        webUrl: 'https://github.com/owner/project/pull/58',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        labels: [],
+        diffRefs: { baseSha: 'aaa', headSha: 'bbb', startSha: 'aaa' },
+      };
+      const githubProvider: ReviewProvider = {
+        ...mockProvider,
+        providerType: 'github',
+        resolveTarget: vi.fn().mockResolvedValue(githubRef),
+        getTargetSnapshot: vi.fn().mockResolvedValue(githubTarget),
+        getCloneUrl: vi.fn().mockReturnValue('https://github.com/owner/project.git'),
+        getSourceRefspec: vi.fn().mockReturnValue('refs/pull/58/head'),
+      };
+      const orchestrator = new ReviewOrchestrator({ provider: githubProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.checkout('58', 'owner/project');
+
+      expect(result.branch).toBe('feature/github');
+      expect(fetchRefSpy).toHaveBeenCalledWith('origin', 'refs/pull/58/head', 'feature/github');
+      expect(fetchBranchSpy).not.toHaveBeenCalled();
+      expect(fetchBranchFromUrlSpy).not.toHaveBeenCalled();
+      expect(switchBranchSpy).toHaveBeenCalledWith('feature/github');
     });
   });
 
@@ -1016,6 +1109,15 @@ describe('ReviewOrchestrator', () => {
       expect(result).toBeNull();
     });
 
+    it('returns null on the GitLab MR head fallback branch', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      currentBranchSpy.mockResolvedValue('revpack/mr-42');
+      const result = await orchestrator.checkBranchMismatch();
+      expect(result).toBeNull();
+    });
+
     it('returns mismatch info when branch differs', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -1104,6 +1206,17 @@ describe('ReviewOrchestrator', () => {
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await expect(orchestrator.prepare('!42', 'group/project')).rejects.toThrow('does not match the MR source branch');
+    });
+
+    it('allows prepare on the GitLab MR head fallback branch when HEAD matches', async () => {
+      currentBranchSpy.mockResolvedValue('revpack/mr-42');
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.bundleState.local.branch).toBe('revpack/mr-42');
+      expect(result.bundleState.local.matchesTargetHead).toBe(true);
+      expect(result.bundleState.local.matchesTargetSourceBranch).toBe(false);
     });
 
     it('failed prepare does not modify existing bundle files', async () => {

@@ -43,6 +43,7 @@ revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42
 Notes:
 
 - In an existing repo, `checkout` requires a clean working tree.
+- For GitLab MRs whose source branch was deleted, `checkout` can fall back to `refs/merge-requests/<iid>/head` while GitLab still exposes it. GitLab 16.6 and newer removes that MR head ref 14 days after the MR is merged or closed.
 - `--prepare` is still accepted for compatibility, but prepare now runs by default.
 - By default, clones use HTTPS.
 - To clone with SSH, set `sshClone: true` in the profile. Git handles SSH keys and passphrase prompts as usual.
