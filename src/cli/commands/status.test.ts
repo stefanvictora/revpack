@@ -97,6 +97,32 @@ describe('buildStatusNextLines', () => {
     ).toEqual(['Next:', '  revpack publish checkpoint']);
   });
 
+  it('tells the user to push and prepare when the local checkout is ahead of the latest head', () => {
+    expect(
+      buildStatusNextLines({
+        repliesReady: false,
+        findingsReady: false,
+        summaryReady: false,
+        reviewReady: false,
+        checkpointDue: true,
+        checkoutRelation: 'ahead',
+      }),
+    ).toEqual(['Next:', '  Push local commits, then run:', '  revpack prepare']);
+  });
+
+  it('keeps checkpoint guidance when the local checkout matches the latest head', () => {
+    expect(
+      buildStatusNextLines({
+        repliesReady: false,
+        findingsReady: false,
+        summaryReady: false,
+        reviewReady: false,
+        checkpointDue: true,
+        checkoutRelation: 'current',
+      }),
+    ).toEqual(['Next:', '  revpack publish checkpoint']);
+  });
+
   it('shows no pending publish action when nothing is ready or due', () => {
     expect(
       buildStatusNextLines({

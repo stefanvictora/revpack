@@ -101,12 +101,14 @@ export function registerStatusCommand(program: Command): void {
 
           // Local checkout info
           const git = new GitHelper(process.cwd());
+          let checkoutRelation: CheckoutRelation = 'unknown';
           try {
             const [currentHead, currentBranch] = await Promise.all([git.headSha(), git.currentBranch()]);
             console.log(chalk.dim('─ Checkout ─'));
             console.log(`  ${chalk.dim('Branch:')}           ${currentBranch}`);
             console.log(`  ${chalk.dim('Current HEAD:')}     ${currentHead.slice(0, 7)}`);
-            const status = await formatCheckoutState(git, comparisonTargetHead, currentHead, targetKind);
+            checkoutRelation = await compareCheckoutToTargetHead(git, comparisonTargetHead, currentHead);
+            const status = formatCheckoutState(checkoutRelation, comparisonTargetHead, targetKind);
             console.log(`  ${chalk.dim(`Status:`)}           ${status}`);
           } catch {
             // Not a git repo — skip local checkout info
@@ -168,6 +170,7 @@ export function registerStatusCommand(program: Command): void {
               summaryReady: hasPublishableSummary,
               reviewReady: hasPublishableReview,
               checkpointDue: needsCheckpoint,
+              checkoutRelation,
             })) {
               console.log(formatGuidanceLine(line));
             }
@@ -223,6 +226,7 @@ async function countJsonArray(filePath: string): Promise<number> {
 }
 
 type CheckpointState = 'none' | 'current' | 'outdated' | 'unknown';
+type CheckoutRelation = 'current' | 'ahead' | 'behind' | 'diverged' | 'unknown';
 
 function getCheckpointState(bundleState: {
   prepare: {
@@ -272,24 +276,38 @@ function formatBundleFreshnessState(
     : chalk.green('current — matches latest PR head');
 }
 
-async function formatCheckoutState(
+async function compareCheckoutToTargetHead(
   git: GitHelper,
   comparisonTargetHead: string,
   currentHead: string,
-  targetKind: string,
-) {
+): Promise<CheckoutRelation> {
   const targetIsAncestorOfCurrent = await git.isAncestor(comparisonTargetHead, currentHead).catch(() => false);
   const currentIsAncestorOfTarget = await git.isAncestor(currentHead, comparisonTargetHead).catch(() => false);
   if (currentHead === comparisonTargetHead) {
-    return chalk.green(`current — matches latest ${targetKind} head`);
+    return 'current';
   }
   if (targetIsAncestorOfCurrent) {
-    return chalk.yellow(`ahead — local HEAD is not in the ${targetKind} yet`);
+    return 'ahead';
   }
   if (currentIsAncestorOfTarget) {
-    return chalk.yellow(`behind — latest ${targetKind} head is ${comparisonTargetHead.slice(0, 7)}`);
+    return 'behind';
   }
-  return chalk.yellow(`diverged — latest ${targetKind} head is ${comparisonTargetHead.slice(0, 7)}`);
+  return 'diverged';
+}
+
+function formatCheckoutState(relation: CheckoutRelation, comparisonTargetHead: string, targetKind: string): string {
+  switch (relation) {
+    case 'current':
+      return chalk.green(`current — matches latest ${targetKind} head`);
+    case 'ahead':
+      return chalk.yellow(`ahead — local HEAD is not in the ${targetKind} yet`);
+    case 'behind':
+      return chalk.yellow(`behind — latest ${targetKind} head is ${comparisonTargetHead.slice(0, 7)}`);
+    case 'diverged':
+      return chalk.yellow(`diverged — latest ${targetKind} head is ${comparisonTargetHead.slice(0, 7)}`);
+    case 'unknown':
+      return chalk.yellow('unknown');
+  }
 }
 
 function isPublishableOutputState(state: string): boolean {
@@ -302,7 +320,12 @@ export function buildStatusNextLines(options: {
   summaryReady: boolean;
   reviewReady: boolean;
   checkpointDue: boolean;
+  checkoutRelation?: CheckoutRelation;
 }): string[] {
+  if (options.checkoutRelation === 'ahead') {
+    return ['Next:', '  Push local commits, then run:', '  revpack prepare'];
+  }
+
   const contentReady = [options.repliesReady, options.findingsReady, options.summaryReady, options.reviewReady].filter(
     Boolean,
   ).length;
