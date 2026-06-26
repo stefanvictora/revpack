@@ -27,7 +27,7 @@ export function registerStatusCommand(program: Command): void {
 
         // Compute output states
         const summaryState = await ws.getOutputState('summary');
-        const reviewState = await ws.getOutputState('review');
+        const reviewState = await ws.getPendingOutputState('review');
 
         if (opts.json) {
           const target = ref
@@ -77,9 +77,11 @@ export function registerStatusCommand(program: Command): void {
 
           console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${t.title}`));
           console.log(`  ${chalk.dim('Repository:')} ${t.repository}`);
+          console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
           console.log(`  ${chalk.dim('Author:')}     @${t.author}`);
           console.log(`  ${chalk.dim('Branch:')}     ${t.sourceBranch} → ${t.targetBranch}`);
-          console.log(`  ${chalk.dim('State:')}      ${stateColor(t.state)}`);
+          console.log(`  ${chalk.dim(`Updated:`)}    ${formatDate(t.updatedAt)}`);
+
           if (t.webUrl) {
             console.log(`  ${chalk.dim('URL:')}        ${t.webUrl}`);
           }
@@ -99,21 +101,15 @@ export function registerStatusCommand(program: Command): void {
 
           // Local checkout info
           const git = new GitHelper(process.cwd());
+          let checkoutRelation: CheckoutRelation = 'unknown';
           try {
             const [currentHead, currentBranch] = await Promise.all([git.headSha(), git.currentBranch()]);
-            const matchesTarget = currentHead === comparisonTargetHead;
-
-            console.log(chalk.dim('─ Local checkout ─'));
+            console.log(chalk.dim('─ Checkout ─'));
             console.log(`  ${chalk.dim('Branch:')}           ${currentBranch}`);
             console.log(`  ${chalk.dim('Current HEAD:')}     ${currentHead.slice(0, 7)}`);
-            if (matchesTarget) {
-              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}       ${chalk.green('yes')}`);
-            } else {
-              const isAncestor = await git.isAncestor(comparisonTargetHead).catch(() => false);
-              const relation = isAncestor ? `ahead of ${targetKind} head` : `behind ${targetKind} head`;
-              console.log(`  ${chalk.dim(`${targetKind} head:`)}          ${comparisonTargetHead.slice(0, 7)}`);
-              console.log(`  ${chalk.dim(`Matches ${targetKind}:`)}       ${chalk.yellow(`no — ${relation}`)}`);
-            }
+            checkoutRelation = await compareCheckoutToTargetHead(git, comparisonTargetHead, currentHead);
+            const status = formatCheckoutState(checkoutRelation, comparisonTargetHead, targetKind);
+            console.log(`  ${chalk.dim(`Status:`)}           ${status}`);
           } catch {
             // Not a git repo — skip local checkout info
           }
@@ -148,13 +144,6 @@ export function registerStatusCommand(program: Command): void {
           const checkpointState = getCheckpointState(bundleState);
           console.log(`  ${chalk.dim('Checkpoint:')}       ${formatCheckpointState(checkpointState)}`);
 
-          // Publish history
-          if (bundleState.publishedActions.length > 0) {
-            console.log('');
-            console.log(chalk.dim('─ Publish history ─'));
-            console.log(`  ${formatCount(bundleState.publishedActions.length, 'action')} previously published`);
-          }
-
           // Next step
           console.log('');
           const needsCheckpoint = checkpointState !== 'current';
@@ -181,6 +170,7 @@ export function registerStatusCommand(program: Command): void {
               summaryReady: hasPublishableSummary,
               reviewReady: hasPublishableReview,
               checkpointDue: needsCheckpoint,
+              checkoutRelation,
             })) {
               console.log(formatGuidanceLine(line));
             }
@@ -236,6 +226,7 @@ async function countJsonArray(filePath: string): Promise<number> {
 }
 
 type CheckpointState = 'none' | 'current' | 'outdated' | 'unknown';
+type CheckoutRelation = 'current' | 'ahead' | 'behind' | 'diverged' | 'unknown';
 
 function getCheckpointState(bundleState: {
   prepare: {
@@ -280,7 +271,52 @@ function formatBundleFreshnessState(
   targetKind: string,
 ): string {
   if (!currentTargetHead) return chalk.yellow('unknown');
-  return bundleIsOutdated ? chalk.yellow(`stale — prepared for older ${targetKind} head`) : chalk.green('current');
+  return bundleIsOutdated
+    ? chalk.yellow(`stale — prepared for older ${targetKind} head`)
+    : chalk.green(`current — matches latest ${targetKind} head`);
+}
+
+export async function compareCheckoutToTargetHead(
+  git: GitHelper,
+  comparisonTargetHead: string,
+  currentHead: string,
+): Promise<CheckoutRelation> {
+  if (currentHead === comparisonTargetHead) {
+    return 'current';
+  }
+
+  const [targetExists, currentExists] = await Promise.all([
+    git.hasCommit(comparisonTargetHead),
+    git.hasCommit(currentHead),
+  ]);
+  if (!targetExists || !currentExists) {
+    return 'unknown';
+  }
+
+  const targetIsAncestorOfCurrent = await git.isAncestor(comparisonTargetHead, currentHead);
+  const currentIsAncestorOfTarget = await git.isAncestor(currentHead, comparisonTargetHead);
+  if (targetIsAncestorOfCurrent) {
+    return 'ahead';
+  }
+  if (currentIsAncestorOfTarget) {
+    return 'behind';
+  }
+  return 'diverged';
+}
+
+function formatCheckoutState(relation: CheckoutRelation, comparisonTargetHead: string, targetKind: string): string {
+  switch (relation) {
+    case 'current':
+      return chalk.green(`current — matches latest ${targetKind} head`);
+    case 'ahead':
+      return chalk.yellow(`ahead — local HEAD is not in the ${targetKind} yet`);
+    case 'behind':
+      return chalk.yellow(`behind — latest ${targetKind} head is ${comparisonTargetHead.slice(0, 7)}`);
+    case 'diverged':
+      return chalk.yellow(`diverged — latest ${targetKind} head is ${comparisonTargetHead.slice(0, 7)}`);
+    case 'unknown':
+      return chalk.yellow('unknown');
+  }
 }
 
 function isPublishableOutputState(state: string): boolean {
@@ -293,7 +329,12 @@ export function buildStatusNextLines(options: {
   summaryReady: boolean;
   reviewReady: boolean;
   checkpointDue: boolean;
+  checkoutRelation?: CheckoutRelation;
 }): string[] {
+  if (options.checkoutRelation === 'ahead') {
+    return ['Next:', '  Push local commits, then run:', '  revpack prepare'];
+  }
+
   const contentReady = [options.repliesReady, options.findingsReady, options.summaryReady, options.reviewReady].filter(
     Boolean,
   ).length;
@@ -375,8 +416,4 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
-}
-
-function formatCount(count: number, singular: string, plural = `${singular}s`): string {
-  return `${count} ${count === 1 ? singular : plural}`;
 }

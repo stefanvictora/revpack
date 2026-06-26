@@ -203,7 +203,7 @@ export class ReviewOrchestrator {
           `Cannot prepare an agent-ready bundle because the local checkout is ahead of the ${formatTargetKind(target)} head.\n\n` +
             `${formatTargetKind(target)} head:     ${mrHeadSha}\n` +
             `Local HEAD:  ${localHeadSha}\n\n` +
-            `Push your commits or reset/switch to the ${formatTargetKind(target)} head, then run:\n\n` +
+            `Push your commits or reset/switch to the ${formatTargetKind(target)} head, then run:\n` +
             `  revpack prepare`,
         );
       } else {

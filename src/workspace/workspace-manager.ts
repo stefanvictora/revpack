@@ -46,7 +46,6 @@ const OUTPUT_DEFAULTS: readonly [filename: string, content: string][] = [
 
 const OUTPUT_STATE_KEYS = {
   'summary.md': 'summary',
-  'review.md': 'review',
 } as const;
 
 interface InstructionRoute {
@@ -365,9 +364,9 @@ export class WorkspaceManager {
         digest: prepareSummary.current.threadsDigest,
         items: threadItems,
       },
-      outputs: previousOutputs ?? {
-        summary: { path: '.revpack/outputs/summary.md' },
-        review: { path: '.revpack/outputs/review.md' },
+      outputs: {
+        summary: previousOutputs?.summary ?? { path: '.revpack/outputs/summary.md' },
+        review: { path: previousOutputs?.review.path ?? '.revpack/outputs/review.md' },
       },
       publishedActions: previousActions ?? [],
       paths: {
@@ -400,23 +399,15 @@ export class WorkspaceManager {
   }
 
   /**
-   * Update the publish hash for an output file in bundle.json.
+   * Update the publish hash for a hash-tracked output file in bundle.json.
    */
-  async updateOutputPublishState(
-    outputKey: 'summary' | 'review',
-    hash: string,
-    targetHeadSha: string,
-    providerNoteId?: string,
-  ): Promise<boolean> {
+  async updateOutputPublishState(outputKey: 'summary', hash: string, targetHeadSha: string): Promise<boolean> {
     const state = await this.loadBundleState();
     if (!state) return false;
     const entry = state.outputs[outputKey];
     entry.lastPublishedHash = hash;
     entry.lastPublishedAt = new Date().toISOString();
     entry.lastPublishedTargetHeadSha = targetHeadSha;
-    if (providerNoteId !== undefined) {
-      entry.providerNoteId = providerNoteId;
-    }
     await this.saveBundleState(state);
     return true;
   }
@@ -424,7 +415,7 @@ export class WorkspaceManager {
   /**
    * Compute the current state of an output file relative to its publish hash.
    */
-  async getOutputState(outputKey: 'summary' | 'review'): Promise<OutputState> {
+  async getOutputState(outputKey: 'summary'): Promise<OutputState> {
     const state = await this.loadBundleState();
     if (!state) return 'empty';
     const entry = state.outputs[outputKey];
@@ -439,6 +430,22 @@ export class WorkspaceManager {
     if (!entry.lastPublishedHash) return 'pending';
     const currentHash = computeContentHash(content);
     return currentHash === entry.lastPublishedHash ? 'published' : 'modified since publish';
+  }
+
+  /**
+   * Compute whether a queue-style output file currently has content to publish.
+   */
+  async getPendingOutputState(outputKey: 'review'): Promise<Extract<OutputState, 'empty' | 'pending'>> {
+    const state = await this.loadBundleState();
+    if (!state) return 'empty';
+    const entry = state.outputs[outputKey];
+    const filePath = path.resolve(this.workingDir, entry.path);
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      return content.trim() ? 'pending' : 'empty';
+    } catch {
+      return 'empty';
+    }
   }
 
   /**
@@ -468,10 +475,10 @@ export class WorkspaceManager {
   }
 
   /**
-   * Prefill an output file with content from the last published review note,
-   * but only if the file is currently empty. This lets agents see and update
-   * existing content in incremental mode without triggering a "changed" state
-   * on the next status check (the publish hash stays matched).
+   * Prefill an output file with published remote content, but only if the file
+   * is currently empty. This lets agents see and update existing content in
+   * incremental mode without triggering a "changed" state on the next status
+   * check (the publish hash stays matched).
    */
   async prefillOutputIfEmpty(filename: string, content: string): Promise<void> {
     const filePath = path.join(this.baseDir, 'outputs', filename);

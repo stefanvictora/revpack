@@ -88,9 +88,20 @@ export function handleError(err: unknown): never {
   }
 
   if (process.env.DEBUG) {
-    console.error(err);
+    console.error('');
+    console.error(chalk.dim('Stack trace:'));
+    if (err instanceof Error && err.stack) {
+      const stackFrames = err.stack
+        .split('\n')
+        .filter((line) => /^\s+at\s/.test(line))
+        .join('\n');
+      console.error(chalk.dim(stackFrames || err.stack));
+    } else {
+      console.error(err);
+    }
   } else {
-    console.error(chalk.dim('  Set DEBUG=1 for full stack trace'));
+    console.error('');
+    console.error(chalk.dim('Set DEBUG=1 for full stack trace'));
   }
 
   process.exit(1);
