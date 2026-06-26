@@ -273,7 +273,7 @@ function formatBundleFreshnessState(
   if (!currentTargetHead) return chalk.yellow('unknown');
   return bundleIsOutdated
     ? chalk.yellow(`stale — prepared for older ${targetKind} head`)
-    : chalk.green('current — matches latest PR head');
+    : chalk.green(`current — matches latest ${targetKind} head`);
 }
 
 async function compareCheckoutToTargetHead(
