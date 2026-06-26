@@ -32,7 +32,9 @@ Use `Internal` only when the internal change is important for understanding arch
 
 Use the category that best describes the reader-relevant effect of the change.
 
-Use `Changed` for changes that alter behavior, generated output, validation, workflows, or tool behavior.
+Choose categories relative to existing product behavior, not review timing. A capability newly introduced by this MR/PR is `Added` even if it appeared during an incremental review.
+
+Use `Changed` for alterations to existing behavior, generated output, validation, workflows, or tool behavior.
 
 Use `Documentation` for human-facing documentation such as README updates, guides, or explanatory text.
 

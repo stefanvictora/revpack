@@ -48,6 +48,8 @@ Do not run slow or broad verification when a targeted command covers the change.
 
 `CHANGELOG.md` is user-facing. Follow its existing structure and category headings.
 
+Choose headings by the user-visible effect relative to existing behavior: new capabilities go under `Added`; `Changed` is for altered existing behavior, not for changes merely added during a PR/MR.
+
 Update `[Unreleased]` for user-visible changes: commands, flags, behavior, compatibility, setup, meaningful fixes, workflow documentation, or deprecations.
 
 `[Unreleased]` is an editable draft, not an append-only log. Add, merge, reword, move, or remove entries to keep the release note compact and coherent.
