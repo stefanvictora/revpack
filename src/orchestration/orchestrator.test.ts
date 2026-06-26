@@ -264,6 +264,32 @@ describe('ReviewOrchestrator', () => {
       expect(switchBranchSpy).toHaveBeenCalledWith('revpack/mr-42');
     });
 
+    it('fetches the fallback ref from the head repository when source branch fetch from fork fails', async () => {
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...mockTarget,
+        headRepository: 'alice/project',
+      });
+      (mockProvider.getCloneUrl as ReturnType<typeof vi.fn>).mockImplementation(
+        (repo: string) => `https://gitlab.example.com/${repo}.git`,
+      );
+      fetchBranchFromUrlSpy.mockRejectedValueOnce(new Error('could not find remote ref feature/test'));
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.checkout('!42', 'group/project');
+
+      expect(result.branch).toBe('revpack/mr-42');
+      expect(fetchBranchFromUrlSpy).toHaveBeenCalledWith(
+        'https://gitlab.example.com/alice/project.git',
+        'feature/test',
+      );
+      expect(fetchRefSpy).toHaveBeenCalledWith(
+        'https://gitlab.example.com/alice/project.git',
+        'refs/merge-requests/42/head',
+        'revpack/mr-42',
+      );
+      expect(switchBranchSpy).toHaveBeenCalledWith('revpack/mr-42');
+    });
+
     it('fails with a GitLab-specific message when source branch and MR head ref fetches fail', async () => {
       fetchBranchSpy.mockRejectedValueOnce(new Error('could not find remote ref feature/test'));
       fetchRefSpy.mockRejectedValueOnce(new Error('could not find remote ref refs/merge-requests/42/head'));
@@ -1186,6 +1212,20 @@ describe('ReviewOrchestrator', () => {
       currentBranchSpy.mockResolvedValue('wrong-branch');
 
       await expect(orchestrator.prepare(undefined, 'group/project')).rejects.toThrow(/Branch mismatch|does not match/);
+    });
+
+    it('resumes bundle on the provider fallback branch', async () => {
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockClear();
+
+      currentBranchSpy.mockResolvedValue('revpack/mr-42');
+
+      await orchestrator.open(undefined, 'group/project');
+
+      expect(mockProvider.getTargetSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({ targetId: '42', repository: 'group/project' }),
+      );
     });
 
     it('throws when explicit ref is provided on wrong branch', async () => {

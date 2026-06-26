@@ -671,7 +671,7 @@ export class ReviewOrchestrator {
       // If we can determine the current branch, check it matches
       try {
         const currentBranch = await this.git.currentBranch();
-        if (currentBranch && currentBranch !== 'HEAD' && currentBranch !== bundleState.target.sourceBranch) {
+        if (currentBranch && !this.isAllowedCheckoutBranch(bundleState.target, currentBranch)) {
           throw new Error(
             `Branch mismatch: current branch "${currentBranch}" does not match ` +
               `the bundle's ${bundleTargetKind} source branch "${bundleState.target.sourceBranch}" (${bundleTargetDisplayId}).\n` +
@@ -824,11 +824,16 @@ export class ReviewOrchestrator {
     }
 
     try {
-      await this.git.fetchRef('origin', fallback.remoteRef, fallback.localBranch);
+      const remote = this.checkoutRemote(target);
+      await this.git.fetchRef(remote, fallback.remoteRef, fallback.localBranch);
       return fallback.localBranch;
     } catch (fallbackError) {
       throw this.checkoutFallbackError(target, sourceError, fallbackError);
     }
+  }
+
+  private checkoutRemote(target: ReviewTarget): string {
+    return target.headRepository ? this.provider.getCloneUrl(target.headRepository) : 'origin';
   }
 
   private checkoutFallbackError(target: ReviewTarget, sourceError: unknown, fallbackError: unknown): Error {
