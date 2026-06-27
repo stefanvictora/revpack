@@ -398,6 +398,45 @@ describe('ReviewOrchestrator', () => {
       expect(fetchBranchSpy).toHaveBeenCalledWith('main', 'origin', { depth: 1, noTags: true, progress: true });
     });
 
+    it('fetches missing fork pull request base commits from the base repository', async () => {
+      const forkTarget = { ...mockTarget, headRepository: 'alice/project' };
+      (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(forkTarget);
+      (mockProvider.getCloneUrl as ReturnType<typeof vi.fn>).mockImplementation(
+        (repo: string) => `https://gitlab.example.com/${repo}.git`,
+      );
+      hasCommitSpy
+        .mockResolvedValueOnce(false) // initial check baseSha
+        .mockResolvedValueOnce(true) // initial check headSha
+        .mockResolvedValueOnce(false) // after fetchCommit from origin: baseSha still missing
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false) // after fetchCommit from base repo: baseSha still missing
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false) // after fetchBranch(targetBranch) from origin: still missing
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true) // after fetchBranch(targetBranch) from base repo: resolved
+        .mockResolvedValueOnce(true);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project', { onProgress: vi.fn() });
+
+      expect(fetchCommitSpy).toHaveBeenCalledWith('aaa', 'origin', { depth: 1, noTags: true, progress: true });
+      expect(fetchCommitSpy).toHaveBeenCalledWith('aaa', 'https://gitlab.example.com/group/project.git', {
+        depth: 1,
+        noTags: true,
+        progress: true,
+      });
+      expect(fetchBranchSpy).toHaveBeenCalledWith('main', 'origin', {
+        depth: 1,
+        noTags: true,
+        progress: true,
+      });
+      expect(fetchBranchSpy).toHaveBeenCalledWith('main', 'https://gitlab.example.com/group/project.git', {
+        depth: 1,
+        noTags: true,
+        progress: true,
+      });
+    });
+
     it('falls through to full fetch when branch fetches do not resolve commits', async () => {
       // All individual fetches fail; full fetch resolves.
       hasCommitSpy
