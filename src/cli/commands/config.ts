@@ -17,10 +17,9 @@ import { handleError, outputJson } from '../helpers.js';
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
     .command('config')
-    .description('View or update configuration')
-    .action(async () => {
-      // `revpack config` behaves like `revpack config show`
-      await showAction({ json: false, sources: false });
+    .description('Manage configuration')
+    .action(function (this: Command) {
+      this.outputHelp();
     });
 
   // ─── config show ─────────────────────────────────────────
@@ -456,6 +455,16 @@ export function registerConfigCommand(program: Command): void {
         handleError(err);
       }
     });
+
+  configCmd.addHelpText(
+    'after',
+    `
+Common tasks:
+  revpack config show
+  revpack config unset <key> --profile <name>
+  revpack config profile delete <name>
+`,
+  );
 }
 
 // ─── Helpers ─────────────────────────────────────────────

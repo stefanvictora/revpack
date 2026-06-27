@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Relaxed finding category validation so `revpack publish findings` accepts any non-empty category while still recommending the standard category set.
+- Changed bare `revpack config` to print configuration help instead of acting as an alias for `revpack config show`.
 
 ### Fixed
 
