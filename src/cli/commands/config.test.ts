@@ -83,7 +83,23 @@ describe('config setup provider prompts', () => {
 
   it('validates provider URL input before deriving provider defaults', () => {
     expect(normalizeProviderUrlInput(' https://gitlab.com ')).toBe('https://gitlab.com');
+    expect(normalizeProviderUrlInput('http://gitlab.example.com')).toBe('http://gitlab.example.com');
+    expect(normalizeProviderUrlInput('HTTPS://GITLAB.COM/')).toBe('https://gitlab.com');
     expect(normalizeProviderUrlInput('')).toBe('');
+  });
+
+  it('rejects provider URLs that are not HTTP(S) origins', () => {
+    for (const value of [
+      'ssh://gitlab.com',
+      'https://gitlab.com/api/v4',
+      'https://gitlab.com?tab=projects',
+      'https://gitlab.com#projects',
+    ]) {
+      expect(() => normalizeProviderUrlInput(value)).toThrow(ConfigError);
+      expect(() => normalizeProviderUrlInput(value)).toThrow(
+        `Invalid provider URL: "${value}". Expected an absolute URL like "https://gitlab.com".`,
+      );
+    }
   });
 
   it('explains bare provider hosts need a URL scheme', () => {

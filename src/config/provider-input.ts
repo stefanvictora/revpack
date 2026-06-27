@@ -14,15 +14,26 @@ export function normalizeProviderUrlInput(value: string): string {
   const url = value.trim();
   if (!url) return '';
 
+  let parsed: URL;
   try {
-    new URL(url);
-    return url;
+    parsed = new URL(url);
   } catch {
     const hint = /^[\w.-]+(?::\d+)?(?:\/.*)?$/.test(url) ? ` Include the scheme, for example "https://${url}".` : '';
     throw new ConfigError(
       `Invalid provider URL: "${value}". Expected an absolute URL like "https://gitlab.com".${hint}`,
     );
   }
+
+  if (
+    (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+    parsed.pathname !== '/' ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new ConfigError(`Invalid provider URL: "${value}". Expected an absolute URL like "https://gitlab.com".`);
+  }
+
+  return parsed.origin;
 }
 
 export function inferProviderFromUrl(value: string): ProviderType | null {
