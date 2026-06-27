@@ -264,7 +264,7 @@ describe('ReviewOrchestrator', () => {
       expect(switchBranchSpy).toHaveBeenCalledWith('revpack/mr-42');
     });
 
-    it('fetches the fallback ref from the head repository when source branch fetch from fork fails', async () => {
+    it('fetches the fallback ref from the base repository when source branch fetch from fork fails', async () => {
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue({
         ...mockTarget,
         headRepository: 'alice/project',
@@ -283,7 +283,7 @@ describe('ReviewOrchestrator', () => {
         'feature/test',
       );
       expect(fetchRefSpy).toHaveBeenCalledWith(
-        'https://gitlab.example.com/alice/project.git',
+        'https://gitlab.example.com/group/project.git',
         'refs/merge-requests/42/head',
         'revpack/mr-42',
       );

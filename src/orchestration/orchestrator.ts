@@ -833,7 +833,7 @@ export class ReviewOrchestrator {
   }
 
   private checkoutRemote(target: ReviewTarget): string {
-    return target.headRepository ? this.provider.getCloneUrl(target.headRepository) : 'origin';
+    return target.headRepository ? this.provider.getCloneUrl(target.repository) : 'origin';
   }
 
   private checkoutFallbackError(target: ReviewTarget, sourceError: unknown, fallbackError: unknown): Error {
