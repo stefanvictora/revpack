@@ -13,6 +13,7 @@ import type {
   DoctorResult,
 } from './types.js';
 import { ProfileResolver, getProfileRemotePatterns } from './profile-resolver.js';
+import { isTokenEnvResolved } from './provider-input.js';
 
 export const CONFIG_DIR = path.join(os.homedir(), '.config', 'revpack');
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
@@ -117,9 +118,7 @@ export async function loadDisplayConfig(remoteUrls: string[], explicitProfile?: 
     explicitProfile,
   );
 
-  const tokenResolved = profile.tokenEnv
-    ? Boolean(process.env[profile.tokenEnv] && process.env[profile.tokenEnv]!.length > 0)
-    : false;
+  const tokenResolved = profile.tokenEnv ? isTokenEnvResolved(profile.tokenEnv) : false;
 
   return {
     profileName,
@@ -251,6 +250,14 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
 // ─── Re-exports ──────────────────────────────────────────
 
 export { ProfileResolver, getProfileRemotePatterns } from './profile-resolver.js';
+export {
+  deriveProfileNameFromProviderUrl,
+  inferProviderFromUrl,
+  isManagedCloudProvider,
+  isTokenEnvResolved,
+  normalizeProviderInput,
+  normalizeProviderUrlInput,
+} from './provider-input.js';
 export type {
   RevpackConfig,
   RevpackProfile,

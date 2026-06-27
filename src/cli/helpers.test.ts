@@ -24,18 +24,17 @@ const { createOrchestrator, handleError } = await import('./helpers.js');
 describe('cli helpers', () => {
   let tmpDir: string;
   let cwdSpy: MockInstance<() => string>;
-  let exitSpy: MockInstance<typeof process.exit>;
   let consoleErrorSpy: MockInstance<typeof console.error>;
   let debugEnv: string | undefined;
+  let previousExitCode: string | number | undefined;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revpack-helpers-'));
     cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit: 1');
-    });
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     debugEnv = process.env.DEBUG;
+    previousExitCode = process.exitCode;
+    process.exitCode = undefined;
   });
 
   afterEach(async () => {
@@ -45,8 +44,8 @@ describe('cli helpers', () => {
       process.env.DEBUG = debugEnv;
     }
     consoleErrorSpy.mockRestore();
-    exitSpy.mockRestore();
     cwdSpy.mockRestore();
+    process.exitCode = previousExitCode;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -72,11 +71,11 @@ describe('cli helpers', () => {
   it('prints the user-facing error message and debug hint without DEBUG', () => {
     delete process.env.DEBUG;
 
-    expect(() => handleError(new WorkspaceError('Cannot prepare bundle'))).toThrow('process.exit: 1');
+    handleError(new WorkspaceError('Cannot prepare bundle'));
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('[WORKSPACE_ERROR] Cannot prepare bundle'));
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Set DEBUG=1 for full stack trace'));
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(process.exitCode).toBe(1);
   });
 
   it('prints debug stack frames without repeating the error message', () => {
@@ -90,9 +89,10 @@ describe('cli helpers', () => {
       '    at async Command.<anonymous> (prepare.js:20:28)',
     ].join('\n');
 
-    expect(() => handleError(err)).toThrow('process.exit: 1');
+    handleError(err);
 
     const output = consoleErrorSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(process.exitCode).toBe(1);
     expect(output.match(/Cannot prepare bundle/g)).toHaveLength(1);
     expect(output).toContain('Stack trace:');
     expect(output).toContain('    at ReviewOrchestrator.prepare (orchestrator.js:126:23)');

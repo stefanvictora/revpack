@@ -72,7 +72,7 @@ export async function createOrchestratorAt(workingDir: string): Promise<ReviewOr
 /**
  * Standard error handler for CLI commands.
  */
-export function handleError(err: unknown): never {
+export function handleError(err: unknown): void {
   if (err instanceof ReviewAssistError) {
     console.error(chalk.red(`[${err.code}] ${err.message}`));
   } else if (err instanceof Error) {
@@ -104,7 +104,7 @@ export function handleError(err: unknown): never {
     console.error(chalk.dim('Set DEBUG=1 for full stack trace'));
   }
 
-  process.exit(1);
+  process.exitCode = 1;
 }
 
 /**

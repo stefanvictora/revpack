@@ -9,13 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Relaxed finding category validation so `revpack publish findings` accepts any non-empty category while still recommending the standard category set.
+- Changed bare `revpack config` to print profile-oriented help instead of acting as an alias for `revpack config show`, with clearer create, inspect/edit, and manage sections for profile workflows.
 
 ### Fixed
 
+- Improved `revpack config setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.
 - Fixed GitLab fallback checkout for deleted MR source branches, including follow-up bundle commands run from the fallback branch and fork fallback fetches.
 - Fixed review summary instructions so incremental MR/PR updates keep newly introduced capabilities under `Added` instead of `Changed`.
 - Fixed `revpack status` showing stale target metadata, such as an open state with merged/closed coloring, when a prepared PR/MR bundle still exists after the target changed remotely.
 - Fixed `revpack status` next-step guidance when the local checkout is ahead of the latest PR/MR head.
+- Fixed `revpack status` for GitLab branch auto-detection so authentication failures are no longer reported as "no open MR found".
+- Fixed CLI error handling on Windows to avoid a trailing libuv assertion after provider errors.
 - Fixed `revpack publish review` leaving `review.md` populated after publishing, which could republish the same review note during later incremental reviews.
 - Fixed `revpack publish all` updating the PR/MR description summary again when `revpack status` already reported the summary as published.
 - Fixed debug error logging repeating the user-facing error message before the stack frames.

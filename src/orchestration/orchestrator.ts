@@ -31,6 +31,7 @@ import {
   REVIEW_NOTE_MARKER,
   REVIEW_NOTE_FOOTER,
 } from '../workspace/checkpoint.js';
+import { ReviewAssistError } from '../core/errors.js';
 
 export interface OrchestratorOptions {
   provider: ReviewProvider;
@@ -717,6 +718,7 @@ export class ReviewOrchestrator {
         }
       } catch (err) {
         if (err instanceof Error && err.message.startsWith('Multiple open ')) throw err;
+        if (err instanceof ReviewAssistError) throw err;
       }
     }
 

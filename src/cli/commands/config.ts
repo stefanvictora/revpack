@@ -7,8 +7,14 @@ import {
   runDoctor,
   resolveProfile,
   CONFIG_FILE,
+  deriveProfileNameFromProviderUrl,
+  inferProviderFromUrl,
+  isManagedCloudProvider,
+  isTokenEnvResolved,
+  normalizeProviderInput,
+  normalizeProviderUrlInput,
 } from '../../config/index.js';
-import type { RevpackConfig, RevpackProfile } from '../../config/types.js';
+import type { ProviderType, RevpackConfig, RevpackProfile } from '../../config/types.js';
 import { CONFIG_KEYS, VALID_CONFIG_KEYS } from '../../config/keys.js';
 import { ConfigError } from '../../core/errors.js';
 import { GitHelper } from '../../workspace/git-helper.js';
@@ -17,17 +23,16 @@ import { handleError, outputJson } from '../helpers.js';
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
     .command('config')
-    .description('View or update configuration')
-    .action(async () => {
-      // `revpack config` behaves like `revpack config show`
-      await showAction({ json: false, sources: false });
+    .description('Create, inspect, and edit provider profiles')
+    .action(function (this: Command) {
+      this.outputHelp();
     });
 
   // ─── config show ─────────────────────────────────────────
 
   configCmd
     .command('show')
-    .description('Show resolved configuration for the current directory')
+    .description('Show the matching or selected profile')
     .option('--profile <name>', 'Show a specific profile')
     .option('--json', 'Output as JSON')
     .option('--sources', 'Show where each value comes from')
@@ -39,7 +44,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('setup')
-    .description('Interactive profile setup')
+    .description('Create a profile interactively')
     .action(async () => {
       try {
         const remoteUrls = await getRemoteUrlsSafe();
@@ -72,14 +77,6 @@ export function registerConfigCommand(program: Command): void {
           }
         }
 
-        const defaultProvider = detectedProvider ?? 'gitlab';
-        const defaultTokenEnv = defaultProvider === 'github' ? 'REVPACK_GITHUB_TOKEN' : 'REVPACK_GITLAB_TOKEN';
-        // github.com and gitlab.com are managed cloud services — skip enterprise-only TLS/CA prompts
-        const isCloudProvider =
-          suggestedUrl === 'https://github.com' ||
-          suggestedUrl === 'https://gitlab.com' ||
-          detectedProvider === 'github';
-
         // Use readline for interactive prompts
         const { createInterface } = await import('node:readline');
         const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -94,10 +91,26 @@ export function registerConfigCommand(program: Command): void {
           console.log('');
         }
 
-        const name =
-          (await ask(`Profile name${suggestedName ? ` [${suggestedName}]` : ''}: `)) || suggestedName || 'default';
+        const urlInput = (await ask(`Provider URL${suggestedUrl ? ` [${suggestedUrl}]` : ''}: `)) || suggestedUrl;
+        let url: string;
+        try {
+          url = normalizeProviderUrlInput(urlInput);
+        } catch (err) {
+          rl.close();
+          throw err;
+        }
+        const defaultProvider = inferProviderFromUrl(url) ?? detectedProvider ?? 'gitlab';
         const providerInput = (await ask(`Provider (gitlab/github) [${defaultProvider}]: `)) || defaultProvider;
-        const url = (await ask(`Provider URL${suggestedUrl ? ` [${suggestedUrl}]` : ''}: `)) || suggestedUrl;
+        let provider: ProviderType;
+        try {
+          provider = normalizeProviderInput(providerInput);
+        } catch (err) {
+          rl.close();
+          throw err;
+        }
+        const defaultName = deriveProfileNameFromProviderUrl(url) || suggestedName || 'default';
+        const name = (await ask(`Profile name [${defaultName}]: `)) || defaultName;
+        const defaultTokenEnv = provider === 'github' ? 'REVPACK_GITHUB_TOKEN' : 'REVPACK_GITLAB_TOKEN';
         const tokenEnv = (await ask(`Token environment variable [${defaultTokenEnv}]: `)) || defaultTokenEnv;
 
         // Derive host from URL for matching info
@@ -117,6 +130,7 @@ export function registerConfigCommand(program: Command): void {
         let caFileInput = '';
         let tlsInput = 'yes';
         let sshCloneInput = 'no';
+        const isCloudProvider = isManagedCloudProvider(url, provider);
         if (!isCloudProvider) {
           caFileInput = await ask(`Custom CA file (optional): `);
           tlsInput = (await ask(`Verify TLS certificates [yes]: `)) || 'yes';
@@ -125,13 +139,8 @@ export function registerConfigCommand(program: Command): void {
 
         rl.close();
 
-        // Validate provider
-        if (providerInput !== 'gitlab' && providerInput !== 'github') {
-          throw new ConfigError(`Invalid provider: "${providerInput}". Must be "gitlab" or "github".`);
-        }
-
         const profile: RevpackProfile = {
-          provider: providerInput,
+          provider,
         };
         if (url) profile.url = url;
         if (tokenEnv) profile.tokenEnv = tokenEnv;
@@ -156,12 +165,17 @@ export function registerConfigCommand(program: Command): void {
         await saveFileConfig(config);
 
         // Summary
+        const tokenResolved = profile.tokenEnv ? isTokenEnvResolved(profile.tokenEnv) : false;
         console.log('');
         console.log(chalk.green(`✓ Profile "${name}" created`));
         console.log('');
         console.log(`  ${chalk.dim('Provider:')}         ${profile.provider}`);
         if (profile.url) console.log(`  ${chalk.dim('URL:')}              ${profile.url}`);
-        if (profile.tokenEnv) console.log(`  ${chalk.dim('Token env:')}        ${profile.tokenEnv}`);
+        if (profile.tokenEnv) {
+          const tokenStatus = tokenResolved ? chalk.green('set') : chalk.red('missing');
+          console.log(`  ${chalk.dim('Token:')}           ${tokenStatus}`);
+          console.log(`  ${chalk.dim('Token env:')}       ${profile.tokenEnv}`);
+        }
         const matchDisplay = derivedHost ? `${derivedHost} ${chalk.dim('(derived from URL)')}` : chalk.dim('(none)');
         console.log(`  ${chalk.dim('Remote matching:')}  ${matchDisplay}`);
         if (profile.remotePatterns?.length) {
@@ -174,7 +188,7 @@ export function registerConfigCommand(program: Command): void {
         }
         console.log('');
         console.log(chalk.bold('Next:'));
-        if (profile.tokenEnv) {
+        if (profile.tokenEnv && !tokenResolved) {
           console.log(`  export ${profile.tokenEnv}=...`);
         }
         console.log(`  revpack config doctor --profile ${name}`);
@@ -187,7 +201,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('doctor')
-    .description('Check configuration health')
+    .description('Check the matching or selected profile')
     .option('--profile <name>', 'Check a specific profile')
     .option('--json', 'Output as JSON')
     .action(async (opts: { profile?: string; json?: boolean }) => {
@@ -224,7 +238,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('get <key>')
-    .description('Get a profile config value')
+    .description('Read a profile value')
     .option('--profile <name>', 'Target profile')
     .action(async (key: string, opts: { profile?: string }) => {
       try {
@@ -245,7 +259,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('set <key> <value>')
-    .description('Set a profile config value')
+    .description('Update a profile value')
     .option('--profile <name>', 'Target profile')
     .option('--current', 'Resolve profile from current git repository')
     .action(async (key: string, value: string, opts: { profile?: string; current?: boolean }) => {
@@ -269,7 +283,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('unset <key>')
-    .description('Remove a profile config value')
+    .description('Remove a profile value')
     .option('--profile <name>', 'Target profile')
     .option('--current', 'Resolve profile from current git repository')
     .action(async (key: string, opts: { profile?: string; current?: boolean }) => {
@@ -293,7 +307,7 @@ export function registerConfigCommand(program: Command): void {
 
   // ─── config profile ──────────────────────────────────────
 
-  const profileCmd = configCmd.command('profile').description('Manage configuration profiles');
+  const profileCmd = configCmd.command('profile').description('List, show, create, or delete saved profiles');
 
   // profile list
   profileCmd
@@ -365,7 +379,7 @@ export function registerConfigCommand(program: Command): void {
         }
 
         if (opts.json) {
-          const tokenResolved = profile.tokenEnv ? Boolean(process.env[profile.tokenEnv]) : false;
+          const tokenResolved = profile.tokenEnv ? isTokenEnvResolved(profile.tokenEnv) : false;
           outputJson({ name, ...profile, tokenResolved });
           return;
         }
@@ -381,7 +395,7 @@ export function registerConfigCommand(program: Command): void {
   // profile create
   profileCmd
     .command('create <name>')
-    .description('Create or update a profile')
+    .description('Create or update a profile non-interactively')
     .requiredOption('--provider <type>', 'Provider type: gitlab or github')
     .option('--url <url>', 'Provider base URL')
     .option('--token-env <name>', 'Environment variable name for the token')
@@ -454,6 +468,22 @@ export function registerConfigCommand(program: Command): void {
         handleError(err);
       }
     });
+
+  configCmd.addHelpText(
+    'after',
+    `
+Create:
+  revpack config setup
+
+Current project:
+  revpack config show
+  revpack config doctor
+
+Saved profiles:
+  revpack config profile list
+  revpack config profile delete <name>
+`,
+  );
 }
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -569,7 +599,7 @@ function printProfileDetails(profile: RevpackProfile, sources?: boolean): void {
   console.log(`  ${chalk.dim('Provider:')}    ${profile.provider}`);
   if (profile.url) console.log(`  ${chalk.dim('URL:')}         ${profile.url}`);
   if (profile.tokenEnv) {
-    const resolved = Boolean(process.env[profile.tokenEnv]);
+    const resolved = isTokenEnvResolved(profile.tokenEnv);
     const status = resolved ? chalk.green('set') : chalk.red('missing');
     console.log(`  ${chalk.dim('Token:')}       ${status}${sources ? chalk.dim(` (env:${profile.tokenEnv})`) : ''}`);
     console.log(`  ${chalk.dim('Token env:')}   ${profile.tokenEnv}`);
