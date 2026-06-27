@@ -144,6 +144,6 @@ Choose based on concrete impact, not how suspicious the code looks. If you canno
 
 ## Categories
 
-Use only: `security`, `correctness`, `performance`, `testing`, `architecture`, `style`, `documentation`, `naming`, `error-handling`, `general`.
+Prefer: `security`, `correctness`, `performance`, `testing`, `architecture`, `style`, `documentation`, `naming`, `error-handling`, `general`.
 
 ---
