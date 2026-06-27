@@ -13,7 +13,7 @@ import type {
   DoctorResult,
 } from './types.js';
 import { ProfileResolver, getProfileRemotePatterns } from './profile-resolver.js';
-import { isTokenEnvResolved } from './provider-input.js';
+import { isTokenEnvResolved, validateProviderUrlForProvider } from './provider-input.js';
 
 export const CONFIG_DIR = path.join(os.homedir(), '.config', 'revpack');
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
@@ -102,6 +102,13 @@ export async function loadRuntimeConfig(
     }
   }
 
+  if (profile.emailEnv) {
+    const value = process.env[profile.emailEnv];
+    if (value && value.length > 0) {
+      resolved.email = value;
+    }
+  }
+
   return resolved;
 }
 
@@ -119,6 +126,7 @@ export async function loadDisplayConfig(remoteUrls: string[], explicitProfile?: 
   );
 
   const tokenResolved = profile.tokenEnv ? isTokenEnvResolved(profile.tokenEnv) : false;
+  const emailResolved = profile.emailEnv ? isTokenEnvResolved(profile.emailEnv) : false;
 
   return {
     profileName,
@@ -129,6 +137,8 @@ export async function loadDisplayConfig(remoteUrls: string[], explicitProfile?: 
     url: profile.url,
     tokenEnv: profile.tokenEnv,
     tokenResolved,
+    emailEnv: profile.emailEnv,
+    emailResolved,
     caFile: profile.caFile,
     tlsVerify: profile.tlsVerify ?? true,
     sshClone: profile.sshClone ?? false,
@@ -170,7 +180,7 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
   }
 
   // 3. Provider is valid
-  if (['gitlab', 'github'].includes(profile.provider)) {
+  if (['gitlab', 'github', 'bitbucket-cloud'].includes(profile.provider)) {
     checks.push({ ok: true, label: `Provider: ${profile.provider}` });
   } else {
     checks.push({ ok: false, label: 'Provider', detail: `Invalid provider: ${profile.provider}` });
@@ -181,9 +191,21 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
     try {
       new URL(profile.url);
       checks.push({ ok: true, label: `URL: ${profile.url}` });
+      try {
+        validateProviderUrlForProvider(profile.url, profile.provider);
+      } catch (err) {
+        checks.push({ ok: false, label: 'Provider URL', detail: (err as Error).message });
+      }
     } catch {
       checks.push({ ok: false, label: 'URL', detail: `Invalid URL: ${profile.url}` });
     }
+  } else if (profile.provider === 'bitbucket-cloud') {
+    checks.push({
+      ok: false,
+      label: 'Provider URL',
+      detail:
+        'Bitbucket Cloud profiles must use https://bitbucket.org. Bitbucket Server/Data Center URLs are not supported by provider "bitbucket-cloud".',
+    });
   }
 
   // 5. Token env configured
@@ -201,6 +223,23 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
   } else {
     checks.push({ ok: false, label: 'Token env not configured' });
     nextSteps.push(`revpack config set tokenEnv <ENV_VAR_NAME> --profile ${profileName}`);
+  }
+
+  if (profile.provider === 'bitbucket-cloud') {
+    if (profile.emailEnv) {
+      checks.push({ ok: true, label: `Atlassian account email env configured: ${profile.emailEnv}` });
+
+      const value = process.env[profile.emailEnv];
+      if (value && value.length > 0) {
+        checks.push({ ok: true, label: 'Atlassian account email env is set' });
+      } else {
+        checks.push({ ok: false, label: 'Atlassian account email env is not set' });
+        nextSteps.push(`export ${profile.emailEnv}=you@example.com`);
+      }
+    } else {
+      checks.push({ ok: false, label: 'Atlassian account email env not configured' });
+      nextSteps.push(`revpack config set emailEnv <ENV_VAR_NAME> --profile ${profileName}`);
+    }
   }
 
   // 7. CA file
@@ -257,6 +296,7 @@ export {
   isTokenEnvResolved,
   normalizeProviderInput,
   normalizeProviderUrlInput,
+  validateProviderUrlForProvider,
 } from './provider-input.js';
 export type {
   RevpackConfig,

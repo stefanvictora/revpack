@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import chalk from 'chalk';
-import { formatTargetDisplayId } from '../../core/display.js';
+import { formatTargetDisplayId } from '../../providers/display.js';
 import { createOrchestrator, createOrchestratorAt, getRepoFromGit, handleError } from '../helpers.js';
 import { formatGuidanceLine } from '../output.js';
 import { runSetup } from './setup.js';

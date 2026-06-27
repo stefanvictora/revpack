@@ -4,8 +4,8 @@ import type { ProviderType } from './types.js';
 // ─── Parsers ─────────────────────────────────────────────
 
 function parseProvider(value: string): ProviderType {
-  if (value === 'gitlab' || value === 'github') return value;
-  throw new ConfigError(`Invalid provider: "${value}". Must be "gitlab" or "github".`);
+  if (value === 'gitlab' || value === 'github' || value === 'bitbucket-cloud') return value;
+  throw new ConfigError(`Invalid provider: "${value}". Must be "gitlab", "github", or "bitbucket-cloud".`);
 }
 
 function parseUrl(value: string): string {
@@ -52,7 +52,7 @@ export interface ConfigKeyDef {
 
 export const CONFIG_KEYS: Record<string, ConfigKeyDef> = {
   provider: {
-    description: 'Provider type (gitlab or github)',
+    description: 'Provider type (gitlab, github, or bitbucket-cloud)',
     parse: parseProvider,
   },
   url: {
@@ -61,6 +61,10 @@ export const CONFIG_KEYS: Record<string, ConfigKeyDef> = {
   },
   tokenEnv: {
     description: 'Environment variable containing the access token',
+    parse: parseEnvVarName,
+  },
+  emailEnv: {
+    description: 'Environment variable containing the Atlassian account email',
     parse: parseEnvVarName,
   },
   remotePatterns: {

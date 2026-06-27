@@ -8,6 +8,7 @@ describe('CONFIG_KEYS', () => {
       'provider',
       'url',
       'tokenEnv',
+      'emailEnv',
       'remotePatterns',
       'caFile',
       'tlsVerify',
@@ -18,9 +19,10 @@ describe('CONFIG_KEYS', () => {
   it('parses provider values', () => {
     expect(CONFIG_KEYS.provider.parse('gitlab')).toBe('gitlab');
     expect(CONFIG_KEYS.provider.parse('github')).toBe('github');
+    expect(CONFIG_KEYS.provider.parse('bitbucket-cloud')).toBe('bitbucket-cloud');
     expect(() => CONFIG_KEYS.provider.parse('local')).toThrow(ConfigError);
     expect(() => CONFIG_KEYS.provider.parse('local')).toThrow(
-      'Invalid provider: "local". Must be "gitlab" or "github".',
+      'Invalid provider: "local". Must be "gitlab", "github", or "bitbucket-cloud".',
     );
   });
 
@@ -35,6 +37,8 @@ describe('CONFIG_KEYS', () => {
     expect(CONFIG_KEYS.tokenEnv.parse('_TOKEN')).toBe('_TOKEN');
     expect(() => CONFIG_KEYS.tokenEnv.parse('1TOKEN')).toThrow('Invalid environment variable name: "1TOKEN"');
     expect(() => CONFIG_KEYS.tokenEnv.parse('BAD-NAME')).toThrow('Invalid environment variable name: "BAD-NAME"');
+    expect(CONFIG_KEYS.emailEnv.parse('REVPACK_BITBUCKET_EMAIL')).toBe('REVPACK_BITBUCKET_EMAIL');
+    expect(() => CONFIG_KEYS.emailEnv.parse('BAD-NAME')).toThrow('Invalid environment variable name: "BAD-NAME"');
   });
 
   it('parses comma-separated remote patterns', () => {

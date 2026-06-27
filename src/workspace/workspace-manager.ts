@@ -16,7 +16,8 @@ import type {
   ReviewVersion,
   WorkspaceBundle,
 } from '../core/types.js';
-import { formatTargetDisplayId, formatTargetKind } from '../core/display.js';
+import { formatTargetKind } from '../core/display.js';
+import { formatTargetDisplayId } from '../providers/display.js';
 import { WorkspaceError } from '../core/errors.js';
 import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
 import type { GitHelper } from './git-helper.js';

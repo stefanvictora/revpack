@@ -1,21 +1,4 @@
-import type { ProviderType, TargetType } from './types.js';
-
-export interface TargetDisplayRef {
-  provider: ProviderType;
-  targetType?: TargetType;
-  targetId: string;
-}
-
-export function formatTargetDisplayId(target: TargetDisplayRef): string {
-  switch (target.provider) {
-    case 'gitlab':
-      return `!${target.targetId}`;
-    case 'github':
-      return `#${target.targetId}`;
-    case 'local':
-      return target.targetId;
-  }
-}
+import type { TargetType } from './types.js';
 
 export function formatTargetKind(target: { targetType: TargetType }): string {
   switch (target.targetType) {

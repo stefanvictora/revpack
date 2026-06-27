@@ -11,7 +11,8 @@ import type {
   RemoteCheckpoint,
   BundleComparison,
 } from '../core/types.js';
-import { formatTargetDisplayId, formatTargetKind } from '../core/display.js';
+import { formatTargetKind } from '../core/display.js';
+import { formatTargetDisplayId } from '../providers/display.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
 import { parsePatch } from '../workspace/patch-parser.js';
