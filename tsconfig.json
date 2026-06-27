@@ -18,14 +18,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "paths": {
-      "@core/*": ["./src/core/*"],
-      "@providers/*": ["./src/providers/*"],
-      "@workspace/*": ["./src/workspace/*"],
-      "@orchestration/*": ["./src/orchestration/*"],
-      "@cli/*": ["./src/cli/*"]
-    }
+    "noFallthroughCasesInSwitch": true
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]
