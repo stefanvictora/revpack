@@ -85,7 +85,14 @@ export function registerConfigCommand(program: Command): void {
           console.log('');
         }
 
-        const url = (await ask(`Provider URL${suggestedUrl ? ` [${suggestedUrl}]` : ''}: `)) || suggestedUrl;
+        const urlInput = (await ask(`Provider URL${suggestedUrl ? ` [${suggestedUrl}]` : ''}: `)) || suggestedUrl;
+        let url: string;
+        try {
+          url = normalizeProviderUrlInput(urlInput);
+        } catch (err) {
+          rl.close();
+          throw err;
+        }
         const defaultProvider = inferProviderFromUrl(url) ?? detectedProvider ?? 'gitlab';
         const providerInput = (await ask(`Provider (gitlab/github) [${defaultProvider}]: `)) || defaultProvider;
         let provider: SupportedProvider;
@@ -631,6 +638,21 @@ export function normalizeProviderInput(value: string): SupportedProvider {
   }
 
   throw new ConfigError(`Invalid provider: "${value}". Must be "gitlab" or "github".`);
+}
+
+export function normalizeProviderUrlInput(value: string): string {
+  const url = value.trim();
+  if (!url) return '';
+
+  try {
+    new URL(url);
+    return url;
+  } catch {
+    const hint = /^[\w.-]+(?::\d+)?(?:\/.*)?$/.test(url) ? ` Include the scheme, for example "https://${url}".` : '';
+    throw new ConfigError(
+      `Invalid provider URL: "${value}". Expected an absolute URL like "https://gitlab.com".${hint}`,
+    );
+  }
 }
 
 export function inferProviderFromUrl(value: string): SupportedProvider | null {
