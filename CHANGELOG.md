@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Fixed generated review instructions so GitHub and local review bundles use plain suggestion fences while GitLab bundles keep range-offset suggestion fences.
 - Improved `revpack config setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.
 - Fixed GitLab fallback checkout for deleted MR source branches, including follow-up bundle commands run from the fallback branch and fork fallback fetches.
 - Fixed review summary instructions so incremental MR/PR updates keep newly introduced capabilities under `Added` instead of `Changed`.

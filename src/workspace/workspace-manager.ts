@@ -116,6 +116,11 @@ interface ContextTemplateView {
   }>;
 }
 
+interface InstructionTemplateView {
+  suggestionFence: 'suggestion' | 'suggestion:-0+0';
+  suggestionSupportsRangeOffsets: boolean;
+}
+
 function buildInstructionRoute(
   prepareSummary: PrepareSummary | undefined,
   hasUnresolvedThreads: boolean,
@@ -625,7 +630,7 @@ export class WorkspaceManager {
     await fs.writeFile(contextPath, content, 'utf-8');
 
     // Also write instruction files (INSTRUCTIONS.md, AGENT_CONTRACT.md, instructions/*.md)
-    await this.writeInstructions();
+    await this.writeInstructions(target);
     return contextPath;
   }
 
@@ -1215,12 +1220,13 @@ export class WorkspaceManager {
   // ─── Write helpers ──────────────────────────────────────
 
   /**
-   * Write INSTRUCTIONS.md, AGENT_CONTRACT.md, and instructions/*.md — copied from the package templates directory.
+   * Write INSTRUCTIONS.md, AGENT_CONTRACT.md, and instructions/*.md from the package templates directory.
    */
-  async writeInstructions(): Promise<void> {
+  async writeInstructions(target: ReviewTarget): Promise<void> {
     const thisFile = fileURLToPath(import.meta.url);
     // dist/workspace/workspace-manager.js -> package root -> templates/
     const templatesDir = path.resolve(path.dirname(thisFile), '..', '..', 'templates');
+    const templateView = this.buildInstructionTemplateView(target);
 
     // Copy INSTRUCTIONS.md
     const instructionsSource = path.join(templatesDir, 'INSTRUCTIONS.md');
@@ -1232,7 +1238,7 @@ export class WorkspaceManager {
     const contractDest = path.join(this.baseDir, 'AGENT_CONTRACT.md');
     await fs.copyFile(contractSource, contractDest);
 
-    // Copy instructions/*.md
+    // Copy instructions/*.md and render opt-in instructions/*.md.hbs templates to .md.
     const instructionsSrcDir = path.join(templatesDir, 'instructions');
     const instructionsDestDir = path.join(this.baseDir, 'instructions');
     await this.ensureDir(instructionsDestDir);
@@ -1240,8 +1246,21 @@ export class WorkspaceManager {
     for (const entry of entries) {
       if (entry.endsWith('.md')) {
         await fs.copyFile(path.join(instructionsSrcDir, entry), path.join(instructionsDestDir, entry));
+      } else if (entry.endsWith('.md.hbs')) {
+        const templateSource = await fs.readFile(path.join(instructionsSrcDir, entry), 'utf-8');
+        const template = Handlebars.compile(templateSource, { noEscape: true });
+        const rendered = template(templateView).trimEnd() + '\n';
+        await fs.writeFile(path.join(instructionsDestDir, entry.slice(0, -'.hbs'.length)), rendered, 'utf-8');
       }
     }
+  }
+
+  private buildInstructionTemplateView(target: ReviewTarget): InstructionTemplateView {
+    const suggestionSupportsRangeOffsets = target.provider === 'gitlab';
+    return {
+      suggestionFence: suggestionSupportsRangeOffsets ? 'suggestion:-0+0' : 'suggestion',
+      suggestionSupportsRangeOffsets,
+    };
   }
 
   /**

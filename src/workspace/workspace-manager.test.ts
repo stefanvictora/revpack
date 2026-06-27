@@ -122,6 +122,29 @@ describe('WorkspaceManager', () => {
     return { bundle: await m.createBundle(target, threads, diffs, versions, threadIndex), threadIndex };
   }
 
+  function makeTargetForProvider(provider: ReviewTarget['provider']): ReviewTarget {
+    const target = makeTarget();
+    if (provider === 'github') {
+      return {
+        ...target,
+        provider,
+        repository: 'owner/repo',
+        targetType: 'pull_request',
+        webUrl: 'https://github.com/owner/repo/pull/42',
+      };
+    }
+    if (provider === 'local') {
+      return {
+        ...target,
+        provider,
+        targetType: 'local_review',
+        targetId: 'main...feature/test',
+        webUrl: '',
+      };
+    }
+    return target;
+  }
+
   it('creates bundle directory structure', async () => {
     const { bundle } = await createBundle(manager, makeTarget(), [makeThread()], [makeDiff()]);
 
@@ -170,6 +193,86 @@ describe('WorkspaceManager', () => {
     const finalChecks = await fs.readFile(path.join(bundleDir, 'instructions', '07-final-checks.md'), 'utf-8');
     expect(contract).toContain('do not discard a valid, non-duplicate issue');
     expect(findingsInstructions).toContain('## Incremental review scope');
+    expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
+  });
+
+  it('renders GitHub instruction templates with plain suggestion fences', async () => {
+    const target = makeTargetForProvider('github');
+    const { threadIndex } = await createBundle(manager, target, [], [makeDiff()]);
+
+    await manager.writeContext(target, [], [makeDiff()], threadIndex);
+
+    const bundleDir = path.join(tmpDir, '.revpack');
+    const findingsInstructions = await fs.readFile(
+      path.join(bundleDir, 'instructions', '03-new-findings-and-anchors.md'),
+      'utf-8',
+    );
+    const suggestionsInstructions = await fs.readFile(
+      path.join(bundleDir, 'instructions', '04-suggestions-and-agent-handover.md'),
+      'utf-8',
+    );
+
+    expect(findingsInstructions).toContain('```suggestion\n');
+    expect(findingsInstructions).not.toContain('suggestion:-0+0');
+    expect(suggestionsInstructions).toContain('```suggestion\n');
+    expect(suggestionsInstructions).not.toContain('suggestion:-0+0');
+    expect(suggestionsInstructions).not.toContain('suggestion:-1+2');
+    expect(suggestionsInstructions).toContain('The fence stays plain `suggestion`');
+  });
+
+  it('renders GitLab instruction templates with range-offset suggestion fences', async () => {
+    const target = makeTargetForProvider('gitlab');
+    const { threadIndex } = await createBundle(manager, target, [], [makeDiff()]);
+
+    await manager.writeContext(target, [], [makeDiff()], threadIndex);
+
+    const bundleDir = path.join(tmpDir, '.revpack');
+    const findingsInstructions = await fs.readFile(
+      path.join(bundleDir, 'instructions', '03-new-findings-and-anchors.md'),
+      'utf-8',
+    );
+    const suggestionsInstructions = await fs.readFile(
+      path.join(bundleDir, 'instructions', '04-suggestions-and-agent-handover.md'),
+      'utf-8',
+    );
+
+    expect(findingsInstructions).toContain('```suggestion:-0+0\n');
+    expect(suggestionsInstructions).toContain('```suggestion:-0+0\n');
+    expect(suggestionsInstructions).toContain('Use wider ranges only when the replacement needs neighboring lines.');
+    expect(suggestionsInstructions).toContain('suggestion range (`-1+2`)');
+  });
+
+  it('renders local instruction templates with plain suggestion fences', async () => {
+    const target = makeTargetForProvider('local');
+    const { threadIndex } = await createBundle(manager, target, [], [makeDiff()]);
+
+    await manager.writeContext(target, [], [makeDiff()], threadIndex);
+
+    const bundleDir = path.join(tmpDir, '.revpack');
+    const suggestionsInstructions = await fs.readFile(
+      path.join(bundleDir, 'instructions', '04-suggestions-and-agent-handover.md'),
+      'utf-8',
+    );
+
+    expect(suggestionsInstructions).toContain('```suggestion\n');
+    expect(suggestionsInstructions).not.toContain('suggestion:-0+0');
+    expect(suggestionsInstructions).not.toContain('suggestion:-1+2');
+  });
+
+  it('keeps generated instruction names as .md and still copies static instruction files', async () => {
+    const target = makeTargetForProvider('github');
+    const { threadIndex } = await createBundle(manager, target, [], [makeDiff()]);
+
+    await manager.writeContext(target, [], [makeDiff()], threadIndex);
+
+    const bundleDir = path.join(tmpDir, '.revpack');
+    const instrEntries = await fs.readdir(path.join(bundleDir, 'instructions'));
+    const finalChecks = await fs.readFile(path.join(bundleDir, 'instructions', '07-final-checks.md'), 'utf-8');
+
+    expect(instrEntries).toContain('03-new-findings-and-anchors.md');
+    expect(instrEntries).toContain('04-suggestions-and-agent-handover.md');
+    expect(instrEntries).not.toContain('03-new-findings-and-anchors.md.hbs');
+    expect(instrEntries).not.toContain('04-suggestions-and-agent-handover.md.hbs');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
   });
 
