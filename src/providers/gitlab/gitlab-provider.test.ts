@@ -1,5 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthenticationError, ProviderError } from '../../core/errors.js';
 import { GitLabProvider } from './gitlab-provider.js';
+
+const ref = {
+  provider: 'gitlab' as const,
+  repository: 'group/project',
+  targetType: 'merge_request' as const,
+  targetId: '42',
+};
+
+function jsonResponse(body: unknown, init?: ResponseInit): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+    ...init,
+  });
+}
+
+function installFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      return handler(url, init);
+    }),
+  );
+}
 
 describe('GitLabProvider.resolveTarget', () => {
   const provider = new GitLabProvider('https://gitlab.example.com', 'fake-token');
@@ -162,5 +188,26 @@ describe('GitLabProvider checkout fallback', () => {
     expect(error.message).toContain('refs/merge-requests/42/head');
     expect(error.message).toContain('GitLab 16.6 and newer');
     expect(error.message).toContain('14 days after merge or close');
+  });
+});
+
+describe('GitLabProvider errors', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('raises authentication errors for 401 responses', async () => {
+    const provider = new GitLabProvider('https://gitlab.example.com', 'bad-token');
+    installFetch(() => jsonResponse({ message: 'bad credentials' }, { status: 401, statusText: 'Unauthorized' }));
+
+    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow(AuthenticationError);
+  });
+
+  it('raises access errors for 403 responses', async () => {
+    const provider = new GitLabProvider('https://gitlab.example.com', 'token-without-access');
+    installFetch(() => jsonResponse({ message: 'forbidden' }, { status: 403, statusText: 'Forbidden' }));
+
+    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow(ProviderError);
+    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow('repository permissions and token scopes');
   });
 });

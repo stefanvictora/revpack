@@ -324,16 +324,28 @@ export class GitLabProvider implements ReviewProvider {
       throw new ProviderError(`Network error reaching ${url.hostname}${detail}: ${cause.message}`, 'gitlab');
     }
 
-    if (res.status === 401 || res.status === 403) {
-      throw new AuthenticationError(`GitLab authentication failed (${res.status})`, 'gitlab');
+    await this.throwOnError(res);
+
+    return res.json() as Promise<T>;
+  }
+
+  private async throwOnError(res: Response) {
+    if (res.status === 401) {
+      throw new AuthenticationError('GitLab authentication failed (401)', 'gitlab');
+    }
+
+    if (res.status === 403) {
+      throw new ProviderError(
+        'GitLab access forbidden (403). Check repository permissions and token scopes.',
+        'gitlab',
+        res.status,
+      );
     }
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new ProviderError(`GitLab API error: ${res.status} ${res.statusText} — ${text}`, 'gitlab', res.status);
     }
-
-    return res.json() as Promise<T>;
   }
 
   private async requestPaginated<T>(path: string, perPage = 100): Promise<T[]> {
@@ -365,14 +377,7 @@ export class GitLabProvider implements ReviewProvider {
         throw new ProviderError(`Network error reaching ${url.hostname}${detail}: ${cause.message}`, 'gitlab');
       }
 
-      if (res.status === 401 || res.status === 403) {
-        throw new AuthenticationError(`GitLab authentication failed (${res.status})`, 'gitlab');
-      }
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new ProviderError(`GitLab API error: ${res.status} ${res.statusText} — ${text}`, 'gitlab', res.status);
-      }
+      await this.throwOnError(res);
 
       const data = (await res.json()) as T[];
       results.push(...data);

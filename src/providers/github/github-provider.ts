@@ -377,8 +377,16 @@ export class GitHubProvider implements ReviewProvider {
   }
 
   private async ensureOk(res: Response): Promise<void> {
-    if (res.status === 401 || res.status === 403) {
-      throw new AuthenticationError(`GitHub authentication failed (${res.status})`, 'github');
+    if (res.status === 401) {
+      throw new AuthenticationError('GitHub authentication failed (401)', 'github');
+    }
+
+    if (res.status === 403) {
+      throw new ProviderError(
+        'GitHub access forbidden (403). Check repository permissions and token scopes.',
+        'github',
+        res.status,
+      );
     }
 
     if (!res.ok) {

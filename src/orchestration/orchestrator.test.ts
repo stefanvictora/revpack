@@ -1100,11 +1100,11 @@ describe('ReviewOrchestrator', () => {
     it('surfaces provider authentication errors from branch auto-detection', async () => {
       deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
       (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new AuthenticationError('GitLab authentication failed (403)', 'gitlab'),
+        new AuthenticationError('GitLab authentication failed (401)', 'gitlab'),
       );
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow('GitLab authentication failed (403)');
+      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow('GitLab authentication failed (401)');
     });
 
     it('falls through to error on detached HEAD', async () => {

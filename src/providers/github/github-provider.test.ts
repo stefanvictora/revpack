@@ -666,11 +666,19 @@ describe('GitHubProvider URL handling and errors', () => {
     await provider.getTargetSnapshot(ref);
   });
 
-  it('raises authentication errors for 401 and 403 responses', async () => {
+  it('raises authentication errors for 401 responses', async () => {
     const provider = new GitHubProvider('https://github.com', 'bad-token');
     installFetch(() => jsonResponse({ message: 'bad credentials' }, { status: 401, statusText: 'Unauthorized' }));
 
     await expect(provider.getTargetSnapshot(ref)).rejects.toThrow(AuthenticationError);
+  });
+
+  it('raises access errors for 403 responses', async () => {
+    const provider = new GitHubProvider('https://github.com', 'token-without-access');
+    installFetch(() => jsonResponse({ message: 'forbidden' }, { status: 403, statusText: 'Forbidden' }));
+
+    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow(ProviderError);
+    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow('repository permissions and token scopes');
   });
 
   it('raises provider errors for invalid repository slugs and GraphQL errors', async () => {
