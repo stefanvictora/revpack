@@ -72,12 +72,14 @@ describe('config setup provider prompts', () => {
     expect(inferProviderFromUrl('https://gitlab.example.com')).toBe('gitlab');
     expect(inferProviderFromUrl('https://github.com')).toBe('github');
     expect(inferProviderFromUrl('https://github.example.com')).toBe('github');
+    expect(inferProviderFromUrl('https://bitbucket.org')).toBe('bitbucket-cloud');
+    expect(inferProviderFromUrl('https://bitbucket.example.com')).toBeNull();
   });
 
   it('does not treat an entered URL as a provider choice', () => {
     expect(() => normalizeProviderInput('https://gitlab.com')).toThrow(ConfigError);
     expect(() => normalizeProviderInput('https://gitlab.com')).toThrow(
-      'Invalid provider: "https://gitlab.com". Must be "gitlab" or "github".',
+      'Invalid provider: "https://gitlab.com". Must be "gitlab", "github", or "bitbucket-cloud".',
     );
   });
 
@@ -117,8 +119,10 @@ describe('config setup provider prompts', () => {
   it('only treats managed cloud hosts as cloud providers', () => {
     expect(isManagedCloudProvider('https://gitlab.com', 'gitlab')).toBe(true);
     expect(isManagedCloudProvider('https://github.com', 'github')).toBe(true);
+    expect(isManagedCloudProvider('https://bitbucket.org', 'bitbucket-cloud')).toBe(true);
     expect(isManagedCloudProvider('https://gitlab.example.com', 'gitlab')).toBe(false);
     expect(isManagedCloudProvider('https://github.example.com', 'github')).toBe(false);
+    expect(isManagedCloudProvider('https://bitbucket.example.com', 'bitbucket-cloud')).toBe(false);
   });
 
   it('detects whether the configured token environment variable is already available', () => {

@@ -13,6 +13,7 @@ import {
   isTokenEnvResolved,
   normalizeProviderInput,
   normalizeProviderUrlInput,
+  validateProviderUrlForProvider,
 } from '../../config/index.js';
 import type { ProviderType, RevpackConfig, RevpackProfile } from '../../config/types.js';
 import { CONFIG_KEYS, VALID_CONFIG_KEYS } from '../../config/keys.js';
@@ -52,7 +53,7 @@ export function registerConfigCommand(program: Command): void {
         // Derive suggested values from git remotes
         let suggestedUrl = '';
         let suggestedName = '';
-        let detectedProvider: 'github' | 'gitlab' | null = null;
+        let detectedProvider: ProviderType | null = null;
         if (remoteUrls.length > 0) {
           const firstRemote = remoteUrls[0];
           try {
@@ -72,6 +73,8 @@ export function registerConfigCommand(program: Command): void {
           // Detect provider from URL
           if (firstRemote.includes('github.com')) {
             detectedProvider = 'github';
+          } else if (firstRemote.includes('bitbucket.org')) {
+            detectedProvider = 'bitbucket-cloud';
           } else if (firstRemote.includes('gitlab.')) {
             detectedProvider = 'gitlab';
           }
@@ -85,9 +88,7 @@ export function registerConfigCommand(program: Command): void {
         console.log(chalk.bold('revpack — Profile Setup'));
         console.log('');
         if (detectedProvider && suggestedUrl) {
-          console.log(
-            `Detected ${detectedProvider === 'github' ? 'GitHub' : 'GitLab'} remote: ${new URL(suggestedUrl).host}`,
-          );
+          console.log(`Detected ${formatProviderName(detectedProvider)} remote: ${new URL(suggestedUrl).host}`);
           console.log('');
         }
 
@@ -100,18 +101,26 @@ export function registerConfigCommand(program: Command): void {
           throw err;
         }
         const defaultProvider = inferProviderFromUrl(url) ?? detectedProvider ?? 'gitlab';
-        const providerInput = (await ask(`Provider (gitlab/github) [${defaultProvider}]: `)) || defaultProvider;
+        const providerInput =
+          (await ask(`Provider (gitlab/github/bitbucket-cloud) [${defaultProvider}]: `)) || defaultProvider;
         let provider: ProviderType;
         try {
           provider = normalizeProviderInput(providerInput);
+          validateProviderUrlForProvider(url, provider);
         } catch (err) {
           rl.close();
           throw err;
         }
         const defaultName = deriveProfileNameFromProviderUrl(url) || suggestedName || 'default';
         const name = (await ask(`Profile name [${defaultName}]: `)) || defaultName;
-        const defaultTokenEnv = provider === 'github' ? 'REVPACK_GITHUB_TOKEN' : 'REVPACK_GITLAB_TOKEN';
+        const defaultTokenEnv = getDefaultTokenEnv(provider);
         const tokenEnv = (await ask(`Token environment variable [${defaultTokenEnv}]: `)) || defaultTokenEnv;
+        let emailEnv = '';
+        if (provider === 'bitbucket-cloud') {
+          emailEnv =
+            (await ask(`Atlassian account email environment variable [REVPACK_BITBUCKET_EMAIL]: `)) ||
+            'REVPACK_BITBUCKET_EMAIL';
+        }
 
         // Derive host from URL for matching info
         let derivedHost = '';
@@ -144,6 +153,7 @@ export function registerConfigCommand(program: Command): void {
         };
         if (url) profile.url = url;
         if (tokenEnv) profile.tokenEnv = tokenEnv;
+        if (emailEnv) profile.emailEnv = emailEnv;
         if (extraPattern) {
           profile.remotePatterns = extraPattern
             .split(',')
@@ -176,6 +186,11 @@ export function registerConfigCommand(program: Command): void {
           console.log(`  ${chalk.dim('Token:')}           ${tokenStatus}`);
           console.log(`  ${chalk.dim('Token env:')}       ${profile.tokenEnv}`);
         }
+        if (profile.emailEnv) {
+          const emailStatus = isTokenEnvResolved(profile.emailEnv) ? chalk.green('set') : chalk.red('missing');
+          console.log(`  ${chalk.dim('Email:')}           ${emailStatus}`);
+          console.log(`  ${chalk.dim('Email env:')}       ${profile.emailEnv}`);
+        }
         const matchDisplay = derivedHost ? `${derivedHost} ${chalk.dim('(derived from URL)')}` : chalk.dim('(none)');
         console.log(`  ${chalk.dim('Remote matching:')}  ${matchDisplay}`);
         if (profile.remotePatterns?.length) {
@@ -190,6 +205,9 @@ export function registerConfigCommand(program: Command): void {
         console.log(chalk.bold('Next:'));
         if (profile.tokenEnv && !tokenResolved) {
           console.log(`  export ${profile.tokenEnv}=...`);
+        }
+        if (profile.emailEnv && !isTokenEnvResolved(profile.emailEnv)) {
+          console.log(`  export ${profile.emailEnv}=you@example.com`);
         }
         console.log(`  revpack config doctor --profile ${name}`);
       } catch (err) {
@@ -355,6 +373,7 @@ export function registerConfigCommand(program: Command): void {
           }
           if (matchInfo) console.log(`    ${chalk.dim('Matches:')}  ${matchInfo}`);
           if (p.tokenEnv) console.log(`    ${chalk.dim('Token:')}    env:${p.tokenEnv}`);
+          if (p.emailEnv) console.log(`    ${chalk.dim('Email:')}    env:${p.emailEnv}`);
           console.log('');
         }
       } catch (err) {
@@ -380,7 +399,8 @@ export function registerConfigCommand(program: Command): void {
 
         if (opts.json) {
           const tokenResolved = profile.tokenEnv ? isTokenEnvResolved(profile.tokenEnv) : false;
-          outputJson({ name, ...profile, tokenResolved });
+          const emailResolved = profile.emailEnv ? isTokenEnvResolved(profile.emailEnv) : false;
+          outputJson({ name, ...profile, tokenResolved, emailResolved });
           return;
         }
 
@@ -396,9 +416,10 @@ export function registerConfigCommand(program: Command): void {
   profileCmd
     .command('create <name>')
     .description('Create or update a profile non-interactively')
-    .requiredOption('--provider <type>', 'Provider type: gitlab or github')
+    .requiredOption('--provider <type>', 'Provider type: gitlab, github, or bitbucket-cloud')
     .option('--url <url>', 'Provider base URL')
     .option('--token-env <name>', 'Environment variable name for the token')
+    .option('--email-env <name>', 'Environment variable name for the Atlassian account email')
     .option(
       '--match <pattern>',
       'Additional git remote URL pattern for selecting this profile (repeatable)',
@@ -415,6 +436,7 @@ export function registerConfigCommand(program: Command): void {
           provider: string;
           url?: string;
           tokenEnv?: string;
+          emailEnv?: string;
           match: string[];
           caFile?: string;
           tlsVerify?: boolean;
@@ -422,11 +444,13 @@ export function registerConfigCommand(program: Command): void {
         },
       ) => {
         try {
-          const provider = CONFIG_KEYS.provider.parse(opts.provider) as 'gitlab' | 'github';
+          const provider = CONFIG_KEYS.provider.parse(opts.provider) as ProviderType;
 
           const profile: RevpackProfile = { provider };
           if (opts.url) profile.url = CONFIG_KEYS.url.parse(opts.url) as string;
+          validateProviderUrlForProvider(profile.url, provider);
           if (opts.tokenEnv) profile.tokenEnv = CONFIG_KEYS.tokenEnv.parse(opts.tokenEnv) as string;
+          if (opts.emailEnv) profile.emailEnv = CONFIG_KEYS.emailEnv.parse(opts.emailEnv) as string;
           if (opts.match.length > 0) {
             profile.remotePatterns = opts.match;
           }
@@ -533,6 +557,11 @@ async function showAction(opts: { profile?: string; json?: boolean; sources?: bo
     if (display.tokenEnv) {
       console.log(`  ${chalk.dim('Token env:')}    ${display.tokenEnv}`);
     }
+    if (display.emailEnv) {
+      const emailStatus = display.emailResolved ? chalk.green('set') : chalk.red('missing');
+      console.log(`  ${chalk.dim('Email:')}        ${emailStatus}${src(opts.sources, `env:${display.emailEnv}`)}`);
+      console.log(`  ${chalk.dim('Email env:')}    ${display.emailEnv}`);
+    }
     if (display.caFile) {
       console.log(
         `  ${chalk.dim('CA file:')}      ${display.caFile}${src(opts.sources, 'profile:' + display.profileName)}`,
@@ -603,6 +632,12 @@ function printProfileDetails(profile: RevpackProfile, sources?: boolean): void {
     const status = resolved ? chalk.green('set') : chalk.red('missing');
     console.log(`  ${chalk.dim('Token:')}       ${status}${sources ? chalk.dim(` (env:${profile.tokenEnv})`) : ''}`);
     console.log(`  ${chalk.dim('Token env:')}   ${profile.tokenEnv}`);
+  }
+  if (profile.emailEnv) {
+    const resolved = isTokenEnvResolved(profile.emailEnv);
+    const status = resolved ? chalk.green('set') : chalk.red('missing');
+    console.log(`  ${chalk.dim('Email:')}       ${status}${sources ? chalk.dim(` (env:${profile.emailEnv})`) : ''}`);
+    console.log(`  ${chalk.dim('Email env:')}   ${profile.emailEnv}`);
   }
   if (profile.caFile) console.log(`  ${chalk.dim('CA file:')}     ${profile.caFile}`);
   console.log(`  ${chalk.dim('TLS verify:')}  ${profile.tlsVerify === false ? 'false' : 'true'}`);
@@ -688,4 +723,26 @@ async function getRemoteUrlsSafe(): Promise<string[]> {
 
 function collectValues(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+function getDefaultTokenEnv(provider: ProviderType): string {
+  switch (provider) {
+    case 'github':
+      return 'REVPACK_GITHUB_TOKEN';
+    case 'bitbucket-cloud':
+      return 'REVPACK_BITBUCKET_TOKEN';
+    case 'gitlab':
+      return 'REVPACK_GITLAB_TOKEN';
+  }
+}
+
+function formatProviderName(provider: ProviderType): string {
+  switch (provider) {
+    case 'github':
+      return 'GitHub';
+    case 'gitlab':
+      return 'GitLab';
+    case 'bitbucket-cloud':
+      return 'Bitbucket Cloud';
+  }
 }

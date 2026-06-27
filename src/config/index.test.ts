@@ -115,6 +115,7 @@ describe('loadRuntimeConfig', () => {
 
   afterEach(() => {
     delete process.env.TEST_TOKEN;
+    delete process.env.TEST_EMAIL;
   });
 
   it('resolves profile and token', async () => {
@@ -160,6 +161,28 @@ describe('loadRuntimeConfig', () => {
     const result = await loadRuntimeConfig(['git@insecure.com:t/r.git']);
     expect(result.tlsVerify).toBe(false);
   });
+
+  it('resolves Bitbucket Cloud Atlassian account email from emailEnv', async () => {
+    const config: RevpackConfig = {
+      profiles: {
+        bitbucket: {
+          provider: 'bitbucket-cloud',
+          url: 'https://bitbucket.org',
+          tokenEnv: 'TEST_TOKEN',
+          emailEnv: 'TEST_EMAIL',
+        },
+      },
+    };
+    writeConfig(config);
+    process.env.TEST_TOKEN = 'secret123';
+    process.env.TEST_EMAIL = 'user@example.com';
+
+    const result = await loadRuntimeConfig(['git@bitbucket.org:workspace/repo.git']);
+    expect(result.provider).toBe('bitbucket-cloud');
+    expect(result.url).toBe('https://bitbucket.org');
+    expect(result.token).toBe('secret123');
+    expect(result.email).toBe('user@example.com');
+  });
 });
 
 describe('loadDisplayConfig', () => {
@@ -169,6 +192,7 @@ describe('loadDisplayConfig', () => {
 
   afterEach(() => {
     delete process.env.TEST_TOKEN;
+    delete process.env.TEST_EMAIL;
   });
 
   it('includes match information for remote-match', async () => {
@@ -209,6 +233,27 @@ describe('loadDisplayConfig', () => {
     expect(display.matchedBy).toBe('explicit');
     expect(display.matchedPattern).toBeUndefined();
   });
+
+  it('includes Bitbucket Cloud email environment status without the value', async () => {
+    const config: RevpackConfig = {
+      profiles: {
+        bitbucket: {
+          provider: 'bitbucket-cloud',
+          url: 'https://bitbucket.org',
+          tokenEnv: 'TEST_TOKEN',
+          emailEnv: 'TEST_EMAIL',
+        },
+      },
+    };
+    writeConfig(config);
+    process.env.TEST_EMAIL = 'user@example.com';
+
+    const display = await loadDisplayConfig(['https://bitbucket.org/workspace/repo.git']);
+    expect(display.provider).toBe('bitbucket-cloud');
+    expect(display.emailEnv).toBe('TEST_EMAIL');
+    expect(display.emailResolved).toBe(true);
+    expect(JSON.stringify(display)).not.toContain('user@example.com');
+  });
 });
 
 describe('runDoctor', () => {
@@ -218,6 +263,7 @@ describe('runDoctor', () => {
 
   afterEach(() => {
     delete process.env.DOC_TOKEN;
+    delete process.env.DOC_EMAIL;
   });
 
   it('reports healthy config', async () => {
@@ -272,5 +318,51 @@ describe('runDoctor', () => {
     const noMatch = result.checks.find((c) => c.label.includes('Profile resolution'));
     expect(noMatch).toBeDefined();
     expect(noMatch!.ok).toBe(false);
+  });
+
+  it('locally validates a healthy Bitbucket Cloud profile', async () => {
+    const config: RevpackConfig = {
+      profiles: {
+        bitbucket: {
+          provider: 'bitbucket-cloud',
+          url: 'https://bitbucket.org',
+          tokenEnv: 'DOC_TOKEN',
+          emailEnv: 'DOC_EMAIL',
+        },
+      },
+    };
+    writeConfig(config);
+    process.env.DOC_TOKEN = 'token';
+    process.env.DOC_EMAIL = 'user@example.com';
+
+    const result = await runDoctor(['git@bitbucket.org:workspace/repo.git']);
+
+    expect(result.profileName).toBe('bitbucket');
+    expect(result.checks).toContainEqual({ ok: true, label: 'Provider: bitbucket-cloud' });
+    expect(result.checks).toContainEqual({ ok: true, label: 'URL: https://bitbucket.org' });
+    expect(result.checks).toContainEqual({ ok: true, label: 'Token env configured: DOC_TOKEN' });
+    expect(result.checks).toContainEqual({ ok: true, label: 'Atlassian account email env configured: DOC_EMAIL' });
+    expect(result.checks.filter((c) => !c.ok)).toHaveLength(0);
+  });
+
+  it('reports missing Bitbucket Cloud Atlassian account email env locally', async () => {
+    const config: RevpackConfig = {
+      profiles: {
+        bitbucket: {
+          provider: 'bitbucket-cloud',
+          url: 'https://bitbucket.org',
+          tokenEnv: 'DOC_TOKEN',
+          emailEnv: 'DOC_EMAIL',
+        },
+      },
+    };
+    writeConfig(config);
+    process.env.DOC_TOKEN = 'token';
+    delete process.env.DOC_EMAIL;
+
+    const result = await runDoctor(['git@bitbucket.org:workspace/repo.git']);
+    const emailCheck = result.checks.find((c) => c.label === 'Atlassian account email env is not set');
+    expect(emailCheck).toBeDefined();
+    expect(emailCheck!.ok).toBe(false);
   });
 });

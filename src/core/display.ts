@@ -11,6 +11,7 @@ export function formatTargetDisplayId(target: TargetDisplayRef): string {
     case 'gitlab':
       return `!${target.targetId}`;
     case 'github':
+    case 'bitbucket-cloud':
       return `#${target.targetId}`;
     case 'local':
       return target.targetId;
