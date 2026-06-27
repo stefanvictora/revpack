@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Improved `revpack config setup` prompts so provider URLs are entered before provider selection, provider defaults are inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.
 - Fixed GitLab fallback checkout for deleted MR source branches, including follow-up bundle commands run from the fallback branch and fork fallback fetches.
 - Fixed review summary instructions so incremental MR/PR updates keep newly introduced capabilities under `Added` instead of `Changed`.
 - Fixed `revpack status` showing stale target metadata, such as an open state with merged/closed coloring, when a prepared PR/MR bundle still exists after the target changed remotely.

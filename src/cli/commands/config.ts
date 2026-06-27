@@ -72,14 +72,6 @@ export function registerConfigCommand(program: Command): void {
           }
         }
 
-        const defaultProvider = detectedProvider ?? 'gitlab';
-        const defaultTokenEnv = defaultProvider === 'github' ? 'REVPACK_GITHUB_TOKEN' : 'REVPACK_GITLAB_TOKEN';
-        // github.com and gitlab.com are managed cloud services — skip enterprise-only TLS/CA prompts
-        const isCloudProvider =
-          suggestedUrl === 'https://github.com' ||
-          suggestedUrl === 'https://gitlab.com' ||
-          detectedProvider === 'github';
-
         // Use readline for interactive prompts
         const { createInterface } = await import('node:readline');
         const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -94,10 +86,19 @@ export function registerConfigCommand(program: Command): void {
           console.log('');
         }
 
-        const name =
-          (await ask(`Profile name${suggestedName ? ` [${suggestedName}]` : ''}: `)) || suggestedName || 'default';
-        const providerInput = (await ask(`Provider (gitlab/github) [${defaultProvider}]: `)) || defaultProvider;
         const url = (await ask(`Provider URL${suggestedUrl ? ` [${suggestedUrl}]` : ''}: `)) || suggestedUrl;
+        const defaultProvider = inferProviderFromUrl(url) ?? detectedProvider ?? 'gitlab';
+        const providerInput = (await ask(`Provider (gitlab/github) [${defaultProvider}]: `)) || defaultProvider;
+        let provider: SupportedProvider;
+        try {
+          provider = normalizeProviderInput(providerInput);
+        } catch (err) {
+          rl.close();
+          throw err;
+        }
+        const defaultName = deriveProfileNameFromProviderUrl(url) || suggestedName || 'default';
+        const name = (await ask(`Profile name [${defaultName}]: `)) || defaultName;
+        const defaultTokenEnv = provider === 'github' ? 'REVPACK_GITHUB_TOKEN' : 'REVPACK_GITLAB_TOKEN';
         const tokenEnv = (await ask(`Token environment variable [${defaultTokenEnv}]: `)) || defaultTokenEnv;
 
         // Derive host from URL for matching info
@@ -117,6 +118,7 @@ export function registerConfigCommand(program: Command): void {
         let caFileInput = '';
         let tlsInput = 'yes';
         let sshCloneInput = 'no';
+        const isCloudProvider = isManagedCloudProvider(url, provider);
         if (!isCloudProvider) {
           caFileInput = await ask(`Custom CA file (optional): `);
           tlsInput = (await ask(`Verify TLS certificates [yes]: `)) || 'yes';
@@ -125,13 +127,8 @@ export function registerConfigCommand(program: Command): void {
 
         rl.close();
 
-        // Validate provider
-        if (providerInput !== 'gitlab' && providerInput !== 'github') {
-          throw new ConfigError(`Invalid provider: "${providerInput}". Must be "gitlab" or "github".`);
-        }
-
         const profile: RevpackProfile = {
-          provider: providerInput,
+          provider,
         };
         if (url) profile.url = url;
         if (tokenEnv) profile.tokenEnv = tokenEnv;
@@ -156,12 +153,17 @@ export function registerConfigCommand(program: Command): void {
         await saveFileConfig(config);
 
         // Summary
+        const tokenResolved = profile.tokenEnv ? isTokenEnvResolved(profile.tokenEnv) : false;
         console.log('');
         console.log(chalk.green(`✓ Profile "${name}" created`));
         console.log('');
         console.log(`  ${chalk.dim('Provider:')}         ${profile.provider}`);
         if (profile.url) console.log(`  ${chalk.dim('URL:')}              ${profile.url}`);
-        if (profile.tokenEnv) console.log(`  ${chalk.dim('Token env:')}        ${profile.tokenEnv}`);
+        if (profile.tokenEnv) {
+          const tokenStatus = tokenResolved ? chalk.green('set') : chalk.red('missing');
+          console.log(`  ${chalk.dim('Token:')}           ${tokenStatus}`);
+          console.log(`  ${chalk.dim('Token env:')}       ${profile.tokenEnv}`);
+        }
         const matchDisplay = derivedHost ? `${derivedHost} ${chalk.dim('(derived from URL)')}` : chalk.dim('(none)');
         console.log(`  ${chalk.dim('Remote matching:')}  ${matchDisplay}`);
         if (profile.remotePatterns?.length) {
@@ -174,7 +176,7 @@ export function registerConfigCommand(program: Command): void {
         }
         console.log('');
         console.log(chalk.bold('Next:'));
-        if (profile.tokenEnv) {
+        if (profile.tokenEnv && !tokenResolved) {
           console.log(`  export ${profile.tokenEnv}=...`);
         }
         console.log(`  revpack config doctor --profile ${name}`);
@@ -569,7 +571,7 @@ function printProfileDetails(profile: RevpackProfile, sources?: boolean): void {
   console.log(`  ${chalk.dim('Provider:')}    ${profile.provider}`);
   if (profile.url) console.log(`  ${chalk.dim('URL:')}         ${profile.url}`);
   if (profile.tokenEnv) {
-    const resolved = Boolean(process.env[profile.tokenEnv]);
+    const resolved = isTokenEnvResolved(profile.tokenEnv);
     const status = resolved ? chalk.green('set') : chalk.red('missing');
     console.log(`  ${chalk.dim('Token:')}       ${status}${sources ? chalk.dim(` (env:${profile.tokenEnv})`) : ''}`);
     console.log(`  ${chalk.dim('Token env:')}   ${profile.tokenEnv}`);
@@ -608,6 +610,49 @@ function src(showSources: boolean | undefined, source: string | undefined): stri
 function validateKey(key: string): void {
   if (!VALID_CONFIG_KEYS.includes(key)) {
     throw new ConfigError(`Unknown config key: "${key}". Valid keys: ${VALID_CONFIG_KEYS.join(', ')}`);
+  }
+}
+
+type SupportedProvider = 'github' | 'gitlab';
+
+export function normalizeProviderInput(value: string): SupportedProvider {
+  const provider = value.trim().toLowerCase();
+  if (provider === 'gitlab' || provider === 'github') {
+    return provider;
+  }
+
+  throw new ConfigError(`Invalid provider: "${value}". Must be "gitlab" or "github".`);
+}
+
+export function inferProviderFromUrl(value: string): SupportedProvider | null {
+  const host = parseProviderUrlHost(value);
+  if (!host) return null;
+  if (host === 'github.com' || host.endsWith('.github.com')) return 'github';
+  if (host === 'gitlab.com' || host.startsWith('gitlab.') || host.includes('.gitlab.')) return 'gitlab';
+  return null;
+}
+
+export function deriveProfileNameFromProviderUrl(value: string): string {
+  const host = parseProviderUrlHost(value);
+  return host ? host.split('.')[0] : '';
+}
+
+export function isManagedCloudProvider(url: string, provider: SupportedProvider): boolean {
+  const host = parseProviderUrlHost(url);
+  return (provider === 'github' && host === 'github.com') || (provider === 'gitlab' && host === 'gitlab.com');
+}
+
+export function isTokenEnvResolved(tokenEnv: string): boolean {
+  const value = process.env[tokenEnv];
+  return Boolean(value && value.length > 0);
+}
+
+function parseProviderUrlHost(value: string): string {
+  if (!value.trim()) return '';
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return '';
   }
 }
 
