@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import type { CheckoutBranchTarget, CheckoutFallbackRef, ReviewProvider } from '../providers/provider.js';
 import type {
   ReviewTarget,
@@ -232,11 +233,25 @@ export class ReviewOrchestrator {
     // Only non-resolved threads go into the bundle
     const activeThreads = activeReviewThreads(allThreads);
 
+    let assetRewrites: Record<string, string> | undefined;
+    if (this.provider.localizeReviewAssets) {
+      try {
+        assetRewrites = await this.provider.localizeReviewAssets(targetRef, activeThreads, {
+          assetDir: path.join(this.workspace.bundlePath, 'assets'),
+          markdownPathPrefix: '../assets',
+          onProgress: progress,
+        });
+      } catch {
+        progress?.('Could not download review comment assets; keeping remote asset URLs in thread Markdown.');
+      }
+    }
+
     const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
     const bundleDiffs = this.reviewDiffsFromPatch(latestPatchContent);
 
     const bundle = await this.workspace.createBundle(target, activeThreads, bundleDiffs, versions, threadIndex, {
       latestPatchContent,
+      assetRewrites,
     });
 
     // Compute prepare summary — compare against remote checkpoint

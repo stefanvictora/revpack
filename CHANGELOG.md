@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Download GitLab image assets referenced in threads to .revpack/assets and rewrite the URLs in the Markdown thread files
+
 ### Changed
 
 - Relaxed finding category validation so `revpack publish findings` accepts any non-empty category while still recommending the standard category set.
