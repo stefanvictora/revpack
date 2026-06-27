@@ -65,6 +65,34 @@ describe('configSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts Bitbucket Cloud profile fields', () => {
+    const result = configSchema.safeParse({
+      profiles: {
+        bitbucket: {
+          provider: 'bitbucket-cloud',
+          url: 'https://bitbucket.org',
+          tokenEnv: 'REVPACK_BITBUCKET_TOKEN',
+          emailEnv: 'REVPACK_BITBUCKET_EMAIL',
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects Bitbucket Server/Data Center URLs for Bitbucket Cloud profiles', () => {
+    const result = configSchema.safeParse({
+      profiles: {
+        bitbucket: {
+          provider: 'bitbucket-cloud',
+          url: 'https://bitbucket.example.com',
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0].message).toContain('Bitbucket Server/Data Center URLs are not supported');
+  });
+
   it('validates multiple profiles', () => {
     const result = configSchema.safeParse({
       profiles: {
@@ -208,7 +236,7 @@ describe('newFindingSchema', () => {
 
 describe('provider and target schemas', () => {
   it('accepts every supported provider type', () => {
-    for (const provider of ['gitlab', 'github', 'local']) {
+    for (const provider of ['gitlab', 'github', 'bitbucket-cloud', 'local']) {
       expect(providerTypeSchema.safeParse(provider).success).toBe(true);
     }
   });
@@ -216,6 +244,7 @@ describe('provider and target schemas', () => {
   it('limits remote provider types to hosted providers', () => {
     expect(remoteProviderTypeSchema.safeParse('gitlab').success).toBe(true);
     expect(remoteProviderTypeSchema.safeParse('github').success).toBe(true);
+    expect(remoteProviderTypeSchema.safeParse('bitbucket-cloud').success).toBe(true);
     expect(remoteProviderTypeSchema.safeParse('local').success).toBe(false);
   });
 

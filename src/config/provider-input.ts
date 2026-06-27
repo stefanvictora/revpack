@@ -3,11 +3,11 @@ import type { ProviderType } from './types.js';
 
 export function normalizeProviderInput(value: string): ProviderType {
   const provider = value.trim().toLowerCase();
-  if (provider === 'gitlab' || provider === 'github') {
+  if (provider === 'gitlab' || provider === 'github' || provider === 'bitbucket-cloud') {
     return provider;
   }
 
-  throw new ConfigError(`Invalid provider: "${value}". Must be "gitlab" or "github".`);
+  throw new ConfigError(`Invalid provider: "${value}". Must be "gitlab", "github", or "bitbucket-cloud".`);
 }
 
 export function normalizeProviderUrlInput(value: string): string {
@@ -39,6 +39,7 @@ export function normalizeProviderUrlInput(value: string): string {
 export function inferProviderFromUrl(value: string): ProviderType | null {
   const host = parseProviderUrlHost(value);
   if (!host) return null;
+  if (host === 'bitbucket.org') return 'bitbucket-cloud';
   if (host === 'github.com' || host.endsWith('.github.com') || host.startsWith('github.')) return 'github';
   if (host === 'gitlab.com' || host.startsWith('gitlab.') || host.includes('.gitlab.')) return 'gitlab';
   return null;
@@ -51,7 +52,22 @@ export function deriveProfileNameFromProviderUrl(value: string): string {
 
 export function isManagedCloudProvider(url: string, provider: ProviderType): boolean {
   const host = parseProviderUrlHost(url);
-  return (provider === 'github' && host === 'github.com') || (provider === 'gitlab' && host === 'gitlab.com');
+  return (
+    (provider === 'github' && host === 'github.com') ||
+    (provider === 'gitlab' && host === 'gitlab.com') ||
+    (provider === 'bitbucket-cloud' && host === 'bitbucket.org')
+  );
+}
+
+export function validateProviderUrlForProvider(url: string | undefined, provider: ProviderType): void {
+  if (provider !== 'bitbucket-cloud' || !url) return;
+
+  const host = parseProviderUrlHost(url);
+  if (host !== 'bitbucket.org') {
+    throw new ConfigError(
+      'Bitbucket Cloud profiles must use https://bitbucket.org. Bitbucket Server/Data Center URLs are not supported by provider "bitbucket-cloud".',
+    );
+  }
 }
 
 export function isTokenEnvResolved(tokenEnv: string): boolean {

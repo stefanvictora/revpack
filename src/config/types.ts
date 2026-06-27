@@ -3,7 +3,7 @@
 
 // ─── Provider Type ───────────────────────────────────────
 
-export type ProviderType = 'gitlab' | 'github';
+export type ProviderType = 'gitlab' | 'github' | 'bitbucket-cloud';
 
 // ─── Profile Config ──────────────────────────────────────
 
@@ -11,6 +11,7 @@ export interface RevpackProfile {
   provider: ProviderType;
   url?: string;
   tokenEnv?: string;
+  emailEnv?: string;
   remotePatterns?: string[];
   caFile?: string;
   tlsVerify?: boolean;
@@ -29,6 +30,7 @@ export interface ResolvedAppConfig {
   provider: ProviderType;
   url?: string;
   token?: string;
+  email?: string;
   caFile?: string;
   tlsVerify: boolean;
   sshClone?: boolean;
@@ -55,6 +57,8 @@ export interface DisplayAppConfig {
   url?: string;
   tokenEnv?: string;
   tokenResolved: boolean;
+  emailEnv?: string;
+  emailResolved: boolean;
   caFile?: string;
   tlsVerify: boolean;
   sshClone: boolean;
