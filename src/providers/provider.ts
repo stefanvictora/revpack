@@ -35,7 +35,7 @@ export interface CheckoutBranchTarget {
  * Implementations: GitLabProvider, (future) GitHubProvider.
  */
 export interface ReviewProvider {
-  readonly providerType: 'gitlab' | 'github' | 'local';
+  readonly providerType: 'gitlab' | 'github' | 'bitbucket-cloud' | 'local';
 
   /** Resolve a human-friendly reference (branch name, MR !123, URL) to a ReviewTargetRef. */
   resolveTarget(ref: string): ReviewTargetRef;

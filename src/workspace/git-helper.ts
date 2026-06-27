@@ -146,15 +146,19 @@ export class GitHelper {
     }
   }
 
-  /** Derive repo slug (group/project) from a GitLab remote URL. */
+  /** Derive repo slug (owner/repo, group/project, or workspace/repo) from a git remote URL. */
   async deriveRepoSlug(remote = 'origin'): Promise<string> {
     const url = await this.remoteUrl(remote);
-    // SSH: git@gitlab.example.com:group/project.git
-    const sshMatch = url.match(/:([^/].*?)(?:\.git)?$/);
-    if (sshMatch) return sshMatch[1];
-    // HTTPS: https://gitlab.example.com/group/project.git
-    const httpsMatch = url.match(/\/\/[^/]+\/(.+?)(?:\.git)?$/);
-    if (httpsMatch) return httpsMatch[1];
+    // SCP-style SSH: git@example.com:group/project.git
+    const scpLikeMatch = url.match(/^[^@]+@[^:]+:(.+)$/);
+    if (scpLikeMatch) return stripGitSuffix(scpLikeMatch[1]);
+
+    if (URL.canParse(url)) {
+      const parsed = new URL(url);
+      const path = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+      if (path) return stripGitSuffix(path);
+    }
+
     return url;
   }
 
@@ -359,4 +363,8 @@ export class GitHelper {
       ...(ref ? [ref] : []),
     ];
   }
+}
+
+function stripGitSuffix(value: string): string {
+  return value.replace(/\/+$/, '').replace(/\.git$/, '');
 }

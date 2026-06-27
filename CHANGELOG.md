@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Added first-class Bitbucket Cloud profile configuration with `bitbucket-cloud`, `https://bitbucket.org`, `REVPACK_BITBUCKET_EMAIL`, and `REVPACK_BITBUCKET_TOKEN` defaults.
+- Added Bitbucket Cloud pull request target resolution, branch auto-detection, metadata mapping, and `revpack status` display support.
 
 ### Changed
 
