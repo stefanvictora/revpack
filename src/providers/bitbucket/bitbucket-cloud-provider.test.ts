@@ -83,6 +83,12 @@ describe('BitbucketCloudProvider.resolveTarget', () => {
     expect(() =>
       provider.resolveTarget('https://bitbucket.example.com/projects/PROJ/repos/repo/pull-requests/42'),
     ).toThrow('Bitbucket Server/Data Center pull request URLs are not supported');
+    expect(() =>
+      provider.resolveTarget('https://bitbucket.example.com/projects/PROJ/repos/repo/pull-requests/42/overview'),
+    ).toThrow('Bitbucket Server/Data Center pull request URLs are not supported');
+    expect(() =>
+      provider.resolveTarget('https://bitbucket.example.com/projects/PROJ/repos/repo/pull-requests/42/diff?until=abc'),
+    ).toThrow('Bitbucket Server/Data Center pull request URLs are not supported');
   });
 
   it('rejects unparseable refs', () => {
@@ -257,7 +263,8 @@ describe('BitbucketCloudProvider errors and clone URLs', () => {
 
     installFetch(() => jsonResponse({ error: { message: 'forbidden' } }, { status: 403, statusText: 'Forbidden' }));
 
-    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow('Bitbucket Cloud authentication failed (403)');
+    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow(ProviderError);
+    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow('repository permissions and token scopes');
 
     installFetch(() => jsonResponse({ error: { message: 'missing' } }, { status: 404, statusText: 'Not Found' }));
 

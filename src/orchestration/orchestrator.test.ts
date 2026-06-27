@@ -437,8 +437,8 @@ describe('ReviewOrchestrator', () => {
       });
     });
 
-    it('falls through to full fetch when branch fetches do not resolve commits', async () => {
-      // All individual fetches fail; full fetch resolves.
+    it('falls through to shallow remote fetch when branch fetches do not resolve commits', async () => {
+      // All individual fetches fail; shallow remote fetch resolves.
       hasCommitSpy
         .mockResolvedValueOnce(false) // initial: baseSha missing
         .mockResolvedValueOnce(true) // initial: headSha ok
@@ -448,14 +448,14 @@ describe('ReviewOrchestrator', () => {
         .mockResolvedValueOnce(true) // after fetchBranch(target): headSha ok
         .mockResolvedValueOnce(false) // after fetchBranch(source): still missing
         .mockResolvedValueOnce(true) // after fetchBranch(source): headSha ok
-        .mockResolvedValueOnce(true) // after full fetch: baseSha resolved
-        .mockResolvedValueOnce(true); // after full fetch: headSha ok
+        .mockResolvedValueOnce(true) // after shallow remote fetch: baseSha resolved
+        .mockResolvedValueOnce(true); // after shallow remote fetch: headSha ok
       const onProgress = vi.fn();
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project', { onProgress });
 
-      expect(fetchSpy).toHaveBeenCalledWith('origin', { noTags: true, progress: true });
+      expect(fetchSpy).toHaveBeenCalledWith('origin', { depth: 1, noTags: true, progress: true });
     });
 
     it('throws with fetch error details when all fetch attempts fail', async () => {
@@ -493,7 +493,7 @@ describe('ReviewOrchestrator', () => {
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetSameBranches);
       currentBranchSpy.mockResolvedValue('main');
 
-      // Commit missing: fetchCommit fails, fetchBranch(target) fails, then full fetch resolves
+      // Commit missing: fetchCommit fails, fetchBranch(target) fails, then shallow remote fetch resolves
       hasCommitSpy
         .mockResolvedValueOnce(false) // initial: base missing
         .mockResolvedValueOnce(true) // initial: head ok
@@ -502,8 +502,8 @@ describe('ReviewOrchestrator', () => {
         .mockResolvedValueOnce(false) // after fetchBranch(target): still missing
         .mockResolvedValueOnce(true) // after fetchBranch(target): head ok
         // No sourceBranch fetch since source === target
-        .mockResolvedValueOnce(true) // after full fetch: resolved
-        .mockResolvedValueOnce(true); // after full fetch: head ok
+        .mockResolvedValueOnce(true) // after shallow remote fetch: resolved
+        .mockResolvedValueOnce(true); // after shallow remote fetch: head ok
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project', { onProgress: vi.fn() });

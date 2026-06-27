@@ -45,7 +45,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
       };
     }
 
-    if (/^https?:\/\/[^/]+\/.*\/pull-requests\/\d+\/?(?:[?#].*)?$/.test(ref)) {
+    if (/^https?:\/\/[^/]+\/.*\/pull-requests\/\d+(?:\/[^?#]*)?(?:[?#].*)?$/.test(ref)) {
       throw new ProviderError(
         'Bitbucket Server/Data Center pull request URLs are not supported by provider "bitbucket-cloud". Use a Bitbucket Cloud URL like https://bitbucket.org/workspace/repo/pull-requests/123.',
         'bitbucket-cloud',
@@ -235,8 +235,16 @@ export class BitbucketCloudProvider implements ReviewProvider {
   }
 
   private async ensureOk(res: Response): Promise<void> {
-    if (res.status === 401 || res.status === 403) {
-      throw new AuthenticationError(`Bitbucket Cloud authentication failed (${res.status})`, 'bitbucket-cloud');
+    if (res.status === 401) {
+      throw new AuthenticationError('Bitbucket Cloud authentication failed (401)', 'bitbucket-cloud');
+    }
+
+    if (res.status === 403) {
+      throw new ProviderError(
+        'Bitbucket Cloud access forbidden (403). Check repository permissions and token scopes.',
+        'bitbucket-cloud',
+        res.status,
+      );
     }
 
     if (res.status === 404) {

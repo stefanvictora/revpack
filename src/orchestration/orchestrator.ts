@@ -866,7 +866,7 @@ export class ReviewOrchestrator {
 
     for (const remote of remotes) {
       try {
-        await this.git.fetch(remote, { noTags: true, progress: reportFetch });
+        await this.git.fetch(remote, { depth: 1, noTags: true, progress: reportFetch });
       } catch (err) {
         fetchErrors.push(`git fetch ${remote}: ${err instanceof Error ? err.message : String(err)}`);
       }
