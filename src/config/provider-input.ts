@@ -62,8 +62,16 @@ export function isManagedCloudProvider(url: string, provider: ProviderType): boo
 export function validateProviderUrlForProvider(url: string | undefined, provider: ProviderType): void {
   if (provider !== 'bitbucket-cloud' || !url) return;
 
-  const host = parseProviderUrlHost(url);
-  if (host !== 'bitbucket.org') {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new ConfigError(
+      'Bitbucket Cloud profiles must use https://bitbucket.org. Bitbucket Server/Data Center URLs are not supported by provider "bitbucket-cloud".',
+    );
+  }
+
+  if (parsed.origin !== 'https://bitbucket.org' || parsed.pathname !== '/' || parsed.search || parsed.hash) {
     throw new ConfigError(
       'Bitbucket Cloud profiles must use https://bitbucket.org. Bitbucket Server/Data Center URLs are not supported by provider "bitbucket-cloud".',
     );

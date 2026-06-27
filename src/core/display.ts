@@ -1,4 +1,8 @@
-import type { ProviderType, TargetType } from './types.js';
+import type { z } from 'zod';
+import type { providerTypeSchema } from './schemas.js';
+import type { TargetType } from './types.js';
+
+type ProviderType = z.infer<typeof providerTypeSchema>;
 
 export interface TargetDisplayRef {
   provider: ProviderType;
@@ -15,6 +19,10 @@ export function formatTargetDisplayId(target: TargetDisplayRef): string {
       return `#${target.targetId}`;
     case 'local':
       return target.targetId;
+    default: {
+      const exhaustive: never = target.provider;
+      return exhaustive;
+    }
   }
 }
 

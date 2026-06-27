@@ -43,36 +43,16 @@ export const repliesArraySchema = z.array(replyDraftSchema);
 
 // ─── Profile Schema ──────────────────────────────────────
 
-export const profileSchema = z
-  .object({
-    provider: remoteProviderTypeSchema,
-    url: z.string().url().optional(),
-    tokenEnv: z.string().min(1).optional(),
-    emailEnv: z.string().min(1).optional(),
-    remotePatterns: z.array(z.string().min(1)).optional(),
-    caFile: z.string().min(1).optional(),
-    tlsVerify: z.boolean().optional(),
-    sshClone: z.boolean().optional(),
-  })
-  .superRefine((profile, ctx) => {
-    if (profile.provider !== 'bitbucket-cloud' || profile.url === undefined) return;
-
-    let host;
-    try {
-      host = new URL(profile.url).hostname.toLowerCase();
-    } catch {
-      return;
-    }
-
-    if (host !== 'bitbucket.org') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['url'],
-        message:
-          'Bitbucket Cloud profiles must use https://bitbucket.org; Bitbucket Server/Data Center URLs are not supported by provider "bitbucket-cloud".',
-      });
-    }
-  });
+export const profileSchema = z.object({
+  provider: remoteProviderTypeSchema,
+  url: z.string().url().optional(),
+  tokenEnv: z.string().min(1).optional(),
+  emailEnv: z.string().min(1).optional(),
+  remotePatterns: z.array(z.string().min(1)).optional(),
+  caFile: z.string().min(1).optional(),
+  tlsVerify: z.boolean().optional(),
+  sshClone: z.boolean().optional(),
+});
 
 // ─── Config Schema (profile-only) ────────────────────────
 

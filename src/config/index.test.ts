@@ -365,4 +365,25 @@ describe('runDoctor', () => {
     expect(emailCheck).toBeDefined();
     expect(emailCheck!.ok).toBe(false);
   });
+
+  it('reports missing Bitbucket Cloud provider URL locally', async () => {
+    const config: RevpackConfig = {
+      profiles: {
+        bitbucket: {
+          provider: 'bitbucket-cloud',
+          tokenEnv: 'DOC_TOKEN',
+          emailEnv: 'DOC_EMAIL',
+        },
+      },
+    };
+    writeConfig(config);
+    process.env.DOC_TOKEN = 'token';
+    process.env.DOC_EMAIL = 'user@example.com';
+
+    const result = await runDoctor(['git@bitbucket.org:workspace/repo.git'], 'bitbucket');
+    const providerUrlCheck = result.checks.find((c) => c.label === 'Provider URL');
+    expect(providerUrlCheck).toBeDefined();
+    expect(providerUrlCheck!.ok).toBe(false);
+    expect(providerUrlCheck!.detail).toContain('Bitbucket Cloud profiles must use https://bitbucket.org');
+  });
 });

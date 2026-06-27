@@ -54,30 +54,31 @@ export function registerConfigCommand(program: Command): void {
         let suggestedUrl = '';
         let suggestedName = '';
         let detectedProvider: ProviderType | null = null;
-        if (remoteUrls.length > 0) {
-          const firstRemote = remoteUrls[0];
+        for (const remoteUrl of remoteUrls) {
           try {
             // Handle SSH URLs like git@host:group/project.git
-            const sshMatch = firstRemote.match(/@([^:]+):/);
+            const sshMatch = remoteUrl.match(/@([^:]+):/);
             if (sshMatch) {
               suggestedUrl = `https://${sshMatch[1]}`;
               suggestedName = sshMatch[1].split('.')[0];
             } else {
-              const parsed = new URL(firstRemote);
+              const parsed = new URL(remoteUrl);
               suggestedUrl = `${parsed.protocol}//${parsed.host}`;
               suggestedName = parsed.hostname.split('.')[0];
             }
           } catch {
-            // ignore parse errors
+            continue;
           }
           // Detect provider from URL
-          if (firstRemote.includes('github.com')) {
+          if (remoteUrl.includes('github.com')) {
             detectedProvider = 'github';
-          } else if (firstRemote.includes('bitbucket.org')) {
+          } else if (remoteUrl.includes('bitbucket.org')) {
             detectedProvider = 'bitbucket-cloud';
-          } else if (firstRemote.includes('gitlab.')) {
+          } else if (remoteUrl.includes('gitlab.')) {
             detectedProvider = 'gitlab';
           }
+
+          if (detectedProvider) break;
         }
 
         // Use readline for interactive prompts
@@ -447,7 +448,8 @@ export function registerConfigCommand(program: Command): void {
           const provider = CONFIG_KEYS.provider.parse(opts.provider) as ProviderType;
 
           const profile: RevpackProfile = { provider };
-          if (opts.url) profile.url = CONFIG_KEYS.url.parse(opts.url) as string;
+          if (opts.url) profile.url = normalizeProviderUrlInput(CONFIG_KEYS.url.parse(opts.url) as string);
+          else if (provider === 'bitbucket-cloud') profile.url = 'https://bitbucket.org';
           validateProviderUrlForProvider(profile.url, provider);
           if (opts.tokenEnv) profile.tokenEnv = CONFIG_KEYS.tokenEnv.parse(opts.tokenEnv) as string;
           if (opts.emailEnv) profile.emailEnv = CONFIG_KEYS.emailEnv.parse(opts.emailEnv) as string;

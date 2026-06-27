@@ -79,7 +79,7 @@ describe('configSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects Bitbucket Server/Data Center URLs for Bitbucket Cloud profiles', () => {
+  it('keeps Bitbucket provider URL rules out of core schema validation', () => {
     const result = configSchema.safeParse({
       profiles: {
         bitbucket: {
@@ -88,9 +88,7 @@ describe('configSchema', () => {
         },
       },
     });
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    expect(result.error.issues[0].message).toContain('Bitbucket Server/Data Center URLs are not supported');
+    expect(result.success).toBe(true);
   });
 
   it('validates multiple profiles', () => {

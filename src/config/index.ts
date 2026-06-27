@@ -199,6 +199,13 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
     } catch {
       checks.push({ ok: false, label: 'URL', detail: `Invalid URL: ${profile.url}` });
     }
+  } else if (profile.provider === 'bitbucket-cloud') {
+    checks.push({
+      ok: false,
+      label: 'Provider URL',
+      detail:
+        'Bitbucket Cloud profiles must use https://bitbucket.org. Bitbucket Server/Data Center URLs are not supported by provider "bitbucket-cloud".',
+    });
   }
 
   // 5. Token env configured
