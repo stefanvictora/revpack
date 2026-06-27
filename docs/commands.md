@@ -119,32 +119,29 @@ Generated harness files:
 
 ## `config`
 
-Manages named provider profiles.
+Creates, inspects, and edits provider profiles. Revpack stores provider settings in named profiles. Commands such as `show`, `doctor`, `get`, `set`, and `unset` use the profile resolved from the current git remote unless you pass `--profile`; `config profile` commands manage saved profiles directly.
 
 ```bash
-# Interactive setup
+# Create
 revpack config setup
 
-# Show resolved configuration
+# Current project
 revpack config show
 revpack config show --profile myprofile
 revpack config show --sources
+revpack config doctor
+revpack config doctor --profile myprofile
 
-# Read or change individual keys
+# Profile values
 revpack config get <key>
 revpack config set <key> <value>
 revpack config unset <key>
 
-# Profile management
+# Saved profiles
 revpack config profile list
 revpack config profile show <name>
 revpack config profile create <name>
 revpack config profile delete <name>
-revpack config profile rename <old> <new>
-
-# Health checks
-revpack config doctor
-revpack config doctor --profile myprofile
 ```
 
 Use these options when changing profile-specific values:

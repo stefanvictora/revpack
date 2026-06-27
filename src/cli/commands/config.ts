@@ -17,7 +17,7 @@ import { handleError, outputJson } from '../helpers.js';
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
     .command('config')
-    .description('Manage configuration')
+    .description('Create, inspect, and edit provider profiles')
     .action(function (this: Command) {
       this.outputHelp();
     });
@@ -26,7 +26,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('show')
-    .description('Show resolved configuration for the current directory')
+    .description('Show the matching or selected profile')
     .option('--profile <name>', 'Show a specific profile')
     .option('--json', 'Output as JSON')
     .option('--sources', 'Show where each value comes from')
@@ -38,7 +38,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('setup')
-    .description('Interactive profile setup')
+    .description('Create a profile interactively')
     .action(async () => {
       try {
         const remoteUrls = await getRemoteUrlsSafe();
@@ -195,7 +195,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('doctor')
-    .description('Check configuration health')
+    .description('Check the matching or selected profile')
     .option('--profile <name>', 'Check a specific profile')
     .option('--json', 'Output as JSON')
     .action(async (opts: { profile?: string; json?: boolean }) => {
@@ -232,7 +232,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('get <key>')
-    .description('Get a profile config value')
+    .description('Read a profile value')
     .option('--profile <name>', 'Target profile')
     .action(async (key: string, opts: { profile?: string }) => {
       try {
@@ -253,7 +253,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('set <key> <value>')
-    .description('Set a profile config value')
+    .description('Update a profile value')
     .option('--profile <name>', 'Target profile')
     .option('--current', 'Resolve profile from current git repository')
     .action(async (key: string, value: string, opts: { profile?: string; current?: boolean }) => {
@@ -277,7 +277,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('unset <key>')
-    .description('Remove a profile config value')
+    .description('Remove a profile value')
     .option('--profile <name>', 'Target profile')
     .option('--current', 'Resolve profile from current git repository')
     .action(async (key: string, opts: { profile?: string; current?: boolean }) => {
@@ -301,7 +301,7 @@ export function registerConfigCommand(program: Command): void {
 
   // ─── config profile ──────────────────────────────────────
 
-  const profileCmd = configCmd.command('profile').description('Manage configuration profiles');
+  const profileCmd = configCmd.command('profile').description('List, show, create, or delete saved profiles');
 
   // profile list
   profileCmd
@@ -389,7 +389,7 @@ export function registerConfigCommand(program: Command): void {
   // profile create
   profileCmd
     .command('create <name>')
-    .description('Create or update a profile')
+    .description('Create or update a profile non-interactively')
     .requiredOption('--provider <type>', 'Provider type: gitlab or github')
     .option('--url <url>', 'Provider base URL')
     .option('--token-env <name>', 'Environment variable name for the token')
@@ -466,9 +466,15 @@ export function registerConfigCommand(program: Command): void {
   configCmd.addHelpText(
     'after',
     `
-Common tasks:
+Create:
+  revpack config setup
+
+Current project:
   revpack config show
-  revpack config unset <key> --profile <name>
+  revpack config doctor
+
+Saved profiles:
+  revpack config profile list
   revpack config profile delete <name>
 `,
   );
