@@ -13,6 +13,7 @@ import {
   parseDescriptionState,
   REVIEW_NOTE_MARKER,
 } from '../workspace/checkpoint.js';
+import { AuthenticationError } from '../core/errors.js';
 import type { ReviewProvider } from '../providers/provider.js';
 import type { ReviewTarget, ReviewThread, ReviewVersion, ReviewTargetRef } from '../core/types.js';
 
@@ -1057,15 +1058,14 @@ describe('ReviewOrchestrator', () => {
       );
     });
 
-    it('swallows non-"Multiple open" errors from findTargetByBranch and falls through', async () => {
+    it('surfaces provider authentication errors from branch auto-detection', async () => {
       deriveSlugSpy = vi.spyOn(GitHelper.prototype, 'deriveRepoSlug').mockResolvedValue('group/project');
-      (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network timeout'));
+      (mockProvider.findTargetByBranch as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new AuthenticationError('GitLab authentication failed (403)', 'gitlab'),
+      );
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      // The network error is swallowed; falls through to "Could not determine"
-      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow(
-        'Could not determine which MR to prepare',
-      );
+      await expect(orchestrator.prepare(undefined, undefined)).rejects.toThrow('GitLab authentication failed (403)');
     });
 
     it('falls through to error on detached HEAD', async () => {
