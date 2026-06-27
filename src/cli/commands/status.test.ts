@@ -6,6 +6,7 @@ import {
   buildPendingOlderBundleLines,
   buildStatusNextLines,
   compareCheckoutToTargetHead,
+  getTargetStateTone,
 } from './status.js';
 
 describe('buildBundleStatusDisplayTarget', () => {
@@ -202,6 +203,19 @@ describe('buildStatusNextLines', () => {
         checkpointDue: false,
       }),
     ).toEqual(['Next:', '  No pending publish action.']);
+  });
+});
+
+describe('getTargetStateTone', () => {
+  it('normalizes GitHub, GitLab, and Bitbucket Cloud target states for status display', () => {
+    expect(getTargetStateTone('open')).toBe('open');
+    expect(getTargetStateTone('opened')).toBe('open');
+    expect(getTargetStateTone('OPEN')).toBe('open');
+    expect(getTargetStateTone('MERGED')).toBe('merged');
+    expect(getTargetStateTone('DECLINED')).toBe('closed');
+    expect(getTargetStateTone('SUPERSEDED')).toBe('closed');
+    expect(getTargetStateTone('LOCKED')).toBe('locked');
+    expect(getTargetStateTone('custom')).toBe('default');
   });
 });
 
