@@ -1,6 +1,14 @@
 import * as fs from 'node:fs';
+import * as fsp from 'node:fs/promises';
+import * as path from 'node:path';
 import { Agent } from 'undici';
-import type { CheckoutBranchTarget, CheckoutFallbackRef, ReviewProvider, NewThreadPosition } from '../provider.js';
+import type {
+  CheckoutBranchTarget,
+  CheckoutFallbackRef,
+  ReviewProvider,
+  NewThreadPosition,
+  ReviewAssetLocalizationOptions,
+} from '../provider.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
@@ -19,21 +27,40 @@ interface GitLabRequestOptions {
   params?: Record<string, string>;
 }
 
+interface GitLabUploadAssetRef {
+  projectId: string;
+  secret: string;
+  filenamePath: string;
+}
+
 interface GitLabProviderOptions {
   caFile?: string;
   tlsVerify?: boolean;
   sshClone?: boolean;
 }
 
+const MAX_UPLOAD_ASSET_BYTES = 10 * 1024 * 1024;
+const ALLOWED_UPLOAD_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.avif']);
+const ALLOWED_UPLOAD_IMAGE_CONTENT_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+  'image/avif',
+]);
+
 export class GitLabProvider implements ReviewProvider {
   readonly providerType = 'gitlab' as const;
   private readonly baseUrl: string;
+  private readonly webUrlOrigin: string;
   private readonly token: string;
   private readonly fetchDispatcher: object | undefined;
   private readonly sshClone: boolean;
 
   constructor(gitlabUrl: string, token: string, opts: GitLabProviderOptions = {}) {
     this.baseUrl = gitlabUrl.replace(/\/+$/, '');
+    this.webUrlOrigin = new URL(this.baseUrl).origin;
     this.token = token;
     this.fetchDispatcher = buildDispatcher(opts);
     this.sshClone = opts.sshClone ?? false;
@@ -113,6 +140,47 @@ export class GitLabProvider implements ReviewProvider {
       `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/discussions`,
     );
     return discussions.map((d) => this.mapDiscussion(ref, d));
+  }
+
+  async localizeReviewAssets(
+    _ref: ReviewTargetRef,
+    threads: ReviewThread[],
+    options: ReviewAssetLocalizationOptions,
+  ): Promise<Record<string, string>> {
+    const rewrites: Record<string, string> = {};
+    const assetRefs = new Map<string, GitLabUploadAssetRef>();
+
+    for (const thread of threads) {
+      for (const comment of thread.comments) {
+        for (const url of extractImageUrls(comment.body)) {
+          const assetRef = this.parseUploadAssetUrl(url);
+          if (assetRef) assetRefs.set(url, assetRef);
+        }
+      }
+    }
+
+    if (assetRefs.size > 0) {
+      options.onProgress?.(`Downloading ${assetRefs.size} GitLab review comment asset(s).`);
+    }
+
+    let downloaded = 0;
+    for (const [remoteUrl, assetRef] of assetRefs) {
+      const result = await this.downloadUploadAsset(assetRef, remoteUrl, options.assetDir);
+      if (!result.localPath) {
+        options.onProgress?.(formatUploadDownloadFailure(assetRef, result.reason));
+        continue;
+      }
+
+      const relativeAssetPath = toPosixPath(path.relative(options.assetDir, result.localPath));
+      rewrites[remoteUrl] = `${options.markdownPathPrefix}/${relativeAssetPath}`;
+      downloaded++;
+    }
+
+    if (downloaded > 0) {
+      options.onProgress?.(`Downloaded ${downloaded} GitLab review comment asset(s) into .revpack/assets.`);
+    }
+
+    return rewrites;
   }
 
   async getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]> {
@@ -385,6 +453,50 @@ export class GitLabProvider implements ReviewProvider {
     return results;
   }
 
+  private async requestBinaryUrl(url: string, extension: string): Promise<{ data?: Buffer; reason: string }> {
+    const headers: Record<string, string> = {
+      'PRIVATE-TOKEN': this.token,
+    };
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers,
+        ...(this.fetchDispatcher ? { dispatcher: this.fetchDispatcher } : {}),
+      } as RequestInit);
+    } catch (err) {
+      return { reason: err instanceof Error ? err.message : String(err) };
+    }
+
+    if (!res.ok) return { reason: `${res.status} ${res.statusText}`.trim() };
+
+    const contentLength = parseInt(res.headers.get('content-length') ?? '', 10);
+    if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_ASSET_BYTES) {
+      return { reason: `asset is larger than ${formatBytes(MAX_UPLOAD_ASSET_BYTES)}` };
+    }
+
+    const contentType = res.headers.get('content-type') ?? '';
+    const mimeType = contentType.split(';', 1)[0].trim().toLowerCase();
+    if (mimeType === 'text/html') {
+      return { reason: 'received HTML instead of an upload asset' };
+    }
+    const allowGenericBinary = ALLOWED_UPLOAD_IMAGE_EXTENSIONS.has(extension);
+    if (
+      mimeType &&
+      (mimeType !== 'application/octet-stream' || !allowGenericBinary) &&
+      !ALLOWED_UPLOAD_IMAGE_CONTENT_TYPES.has(mimeType)
+    ) {
+      return { reason: `unsupported content type ${mimeType}` };
+    }
+
+    const data = Buffer.from(await res.arrayBuffer());
+    if (data.byteLength > MAX_UPLOAD_ASSET_BYTES) {
+      return { reason: `asset is larger than ${formatBytes(MAX_UPLOAD_ASSET_BYTES)}` };
+    }
+
+    return { data, reason: 'ok' };
+  }
+
   // ─── Mappers ────────────────────────────────────────────
 
   private mapMR(repo: string, mr: GitLabMR): ReviewTarget {
@@ -428,20 +540,86 @@ export class GitLabProvider implements ReviewProvider {
       resolvedBy: firstNote?.resolved_by?.username,
       resolvedAt: undefined, // GitLab doesn't expose resolved_at in discussions endpoint
       position,
-      comments: disc.notes.map((n) => this.mapNote(n)),
+      comments: disc.notes.map((n) => this.mapNote(ref, n)),
     };
   }
 
-  private mapNote(note: GitLabNote): ReviewComment {
+  private mapNote(ref: ReviewTargetRef, note: GitLabNote): ReviewComment {
     return {
       id: String(note.id),
-      body: note.body,
+      body: this.expandRelativeUploadUrls(ref, note),
       author: note.author?.username ?? 'unknown',
       createdAt: note.created_at,
       updatedAt: note.updated_at,
       origin: this.detectOrigin(note),
       system: note.system ?? false,
     };
+  }
+
+  private expandRelativeUploadUrls(ref: ReviewTargetRef, note: GitLabNote): string {
+    const projectId = note.project_id != null ? String(note.project_id) : encodeURIComponent(ref.repository);
+    const uploadBase = `${this.webUrlOrigin}/-/project/${projectId}`;
+    return note.body.replace(
+      /(]\(|src\s*=\s*["'])(\/uploads\/[^)"'\s}]+)/gi,
+      (_match, prefix: string, path: string) => {
+        return `${prefix}${uploadBase}${path}`;
+      },
+    );
+  }
+
+  private parseUploadAssetUrl(rawUrl: string): GitLabUploadAssetRef | null {
+    let url: URL;
+    try {
+      url = new URL(rawUrl);
+    } catch {
+      return null;
+    }
+
+    if (url.origin !== this.webUrlOrigin) return null;
+
+    const match = url.pathname.match(/^\/-\/project\/([^/]+)\/uploads\/([^/]+)\/(.+)$/);
+    if (!match) return null;
+
+    return {
+      projectId: match[1],
+      secret: match[2],
+      filenamePath: match[3],
+    };
+  }
+
+  private async downloadUploadAsset(
+    assetRef: GitLabUploadAssetRef,
+    webUrl: string,
+    assetDir: string,
+  ): Promise<{ localPath?: string; reason: string }> {
+    const safeProjectId = safePathSegment(decodeURIComponent(assetRef.projectId));
+    const safeSecret = safePathSegment(decodeURIComponent(assetRef.secret));
+    const safeFilename = safeAssetFilename(decodeURIComponent(assetRef.filenamePath));
+    const extension = path.extname(safeFilename).toLowerCase();
+    if (!ALLOWED_UPLOAD_IMAGE_EXTENSIONS.has(extension)) {
+      return { reason: `unsupported image file extension ${extension || '<none>'}` };
+    }
+
+    const localPath = path.join(assetDir, 'gitlab-uploads', safeProjectId, safeSecret, safeFilename);
+
+    try {
+      await fsp.access(localPath);
+      return { localPath, reason: 'already downloaded' };
+    } catch {
+      // Download below.
+    }
+
+    const apiPath = `/api/v4/projects/${assetRef.projectId}/uploads/${assetRef.secret}/${assetRef.filenamePath}`;
+    const apiUrl = new URL(apiPath, this.baseUrl).toString();
+    const apiResult = await this.requestBinaryUrl(apiUrl, extension);
+    const webResult = apiResult.data ? apiResult : await this.requestBinaryUrl(webUrl, extension);
+    if (!webResult.data) {
+      return { reason: webResult.reason ? `API ${apiResult.reason}; web ${webResult.reason}` : apiResult.reason };
+    }
+
+    await fsp.mkdir(path.dirname(localPath), { recursive: true });
+    await fsp.writeFile(localPath, webResult.data);
+    return { localPath, reason: 'downloaded' };
   }
 
   private detectOrigin(note: GitLabNote): CommentOrigin {
@@ -488,6 +666,54 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function extractImageUrls(body: string): string[] {
+  const urls = new Set<string>();
+  for (const match of body.matchAll(/!\[[^\]]*]\((https?:\/\/[^\s)"'<>}]+)[^)]*\)/g)) {
+    urls.add(match[1]);
+  }
+  for (const match of body.matchAll(/<img\b[^>]*\bsrc\s*=\s*["'](https?:\/\/[^"']+)["'][^>]*>/gi)) {
+    urls.add(match[1]);
+  }
+  return [...urls];
+}
+
+function safePathSegment(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'asset';
+}
+
+function safeAssetFilename(value: string): string {
+  const filename = value.split(/[\\/]/).pop() ?? 'asset';
+  return safePathSegment(filename);
+}
+
+function toPosixPath(value: string): string {
+  return value.split(path.sep).join('/');
+}
+
+function formatUploadDownloadFailure(assetRef: GitLabUploadAssetRef, reason: string): string {
+  const filename = safeAssetFilename(decodeURIComponent(assetRef.filenamePath));
+  const permissionHint =
+    reason.includes('401') || reason.includes('403')
+      ? [
+          '',
+          'GitLab upload download failed.',
+          '',
+          'The token must have:',
+          '- Fine-grained permission: Markdown Upload / Read',
+          '- Access to this project or parent group',
+          '- User role: Guest or higher',
+          '',
+          'Endpoint:',
+          'GET /projects/:id/uploads/:secret/:filename',
+        ].join('\n')
+      : '';
+  return `Could not download GitLab review comment asset ${filename}: ${reason}.${permissionHint}`;
+}
+
+function formatBytes(bytes: number): string {
+  return `${Math.round(bytes / 1024 / 1024)} MiB`;
+}
+
 // ─── GitLab API response types (internal) ─────────────────
 
 interface GitLabMR {
@@ -518,6 +744,7 @@ interface GitLabDiscussion {
 
 interface GitLabNote {
   id: number;
+  project_id?: number;
   body: string;
   author?: { username: string };
   created_at: string;

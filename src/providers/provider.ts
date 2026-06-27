@@ -30,6 +30,15 @@ export interface CheckoutBranchTarget {
   sourceBranch: string;
 }
 
+export interface ReviewAssetLocalizationOptions {
+  /** Absolute directory where downloaded assets should be stored. */
+  assetDir: string;
+  /** Relative path prefix from `.revpack/threads/*.md` to the asset directory. */
+  markdownPathPrefix: string;
+  /** Optional human-readable progress/warning sink. */
+  onProgress?: (message: string) => void;
+}
+
 /**
  * Provider-neutral interface for forge operations.
  * Implementations: GitLabProvider, (future) GitHubProvider.
@@ -54,6 +63,17 @@ export interface ReviewProvider {
 
   /** List all threads (resolved + unresolved). */
   listAllThreads(ref: ReviewTargetRef): Promise<ReviewThread[]>;
+
+  /**
+   * Download provider-hosted assets referenced by thread comments and return
+   * Markdown URL rewrites from remote URL to local bundle path.
+   * Best-effort: providers should skip assets they cannot download.
+   */
+  localizeReviewAssets?(
+    ref: ReviewTargetRef,
+    threads: ReviewThread[],
+    options: ReviewAssetLocalizationOptions,
+  ): Promise<Record<string, string>>;
 
   /** List diff versions (for incremental review). */
   getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]>;

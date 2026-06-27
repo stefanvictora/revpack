@@ -200,6 +200,30 @@ describe('WorkspaceManager', () => {
     expect(threadMd).toContain('Unresolved');
   });
 
+  it('applies asset rewrites to thread markdown without changing thread JSON', async () => {
+    const remoteUrl = 'https://gitlab.com/-/project/83828498/uploads/e24b36/image.png';
+    const thread: ReviewThread = {
+      ...makeThread(),
+      comments: [
+        {
+          ...makeThread().comments[0],
+          body: `![image.png](${remoteUrl})`,
+        },
+      ],
+    };
+    const threadIndex = WorkspaceManager.buildThreadIndex([thread]);
+    await manager.createBundle(makeTarget(), [thread], [], [], threadIndex, {
+      assetRewrites: { [remoteUrl]: '../assets/gitlab-uploads/83828498/e24b36/image.png' },
+    });
+
+    const threadDir = path.join(tmpDir, '.revpack', 'threads');
+    const threadJson = JSON.parse(await fs.readFile(path.join(threadDir, 'T-001.json'), 'utf-8'));
+    const threadMd = await fs.readFile(path.join(threadDir, 'T-001.md'), 'utf-8');
+
+    expect(threadJson.comments[0].body).toBe(`![image.png](${remoteUrl})`);
+    expect(threadMd).toContain('![image.png](../assets/gitlab-uploads/83828498/e24b36/image.png)');
+  });
+
   it('writes latest.patch', async () => {
     await createBundle(manager, makeTarget(), [], [makeDiff()]);
 

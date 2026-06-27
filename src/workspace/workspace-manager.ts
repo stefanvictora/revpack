@@ -241,7 +241,7 @@ export class WorkspaceManager {
     diffs: ReviewDiff[],
     versions: ReviewVersion[],
     threadIndex: ThreadIndex,
-    options?: { latestPatchContent?: string },
+    options?: { latestPatchContent?: string; assetRewrites?: Record<string, string> },
   ): Promise<WorkspaceBundle> {
     const preparedAt = new Date().toISOString();
 
@@ -266,7 +266,14 @@ export class WorkspaceManager {
 
     // Write thread files
     await this.clearThreadFiles();
-    await this.writeThreads(threads, threadIndex, diffs, target.diffRefs.headSha, options?.latestPatchContent);
+    await this.writeThreads(
+      threads,
+      threadIndex,
+      diffs,
+      target.diffRefs.headSha,
+      options?.latestPatchContent,
+      options?.assetRewrites,
+    );
 
     // Write diffs and diff bundle artifacts
     await this.writeDiffs(diffs, options?.latestPatchContent);
@@ -1277,6 +1284,7 @@ export class WorkspaceManager {
     diffs: ReviewDiff[],
     currentHeadSha: string,
     latestPatchContent?: string,
+    assetRewrites?: Record<string, string>,
   ): Promise<void> {
     // Build line map from diffs for embedding diff context in thread files
     const patchContent = latestPatchContent ?? diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
@@ -1302,7 +1310,7 @@ export class WorkspaceManager {
       await this.writeJson(path.join(this.baseDir, 'threads', `${prefix}.json`), threadToWrite);
 
       // Markdown version for human/agent reading
-      const md = this.threadToMarkdown(thread, prefix, lineMap, currentHeadSha);
+      const md = this.threadToMarkdown(thread, prefix, lineMap, currentHeadSha, assetRewrites);
       await fs.writeFile(path.join(this.baseDir, 'threads', `${prefix}.md`), md, 'utf-8');
     }
   }
@@ -1357,6 +1365,7 @@ export class WorkspaceManager {
     prefix: string,
     lineMap: LineMap | undefined,
     currentHeadSha: string,
+    assetRewrites?: Record<string, string>,
   ): string {
     const lines: string[] = [];
     lines.push(`# ${prefix}: Thread ${thread.threadId}`);
@@ -1423,7 +1432,7 @@ export class WorkspaceManager {
       } else {
         lines.push(`### ${comment.author} (${comment.origin}) — ${comment.createdAt}`);
         lines.push('');
-        lines.push(comment.body);
+        lines.push(rewriteMarkdownUrls(comment.body, assetRewrites));
         lines.push('');
       }
       lines.push('---');
@@ -1484,6 +1493,16 @@ export class WorkspaceManager {
   private async writeJson(filePath: string, data: unknown): Promise<void> {
     await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
   }
+}
+
+function rewriteMarkdownUrls(body: string, rewrites?: Record<string, string>): string {
+  if (!rewrites || Object.keys(rewrites).length === 0) return body;
+
+  let rewritten = body;
+  for (const [from, to] of Object.entries(rewrites)) {
+    rewritten = rewritten.split(from).join(to);
+  }
+  return rewritten;
 }
 
 // ─── JSON Schemas for output files ────────────────────────
