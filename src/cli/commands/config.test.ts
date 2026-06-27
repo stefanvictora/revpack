@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ConfigError } from '../../core/errors.js';
 import {
   deriveProfileNameFromProviderUrl,
   inferProviderFromUrl,
@@ -8,8 +7,9 @@ import {
   isTokenEnvResolved,
   normalizeProviderInput,
   normalizeProviderUrlInput,
-  registerConfigCommand,
-} from './config.js';
+} from '../../config/index.js';
+import { ConfigError } from '../../core/errors.js';
+import { registerConfigCommand } from './config.js';
 
 describe('config command', () => {
   it('prints help for the parent command instead of showing resolved config', async () => {
@@ -71,6 +71,7 @@ describe('config setup provider prompts', () => {
     expect(inferProviderFromUrl('https://gitlab.com')).toBe('gitlab');
     expect(inferProviderFromUrl('https://gitlab.example.com')).toBe('gitlab');
     expect(inferProviderFromUrl('https://github.com')).toBe('github');
+    expect(inferProviderFromUrl('https://github.example.com')).toBe('github');
   });
 
   it('does not treat an entered URL as a provider choice', () => {

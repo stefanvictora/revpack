@@ -7,8 +7,14 @@ import {
   runDoctor,
   resolveProfile,
   CONFIG_FILE,
+  deriveProfileNameFromProviderUrl,
+  inferProviderFromUrl,
+  isManagedCloudProvider,
+  isTokenEnvResolved,
+  normalizeProviderInput,
+  normalizeProviderUrlInput,
 } from '../../config/index.js';
-import type { RevpackConfig, RevpackProfile } from '../../config/types.js';
+import type { ProviderType, RevpackConfig, RevpackProfile } from '../../config/types.js';
 import { CONFIG_KEYS, VALID_CONFIG_KEYS } from '../../config/keys.js';
 import { ConfigError } from '../../core/errors.js';
 import { GitHelper } from '../../workspace/git-helper.js';
@@ -95,7 +101,7 @@ export function registerConfigCommand(program: Command): void {
         }
         const defaultProvider = inferProviderFromUrl(url) ?? detectedProvider ?? 'gitlab';
         const providerInput = (await ask(`Provider (gitlab/github) [${defaultProvider}]: `)) || defaultProvider;
-        let provider: SupportedProvider;
+        let provider: ProviderType;
         try {
           provider = normalizeProviderInput(providerInput);
         } catch (err) {
@@ -373,7 +379,7 @@ export function registerConfigCommand(program: Command): void {
         }
 
         if (opts.json) {
-          const tokenResolved = profile.tokenEnv ? Boolean(process.env[profile.tokenEnv]) : false;
+          const tokenResolved = profile.tokenEnv ? isTokenEnvResolved(profile.tokenEnv) : false;
           outputJson({ name, ...profile, tokenResolved });
           return;
         }
@@ -632,64 +638,6 @@ function src(showSources: boolean | undefined, source: string | undefined): stri
 function validateKey(key: string): void {
   if (!VALID_CONFIG_KEYS.includes(key)) {
     throw new ConfigError(`Unknown config key: "${key}". Valid keys: ${VALID_CONFIG_KEYS.join(', ')}`);
-  }
-}
-
-type SupportedProvider = 'github' | 'gitlab';
-
-export function normalizeProviderInput(value: string): SupportedProvider {
-  const provider = value.trim().toLowerCase();
-  if (provider === 'gitlab' || provider === 'github') {
-    return provider;
-  }
-
-  throw new ConfigError(`Invalid provider: "${value}". Must be "gitlab" or "github".`);
-}
-
-export function normalizeProviderUrlInput(value: string): string {
-  const url = value.trim();
-  if (!url) return '';
-
-  try {
-    new URL(url);
-    return url;
-  } catch {
-    const hint = /^[\w.-]+(?::\d+)?(?:\/.*)?$/.test(url) ? ` Include the scheme, for example "https://${url}".` : '';
-    throw new ConfigError(
-      `Invalid provider URL: "${value}". Expected an absolute URL like "https://gitlab.com".${hint}`,
-    );
-  }
-}
-
-export function inferProviderFromUrl(value: string): SupportedProvider | null {
-  const host = parseProviderUrlHost(value);
-  if (!host) return null;
-  if (host === 'github.com' || host.endsWith('.github.com')) return 'github';
-  if (host === 'gitlab.com' || host.startsWith('gitlab.') || host.includes('.gitlab.')) return 'gitlab';
-  return null;
-}
-
-export function deriveProfileNameFromProviderUrl(value: string): string {
-  const host = parseProviderUrlHost(value);
-  return host ? host.split('.')[0] : '';
-}
-
-export function isManagedCloudProvider(url: string, provider: SupportedProvider): boolean {
-  const host = parseProviderUrlHost(url);
-  return (provider === 'github' && host === 'github.com') || (provider === 'gitlab' && host === 'gitlab.com');
-}
-
-export function isTokenEnvResolved(tokenEnv: string): boolean {
-  const value = process.env[tokenEnv];
-  return Boolean(value && value.length > 0);
-}
-
-function parseProviderUrlHost(value: string): string {
-  if (!value.trim()) return '';
-  try {
-    return new URL(value).hostname.toLowerCase();
-  } catch {
-    return '';
   }
 }
 
