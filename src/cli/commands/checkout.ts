@@ -11,11 +11,11 @@ export function registerCheckoutCommand(program: Command): void {
     .description(
       [
         'Fetch and check out the PR/MR source branch locally.',
-        '  In a git repo: fetches the branch and switches to it.',
+        '  In a git repo: fetches the branch or provider checkout ref and switches to it.',
         '  Outside a git repo: shallow-clones into a new directory first.',
       ].join('\n'),
     )
-    .summary('Check out the PR/MR source branch locally')
+    .summary('Check out a PR/MR locally')
     .option('--prepare', 'Deprecated: checkout prepares by default')
     .option('--setup', 'Also run `setup` after checkout and prepare')
     .option('--repo <repo>', 'Repository slug (group/project)')

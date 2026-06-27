@@ -1,4 +1,4 @@
-import type { ReviewProvider } from '../providers/provider.js';
+import type { CheckoutBranchTarget, CheckoutFallbackRef, ReviewProvider } from '../providers/provider.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
@@ -180,8 +180,9 @@ export class ReviewOrchestrator {
       );
     }
 
-    // Check branch matches MR source branch
-    if (localBranch !== 'HEAD' && localBranch !== target.sourceBranch) {
+    // Check branch matches MR source branch, except for provider fallback branches
+    // that checkout creates when the original source branch is no longer fetchable.
+    if (!this.isAllowedCheckoutBranch(target, localBranch)) {
       const targetKind = formatTargetKind(target);
       const targetDisplayId = formatTargetDisplayId(target);
       throw new Error(
@@ -396,7 +397,7 @@ export class ReviewOrchestrator {
     try {
       const currentBranch = await this.git.currentBranch();
       if (!currentBranch || currentBranch === 'HEAD') return null;
-      if (currentBranch !== bundleState.target.sourceBranch) {
+      if (!this.isAllowedCheckoutBranch(bundleState.target, currentBranch)) {
         return {
           currentBranch,
           expectedBranch: bundleState.target.sourceBranch,
@@ -422,11 +423,13 @@ export class ReviewOrchestrator {
     // Some providers (GitHub) expose a permanent refspec for each PR that works even
     // after the source branch is deleted from the contributor's fork.
     const sourceRefspec = this.provider.getSourceRefspec?.(targetRef);
+    const checkoutFallback = this.provider.getCheckoutFallbackRef?.(targetRef) ?? null;
 
     if (!inRepo) {
       // No git repo — shallow clone into a sub-directory, similar to `git clone`.
       const baseCloneUrl = this.provider.getCloneUrl(targetRef.repository);
       let clonedDir: string;
+      let checkedOutBranch = target.sourceBranch;
 
       if (sourceRefspec) {
         // Refspec-based clone: fetch via the permanent PR ref from the base repo.
@@ -436,13 +439,32 @@ export class ReviewOrchestrator {
         // Fallback: clone from fork (if fork PR) or base repo using the branch name.
         const checkoutRepo = target.headRepository ?? targetRef.repository;
         const cloneUrl = this.provider.getCloneUrl(checkoutRepo);
-        clonedDir = await GitHelper.clone(cloneUrl, target.sourceBranch, this.git.cwd);
+        try {
+          clonedDir = await GitHelper.clone(cloneUrl, target.sourceBranch, this.git.cwd);
+        } catch (sourceError) {
+          if (!checkoutFallback) {
+            throw sourceError;
+          }
+
+          try {
+            clonedDir = await GitHelper.cloneAndCheckoutRef(
+              baseCloneUrl,
+              checkoutFallback.remoteRef,
+              checkoutFallback.localBranch,
+              this.git.cwd,
+            );
+            checkedOutBranch = checkoutFallback.localBranch;
+          } catch (fallbackError) {
+            throw this.checkoutFallbackError(target, sourceError, fallbackError);
+          }
+        }
       }
 
-      return { branch: target.sourceBranch, target, clonedTo: clonedDir };
+      return { branch: checkedOutBranch, target, clonedTo: clonedDir };
     }
 
     // Existing repo — fetch the source branch.
+    let checkedOutBranch = target.sourceBranch;
     if (sourceRefspec) {
       // Fetch the PR ref from origin and create a local branch for it.
       // This works for both same-repo and fork PRs, even after branch deletion.
@@ -450,9 +472,17 @@ export class ReviewOrchestrator {
     } else if (target.headRepository) {
       // No permanent refspec support — fetch directly from the fork URL.
       const forkCloneUrl = this.provider.getCloneUrl(target.headRepository);
-      await this.git.fetchBranchFromUrl(forkCloneUrl, target.sourceBranch);
+      try {
+        await this.git.fetchBranchFromUrl(forkCloneUrl, target.sourceBranch);
+      } catch (sourceError) {
+        checkedOutBranch = await this.fetchCheckoutFallback(target, checkoutFallback, sourceError);
+      }
     } else {
-      await this.git.fetchBranch(target.sourceBranch);
+      try {
+        await this.git.fetchBranch(target.sourceBranch);
+      } catch (sourceError) {
+        checkedOutBranch = await this.fetchCheckoutFallback(target, checkoutFallback, sourceError);
+      }
     }
 
     try {
@@ -460,11 +490,11 @@ export class ReviewOrchestrator {
       //
       // This allows harmless local state, such as unrelated untracked files,
       // while still refusing switches that would overwrite local changes.
-      await this.git.switchBranch(target.sourceBranch);
+      await this.git.switchBranch(checkedOutBranch);
     } catch (error) {
       throw new Error(
         [
-          `Could not switch to branch '${target.sourceBranch}'.`,
+          `Could not switch to branch '${checkedOutBranch}'.`,
           '',
           `Original error: ${error instanceof Error ? error.message : String(error)}`,
         ].join('\n'),
@@ -472,7 +502,7 @@ export class ReviewOrchestrator {
       );
     }
 
-    return { branch: target.sourceBranch, target };
+    return { branch: checkedOutBranch, target };
   }
 
   // ─── Write operations (guarded) ─────────────────────────
@@ -641,7 +671,7 @@ export class ReviewOrchestrator {
       // If we can determine the current branch, check it matches
       try {
         const currentBranch = await this.git.currentBranch();
-        if (currentBranch && currentBranch !== 'HEAD' && currentBranch !== bundleState.target.sourceBranch) {
+        if (currentBranch && !this.isAllowedCheckoutBranch(bundleState.target, currentBranch)) {
           throw new Error(
             `Branch mismatch: current branch "${currentBranch}" does not match ` +
               `the bundle's ${bundleTargetKind} source branch "${bundleState.target.sourceBranch}" (${bundleTargetDisplayId}).\n` +
@@ -784,6 +814,48 @@ export class ReviewOrchestrator {
     return checks.filter((sha): sha is string => sha !== null);
   }
 
+  private async fetchCheckoutFallback(
+    target: ReviewTarget,
+    fallback: CheckoutFallbackRef | null,
+    sourceError: unknown,
+  ): Promise<string> {
+    if (!fallback) {
+      throw sourceError;
+    }
+
+    try {
+      const remote = this.checkoutRemote(target);
+      await this.git.fetchRef(remote, fallback.remoteRef, fallback.localBranch);
+      return fallback.localBranch;
+    } catch (fallbackError) {
+      throw this.checkoutFallbackError(target, sourceError, fallbackError);
+    }
+  }
+
+  private checkoutRemote(target: ReviewTarget): string {
+    return target.headRepository ? this.provider.getCloneUrl(target.repository) : 'origin';
+  }
+
+  private checkoutFallbackError(target: ReviewTarget, sourceError: unknown, fallbackError: unknown): Error {
+    return (
+      this.provider.formatCheckoutFallbackError?.(target, sourceError, fallbackError) ??
+      new Error(
+        [
+          `Could not check out ${formatTargetKind(target)} ${formatTargetDisplayId(target)}.`,
+          '',
+          `Source branch fetch failed: ${errorMessage(sourceError)}`,
+          `Fallback ref fetch failed: ${errorMessage(fallbackError)}`,
+        ].join('\n'),
+        { cause: fallbackError },
+      )
+    );
+  }
+
+  private isAllowedCheckoutBranch(target: CheckoutBranchTarget, branch: string): boolean {
+    const fallbackBranch = this.provider.getCheckoutFallbackBranch?.(target) ?? null;
+    return branch === 'HEAD' || branch === target.sourceBranch || branch === fallbackBranch;
+  }
+
   private reviewDiffsFromPatch(patchContent: string): ReviewDiff[] {
     const lineMap = parsePatch(patchContent);
     const patchSections = WorkspaceManager.splitPatchByFile(patchContent);
@@ -817,6 +889,10 @@ export class ReviewOrchestrator {
         `The prepared review bundle would be incomplete, so prepare was aborted.`,
     );
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function shortSha(sha: string): string {

@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { Agent } from 'undici';
-import type { ReviewProvider, NewThreadPosition } from '../provider.js';
+import type { CheckoutBranchTarget, CheckoutFallbackRef, ReviewProvider, NewThreadPosition } from '../provider.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
@@ -253,6 +253,46 @@ export class GitLabProvider implements ReviewProvider {
     return `${this.baseUrl}/${repo}.git`;
   }
 
+  getCheckoutFallbackRef(ref: ReviewTargetRef): CheckoutFallbackRef | null {
+    if (ref.provider !== 'gitlab' || ref.targetType !== 'merge_request') {
+      return null;
+    }
+
+    return {
+      remoteRef: `refs/merge-requests/${ref.targetId}/head`,
+      localBranch: this.checkoutFallbackBranchName(ref.targetId),
+    };
+  }
+
+  getCheckoutFallbackBranch(target: CheckoutBranchTarget): string | null {
+    const targetType = target.targetType ?? target.type;
+    const targetId = target.targetId ?? target.id;
+    if (target.provider !== 'gitlab' || targetType !== 'merge_request' || !targetId) {
+      return null;
+    }
+
+    return this.checkoutFallbackBranchName(targetId);
+  }
+
+  formatCheckoutFallbackError(target: ReviewTarget, sourceError: unknown, fallbackError: unknown): Error {
+    return new Error(
+      [
+        `Could not check out GitLab merge request !${target.targetId}.`,
+        '',
+        `The source branch "${target.sourceBranch}" may have been deleted.`,
+        `revpack also tried GitLab's temporary MR head ref: refs/merge-requests/${target.targetId}/head.`,
+        '',
+        'GitLab only keeps this MR head ref temporarily after a merge request is merged or closed.',
+        'On GitLab 16.6 and newer, GitLab removes the MR head ref 14 days after merge or close.',
+        'This merge request can no longer be checked out unless the source branch or head commit is still reachable.',
+        '',
+        `Source branch fetch failed: ${errorMessage(sourceError)}`,
+        `MR head ref fetch failed: ${errorMessage(fallbackError)}`,
+      ].join('\n'),
+      { cause: fallbackError },
+    );
+  }
+
   // ─── HTTP layer ─────────────────────────────────────────
 
   private async request<T>(path: string, options?: GitLabRequestOptions): Promise<T> {
@@ -437,6 +477,15 @@ export class GitLabProvider implements ReviewProvider {
       realSize: v.real_size ?? 0,
     };
   }
+
+  private checkoutFallbackBranchName(targetId: string): string {
+    const safeId = targetId.replace(/[^A-Za-z0-9._-]/g, '-');
+    return `revpack/mr-${safeId}`;
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 // ─── GitLab API response types (internal) ─────────────────

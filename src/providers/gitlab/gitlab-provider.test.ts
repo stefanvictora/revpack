@@ -106,3 +106,61 @@ describe('GitLabProvider constructor and options', () => {
     expect(provider.getCloneUrl('group/project')).toBe('https://gitlab.example.com/group/project.git');
   });
 });
+
+describe('GitLabProvider checkout fallback', () => {
+  const provider = new GitLabProvider('https://gitlab.example.com', 'fake-token');
+
+  it('returns the temporary MR head ref and deterministic local branch', () => {
+    const fallback = provider.getCheckoutFallbackRef({
+      provider: 'gitlab',
+      repository: 'group/project',
+      targetType: 'merge_request',
+      targetId: '42',
+    });
+
+    expect(fallback).toEqual({
+      remoteRef: 'refs/merge-requests/42/head',
+      localBranch: 'revpack/mr-42',
+    });
+  });
+
+  it('returns the fallback branch for bundle-shaped targets', () => {
+    const branch = provider.getCheckoutFallbackBranch({
+      provider: 'gitlab',
+      type: 'merge_request',
+      id: '42',
+      sourceBranch: 'feature/test',
+    });
+
+    expect(branch).toBe('revpack/mr-42');
+  });
+
+  it('formats the GitLab temporary-ref expiration message', () => {
+    const error = provider.formatCheckoutFallbackError(
+      {
+        provider: 'gitlab',
+        repository: 'group/project',
+        targetType: 'merge_request',
+        targetId: '42',
+        title: 'Test MR',
+        description: 'Test',
+        author: 'alice',
+        state: 'merged',
+        sourceBranch: 'feature/test',
+        targetBranch: 'main',
+        webUrl: 'https://gitlab.example.com/group/project/-/merge_requests/42',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        labels: [],
+        diffRefs: { baseSha: 'aaa', headSha: 'bbb', startSha: 'aaa' },
+      },
+      new Error('source branch missing'),
+      new Error('MR head ref missing'),
+    );
+
+    expect(error.message).toContain('source branch "feature/test" may have been deleted');
+    expect(error.message).toContain('refs/merge-requests/42/head');
+    expect(error.message).toContain('GitLab 16.6 and newer');
+    expect(error.message).toContain('14 days after merge or close');
+  });
+});
