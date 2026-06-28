@@ -15,6 +15,5 @@ export {
   sanitizeDescriptionForAgent,
   CHECKPOINT_MARKER_START,
   CHECKPOINT_MARKER_END,
-  REVIEW_NOTE_MARKER,
 } from './checkpoint.js';
 export type { CheckpointState, ParsedCheckpoint } from './checkpoint.js';

@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added Bitbucket Cloud pull request target resolution, branch auto-detection, metadata mapping, and `revpack status` display support.
 - Added Bitbucket Cloud pull request checkout and prepare support using source branch/fork checkout plus local Git diff bundle generation.
 - Added Bitbucket Cloud pull request comment mapping so prepared bundles include review threads, replies, inline positions, resolution state, and managed review note filtering.
+- Added Bitbucket Cloud publishing for replies, thread resolution, inline findings, review notes, summary updates, checkpoints, and `revpack publish all`.
 
 ### Changed
 
@@ -25,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed Bitbucket Cloud prepare and status checks comparing abbreviated provider commit hashes against full local Git SHAs.
 - Fixed Bitbucket Cloud prepare after shallow checkout so pull request commit hashes are expanded before bundle generation and missing commits are recovered through branch fetches instead of noisy direct SHA fetches.
 - Fixed Bitbucket Cloud prepare so pending draft review comments and replies are excluded from review bundles.
+- Fixed Bitbucket Cloud published findings, replies, summaries, review notes, checkpoints, and generated agent handover prompts so revpack uses provider-specific Markdown, including link-based checkpoint state, instead of unsupported HTML elements.
 - Improved `revpack config setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.
 - Fixed GitLab fallback checkout for deleted MR source branches, including follow-up bundle commands run from the fallback branch and fork fallback fetches.
 - Fixed review summary instructions so incremental MR/PR updates keep newly introduced capabilities under `Added` instead of `Changed`.
@@ -34,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed CLI error handling on Windows to avoid a trailing libuv assertion after provider errors.
 - Fixed `revpack publish review` leaving `review.md` populated after publishing, which could republish the same review note during later incremental reviews.
 - Fixed `revpack publish all` updating the PR/MR description summary again when `revpack status` already reported the summary as published.
+- Fixed `revpack publish all` so real summary publishing failures stop before checkpointing and non-GitHub finding setup failures report partial-success warnings after earlier provider actions.
+- Fixed Bitbucket Cloud publishing to avoid invalid line-less inline anchors and redact derived Basic Auth credentials from provider and network errors.
 - Fixed debug error logging repeating the user-facing error message before the stack frames.
 
 ## [0.4.0] - 2026-06-07

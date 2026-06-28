@@ -305,6 +305,126 @@ describe('BitbucketCloudProvider target reads', () => {
     });
 
     await provider.updateDescription(ref, 'new body');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('posts replies with a top-level parent comment id', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({
+        content: { raw: 'reply body' },
+        parent: { id: 100 },
+      });
+      return jsonResponse(comment({ id: 101, content: { raw: 'reply body' }, parent: { id: 100 } }));
+    });
+
+    await provider.postReply(ref, '100', 'reply body');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves top-level comment threads through the resolve endpoint', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe(
+        'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments/100/resolve',
+      );
+      expect(init?.method).toBe('POST');
+      expect(init?.body).toBeUndefined();
+      return new Response(null, { status: 204 });
+    });
+
+    await provider.resolveThread(ref, '100');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates new-side inline comments with path and to line', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({
+        content: { raw: 'new-side finding' },
+        inline: { path: 'src/new.ts', to: 12 },
+      });
+      return jsonResponse(comment({ id: 102, content: { raw: 'new-side finding' } }));
+    });
+
+    await expect(
+      provider.createThread(ref, 'new-side finding', {
+        oldPath: 'src/old.ts',
+        newPath: 'src/new.ts',
+        newLine: 12,
+      }),
+    ).resolves.toBe('102');
+  });
+
+  it('creates old-side inline comments with path and from line', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({
+        content: { raw: 'old-side finding' },
+        inline: { path: 'src/old.ts', from: 8 },
+      });
+      return jsonResponse(comment({ id: 103, content: { raw: 'old-side finding' } }));
+    });
+
+    await expect(
+      provider.createThread(ref, 'old-side finding', {
+        oldPath: 'src/old.ts',
+        newPath: 'src/new.ts',
+        oldLine: 8,
+      }),
+    ).resolves.toBe('103');
+  });
+
+  it('creates top-level review notes without an inline anchor', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({ content: { raw: 'review note' } });
+      return jsonResponse(comment({ id: 104, content: { raw: 'review note' } }));
+    });
+
+    await expect(provider.createNote(ref, 'review note')).resolves.toBe('104');
+  });
+
+  it('creates top-level threads without an inline anchor when no position is provided', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({ content: { raw: 'general thread' } });
+      return jsonResponse(comment({ id: 105, content: { raw: 'general thread' } }));
+    });
+
+    await expect(provider.createThread(ref, 'general thread')).resolves.toBe('105');
+  });
+
+  it('creates top-level threads without an inline anchor when the position has no line', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({ content: { raw: 'line-less thread' } });
+      return jsonResponse(comment({ id: 106, content: { raw: 'line-less thread' } }));
+    });
+
+    await expect(
+      provider.createThread(ref, 'line-less thread', {
+        oldPath: 'src/old.ts',
+        newPath: 'src/new.ts',
+      }),
+    ).resolves.toBe('106');
+  });
+
+  it('updates existing notes through the pull request comment endpoint', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments/104');
+      expect(init?.method).toBe('PUT');
+      expect(requestBodyJson(init)).toEqual({ content: { raw: 'updated note' } });
+      return jsonResponse(comment({ id: 104, content: { raw: 'updated note' } }));
+    });
+
+    await provider.updateNote(ref, '104', 'updated note');
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -561,6 +681,31 @@ describe('BitbucketCloudProvider review comments', () => {
       origin: 'bot',
     });
   });
+
+  it('marks visible revpack footers as bot-origin for Bitbucket-compatible markdown', async () => {
+    installFetch(() =>
+      jsonResponse({
+        values: [
+          comment({
+            id: 501,
+            content: {
+              raw: 'Managed finding\n\n###### 🤖 Generated by [revpack](https://github.com/stefanvictora/revpack)',
+            },
+            user: { display_name: 'Stefan Victora', nickname: null, account_id: 'human-user' },
+          }),
+          comment({
+            id: 502,
+            content: { raw: 'Review body\n\nGenerated by [revpack]' },
+            user: { display_name: 'Stefan Victora', nickname: null, account_id: 'human-user' },
+          }),
+        ],
+      }),
+    );
+
+    const threads = await provider.listAllThreads(ref);
+
+    expect(threads.map((thread) => thread.comments[0].origin)).toEqual(['bot', 'bot']);
+  });
 });
 
 describe('BitbucketCloudProvider errors and clone URLs', () => {
@@ -592,24 +737,69 @@ describe('BitbucketCloudProvider errors and clone URLs', () => {
     installFetch(() => jsonResponse({ error: { message: 'missing' } }, { status: 404, statusText: 'Not Found' }));
 
     await expect(provider.getTargetSnapshot(ref)).rejects.toThrow('resource not found or inaccessible');
+    await expect(provider.getTargetSnapshot(ref)).rejects.toThrow('comment id');
     await expect(provider.getTargetSnapshot(ref)).rejects.not.toThrow('secret-email@example.com');
   });
 
-  it('throws unsupported errors for review comment operations not covered by target support', async () => {
-    const provider = new BitbucketCloudProvider('email', 'token');
+  it('throws actionable invalid-anchor errors without leaking credentials', async () => {
+    const provider = new BitbucketCloudProvider('secret-email@example.com', 'secret-token');
+    installFetch(() =>
+      jsonResponse(
+        { error: { message: 'invalid anchor for secret-email@example.com with secret-token' } },
+        { status: 400, statusText: 'Bad Request' },
+      ),
+    );
 
-    await expect(provider.createNote(ref, 'body')).rejects.toThrow('Bitbucket Cloud review notes is not supported yet');
-    await expect(provider.postReply(ref, 'thread-1', 'body')).rejects.toThrow(
-      'Bitbucket Cloud reply publishing is not supported yet',
+    const publish = provider.createThread(ref, 'body', {
+      oldPath: 'src/old.ts',
+      newPath: 'src/new.ts',
+      newLine: 99,
+    });
+
+    await expect(publish).rejects.toThrow('inline anchors');
+    await expect(publish).rejects.not.toThrow('secret-email@example.com');
+    await expect(publish).rejects.not.toThrow('secret-token');
+  });
+
+  it('redacts credentials from generic provider errors', async () => {
+    const provider = new BitbucketCloudProvider('secret-email@example.com', 'secret-token');
+    const basicToken = Buffer.from('secret-email@example.com:secret-token', 'utf8').toString('base64');
+    installFetch(() =>
+      jsonResponse(
+        { error: { message: `server echoed secret-email@example.com, secret-token, and ${basicToken}` } },
+        { status: 500, statusText: 'Server Error' },
+      ),
     );
-    await expect(provider.resolveThread(ref, 'thread-1')).rejects.toThrow(
-      'Bitbucket Cloud thread resolution is not supported yet',
-    );
-    await expect(provider.createThread(ref, 'body')).rejects.toThrow(
-      'Bitbucket Cloud inline review comments is not supported yet',
-    );
-    await expect(provider.updateNote(ref, 'note-1', 'body')).rejects.toThrow(
-      'Bitbucket Cloud review notes is not supported yet',
-    );
+
+    const publish = provider.createNote(ref, 'body');
+
+    await expect(publish).rejects.toThrow('[REDACTED_EMAIL]');
+    await expect(publish).rejects.toThrow('[REDACTED_TOKEN]');
+    await expect(publish).rejects.toThrow('[REDACTED_BASIC_AUTH]');
+    await expect(publish).rejects.not.toThrow('secret-email@example.com');
+    await expect(publish).rejects.not.toThrow('secret-token');
+    await expect(publish).rejects.not.toThrow(basicToken);
+  });
+
+  it('redacts credentials from network error causes', async () => {
+    const provider = new BitbucketCloudProvider('secret-email@example.com', 'secret-token');
+    const basicToken = Buffer.from('secret-email@example.com:secret-token', 'utf8').toString('base64');
+    const networkError = Object.assign(new Error(`outer ${basicToken}`), {
+      cause: new Error(`inner secret-email@example.com secret-token ${basicToken}`),
+    });
+    installFetch(() => Promise.reject(networkError));
+
+    const createNote = provider.createNote(ref, 'body');
+    await expect(createNote).rejects.toThrow('[REDACTED_BASIC_AUTH]');
+    await expect(createNote).rejects.toThrow('[REDACTED_EMAIL]');
+    await expect(createNote).rejects.toThrow('[REDACTED_TOKEN]');
+    await expect(createNote).rejects.not.toThrow(basicToken);
+    await expect(createNote).rejects.not.toThrow('secret-email@example.com');
+    await expect(createNote).rejects.not.toThrow('secret-token');
+
+    const listTargets = provider.listOpenReviewTargets('workspace/repo');
+    await expect(listTargets).rejects.not.toThrow(basicToken);
+    await expect(listTargets).rejects.not.toThrow('secret-email@example.com');
+    await expect(listTargets).rejects.not.toThrow('secret-token');
   });
 });

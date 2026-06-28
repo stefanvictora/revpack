@@ -39,7 +39,7 @@ Optional: `disposition` — one of `already_fixed`, `explain`, `suggest_fix`, `d
   {
     "threadId": "T-001",
     "disposition": "suggest_fix",
-    "body": "Good catch. The endpoint should preserve the existing audit call.\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/app.ts` around `exportData(...)`, restore the audit logging call before returning the export response.\n\n</details>",
+    "body": "Good catch. The endpoint should preserve the existing audit call.{{#if useBitbucketHandoverMarkdown}}\n\n#### 🤖 Prompt for AI Agents\n\n> Verify this issue against the current code and only fix it if still applicable.\n>\n> In `@src/app.ts` around `exportData(...)`, restore audit logging before returning.{{else}}\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/app.ts` around `exportData(...)`, restore audit logging before returning.\n\n</details>{{/if}}",
     "resolve": false
   }
 ]

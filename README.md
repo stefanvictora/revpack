@@ -6,11 +6,11 @@
 [![license](https://img.shields.io/npm/l/%40stefanvictora%2Frevpack.svg)](https://www.npmjs.com/package/@stefanvictora/revpack)
 [![node](https://img.shields.io/node/v/%40stefanvictora%2Frevpack.svg)](https://www.npmjs.com/package/@stefanvictora/revpack)
 
-**Local AI review bundles for GitHub and GitLab — with humans in control of what gets published.**
+**Local AI review bundles for GitHub, GitLab, Bitbucket Cloud, and local branches — with humans in control of what gets published.**
 
-`revpack` turns a GitHub PR, GitLab MR, or local branch range into a local review bundle for coding agents. The bundle contains the diff, unresolved review discussions, previous review state, and valid line-comment positions.
+`revpack` turns a GitHub PR, GitLab MR, Bitbucket Cloud PR, or local branch range into a local review bundle for coding agents. The bundle contains the diff, unresolved review discussions, previous review state, and valid line-comment positions.
 
-Your agent reviews that local bundle and writes proposed outputs: findings, thread replies, summaries, and review notes. Nothing is posted to GitHub or GitLab until you publish it.
+Your agent reviews that local bundle and writes proposed outputs: findings, thread replies, summaries, and review notes. Nothing is posted to the provider until you publish it.
 
 ```text
 prepare review context → run your agent → inspect pending output → publish intentionally
@@ -26,13 +26,16 @@ Install the CLI:
 npm install -g @stefanvictora/revpack
 ```
 
-Open the repository you want to review, then configure a GitHub or GitLab profile:
+Open the repository you want to review, then configure a provider profile:
 
 ```bash
 revpack config setup
 export REVPACK_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 # or
 export REVPACK_GITLAB_TOKEN=glpat-xxxxxxxxxxxx
+# or
+export REVPACK_BITBUCKET_EMAIL=you@example.com
+export REVPACK_BITBUCKET_TOKEN=ATBBTxxxxxxxxxxxx
 revpack config doctor
 ```
 
@@ -98,7 +101,7 @@ The agent reads the input files and writes only to `.revpack/outputs/`. You can 
 
 ## Publishing
 
-You decide what goes back to GitHub or GitLab.
+You decide what goes back to the provider.
 
 | Output                      | Command                      |
 | --------------------------- | ---------------------------- |
@@ -193,4 +196,4 @@ npm format
 
 ## Status
 
-`revpack` is early but usable for local AI-assisted PR/MR reviews. Expect CLI details and bundle internals to evolve while the GitHub/GitLab review workflow stabilizes.
+`revpack` is early but usable for local AI-assisted PR/MR reviews. Expect CLI details and bundle internals to evolve while the provider workflows stabilize.

@@ -343,7 +343,9 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
     body = content!;
   } else {
     const target = await orchestrator.open(undefined, defaultRepo);
-    body = mergeWithMarkers(target.description, content!);
+    body = mergeWithMarkers(target.description, content!, {
+      markerStyle: target.provider === 'bitbucket-cloud' ? 'markdown-heading' : 'html',
+    });
   }
 
   await orchestrator.updateDescription(undefined, body, defaultRepo);
@@ -439,6 +441,11 @@ function isNoReviewNoteToPublishError(err: unknown): boolean {
   return err.message.includes('No review note found') || / is empty(?:; nothing to publish)?$/.test(err.message);
 }
 
+function isNoSummaryToPublishError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.message.includes('No summary found') || /^\.revpack\/outputs\/summary\.md is empty/.test(err.message);
+}
+
 function warnPartialSuccess(occurred: boolean): void {
   if (!occurred) return;
   console.error(
@@ -450,6 +457,101 @@ function warnPartialSuccess(occurred: boolean): void {
   );
 }
 
+async function publishAllPending(opts: { refresh?: boolean } = {}): Promise<void> {
+  let total = 0;
+  let partialSuccess = false;
+  let reviewPublishedInBatch = false;
+
+  const ws = new WorkspaceManager(process.cwd());
+  const bundleState = await ws.loadBundleState();
+  const isGitHub = bundleState?.target.provider === 'github';
+
+  console.log(chalk.bold('─── Replies ───'));
+  const replyCount = await publishReplies({ noRefresh: true });
+  if (replyCount === 0) console.log(chalk.dim('  (none pending)'));
+  total += replyCount;
+  if (replyCount > 0) partialSuccess = true;
+
+  console.log('');
+  console.log(chalk.bold('─── Findings ───'));
+  if (isGitHub) {
+    let reviewContent = '';
+    try {
+      reviewContent = await fs.readFile(workspacePath(DEFAULT_REVIEW_FILE), 'utf-8');
+    } catch {
+      /* review.md absent is fine */
+    }
+    try {
+      const batchCount = await publishFindingsAndReviewBatch(reviewContent);
+      reviewPublishedInBatch = batchCount > 0 && !!reviewContent.trim();
+      if (batchCount === 0) console.log(chalk.dim('  (none pending)'));
+      total += batchCount;
+      if (batchCount > 0) partialSuccess = true;
+    } catch (err) {
+      warnPartialSuccess(partialSuccess);
+      throw err;
+    }
+  } else {
+    try {
+      const findingCount = await publishFindings({ noRefresh: true });
+      if (findingCount === 0) console.log(chalk.dim('  (none pending)'));
+      total += findingCount;
+      if (findingCount > 0) partialSuccess = true;
+    } catch (err) {
+      warnPartialSuccess(partialSuccess);
+      throw err;
+    }
+  }
+
+  console.log('');
+  console.log(chalk.bold('─── Description ───'));
+  try {
+    total += await publishDescription({});
+    partialSuccess = true;
+  } catch (err) {
+    if (!isNoSummaryToPublishError(err)) {
+      warnPartialSuccess(partialSuccess);
+      throw err;
+    }
+    console.log(chalk.dim('  (no summary to publish)'));
+  }
+
+  if (!reviewPublishedInBatch) {
+    console.log('');
+    console.log(chalk.bold('─── Review note ───'));
+    try {
+      total += await publishReviewCmd({ allowEmpty: true });
+      partialSuccess = true;
+    } catch (err) {
+      if (!isNoReviewNoteToPublishError(err)) {
+        warnPartialSuccess(partialSuccess);
+        throw err;
+      }
+      console.log(chalk.dim('  (no review note to publish)'));
+    }
+  }
+
+  console.log('');
+  console.log(chalk.bold('─── Checkpoint ───'));
+  try {
+    await publishCheckpointCmd({});
+  } catch (err) {
+    warnPartialSuccess(partialSuccess);
+    throw err;
+  }
+
+  console.log('');
+  if (total === 0) {
+    console.log(chalk.dim('No pending outputs to publish.'));
+  } else {
+    console.log(chalk.green(`✓ ${total} item(s) published`));
+  }
+
+  if (opts.refresh !== false) {
+    await autoRefresh();
+  }
+}
+
 export const __testing = {
   findReplyEntryIndex,
   normalizeThreadRef,
@@ -459,6 +561,7 @@ export const __testing = {
   publishFindingsAndReviewBatch,
   publishReviewCmd,
   requirePublishableContent,
+  publishAllPending,
   autoRefresh,
 };
 
@@ -501,101 +604,8 @@ export function registerPublishCommand(program: Command): void {
     .description('Publish all pending outputs')
     .action(async (_opts: Record<string, never>, cmd: Command) => {
       try {
-        const parentOpts = cmd.parent?.opts();
-        let total = 0;
-        let partialSuccess = false;
-        let reviewPublishedInBatch = false;
-        let checkpointRecorded = false;
-
-        // Determine provider for flow branching
-        const ws = new WorkspaceManager(process.cwd());
-        const bundleState = await ws.loadBundleState();
-        const isGitHub = bundleState?.target.provider === 'github';
-
-        // ── 1. Replies ───────────────────────────────────────
-        console.log(chalk.bold('─── Replies ───'));
-        const replyCount = await publishReplies({ noRefresh: true });
-        if (replyCount === 0) console.log(chalk.dim('  (none pending)'));
-        total += replyCount;
-        if (replyCount > 0) partialSuccess = true;
-
-        // ── 2. Findings ──────────────────────────────────────
-        console.log('');
-        console.log(chalk.bold('─── Findings ───'));
-        let batchCount = 0;
-        if (isGitHub) {
-          // GitHub: findings + review.md submitted as a single atomic PR review batch
-          let reviewContent = '';
-          try {
-            reviewContent = await fs.readFile(workspacePath(DEFAULT_REVIEW_FILE), 'utf-8');
-          } catch {
-            /* review.md absent is fine */
-          }
-          try {
-            batchCount = await publishFindingsAndReviewBatch(reviewContent);
-            reviewPublishedInBatch = batchCount > 0 && !!reviewContent.trim();
-            if (batchCount === 0) console.log(chalk.dim('  (none pending)'));
-            total += batchCount;
-            if (batchCount > 0) partialSuccess = true;
-          } catch (err) {
-            warnPartialSuccess(partialSuccess);
-            throw err;
-          }
-        } else {
-          // GitLab (or unknown): findings posted as individual discussions
-          const findingCount = await publishFindings({ noRefresh: true });
-          if (findingCount === 0) console.log(chalk.dim('  (none pending)'));
-          total += findingCount;
-          if (findingCount > 0) partialSuccess = true;
-        }
-
-        // ── 3. Description ───────────────────────────────────
-        console.log('');
-        console.log(chalk.bold('─── Description ───'));
-        try {
-          total += await publishDescription({});
-          partialSuccess = true;
-        } catch {
-          console.log(chalk.dim('  (no summary to publish)'));
-        }
-
-        if (!reviewPublishedInBatch) {
-          console.log('');
-          console.log(chalk.bold('─── Review note ───'));
-          try {
-            total += await publishReviewCmd({ allowEmpty: true });
-            partialSuccess = true;
-          } catch (err) {
-            if (!isNoReviewNoteToPublishError(err)) {
-              warnPartialSuccess(partialSuccess);
-              throw err;
-            }
-            console.log(chalk.dim('  (no review note to publish)'));
-          }
-        }
-
-        // ── 5. Checkpoint ─────────────────────────────────────
-        console.log('');
-        console.log(chalk.bold('─── Checkpoint ───'));
-        try {
-          await publishCheckpointCmd({});
-          checkpointRecorded = true;
-        } catch (err) {
-          warnPartialSuccess(partialSuccess);
-          throw err;
-        }
-
-        // ── Summary ──────────────────────────────────────────
-        console.log('');
-        if (total === 0) {
-          console.log(chalk.dim('No pending outputs to publish.'));
-        } else {
-          console.log(chalk.green(`✓ ${total} item(s) published`));
-        }
-
-        if (parentOpts?.refresh !== false && (total > 0 || checkpointRecorded)) {
-          await autoRefresh();
-        }
+        const parentOpts = cmd.parent?.opts<{ refresh?: boolean }>();
+        await publishAllPending({ refresh: parentOpts?.refresh });
       } catch (err) {
         handleError(err);
       }

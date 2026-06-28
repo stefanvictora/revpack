@@ -50,6 +50,17 @@ When conventions matter, point the agent to examples: "Follow the existing loggi
 ### Format
 
 ```md
+{{#if useBitbucketHandoverMarkdown}}
+#### 🤖 Prompt for AI Agents
+
+> Verify this issue against the current code and only fix it if still applicable.
+>
+> In `@src/path/to/File.java` around `methodName(...)`, change the current behavior so that [desired behavior].
+>
+> Preserve [important existing behavior, if relevant].
+>
+> Add or update tests covering [specific scenario].
+{{else}}
 <details>
 <summary>🤖 Prompt for AI Agents</summary>
 
@@ -62,6 +73,7 @@ Preserve [important existing behavior, if relevant].
 Add or update tests covering [specific scenario].
 
 </details>
+{{/if}}
 ```
 
 ### Rules

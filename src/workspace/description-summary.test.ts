@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { MARKER_END, MARKER_START, extractMarkedSummary, mergeWithMarkers } from './description-summary.js';
+import {
+  MARKDOWN_HEADING_MARKER_END,
+  MARKDOWN_HEADING_MARKER_START,
+  MARKER_END,
+  MARKER_START,
+  extractMarkedSummary,
+  mergeWithMarkers,
+  stripMarkedSummary,
+} from './description-summary.js';
 
 describe('description summary markers', () => {
   it('appends a marked section to an empty description', () => {
@@ -75,5 +83,26 @@ describe('description summary markers', () => {
     expect(extractMarkedSummary(`${MARKER_START}\nSummary without end`)).toBeNull();
     expect(extractMarkedSummary(`${'Before missing start marker '.repeat(2)}${MARKER_END}`)).toBeNull();
     expect(extractMarkedSummary(`${MARKER_START}\n   \n${MARKER_END}`)).toBeNull();
+  });
+
+  it('uses markdown heading markers when requested', () => {
+    expect(mergeWithMarkers('Existing', 'New summary', { markerStyle: 'markdown-heading' })).toBe(
+      `Existing\n\n---\n\n${MARKDOWN_HEADING_MARKER_START}\nNew summary\n${MARKDOWN_HEADING_MARKER_END}`,
+    );
+  });
+
+  it('extracts and strips markdown heading marker sections', () => {
+    const description = `Before\n\n---\n\n${MARKDOWN_HEADING_MARKER_START}\n## Changed\n- Updated.\n${MARKDOWN_HEADING_MARKER_END}\nAfter`;
+
+    expect(extractMarkedSummary(description)).toBe('## Changed\n- Updated.');
+    expect(stripMarkedSummary(description)).toBe('Before\n\nAfter');
+  });
+
+  it('replaces existing html markers with the requested marker style', () => {
+    const existing = `Before\n${MARKER_START}\nOld summary\n${MARKER_END}\nAfter`;
+
+    expect(mergeWithMarkers(existing, 'New summary', { markerStyle: 'markdown-heading' })).toBe(
+      `Before\n${MARKDOWN_HEADING_MARKER_START}\nNew summary\n${MARKDOWN_HEADING_MARKER_END}\nAfter`,
+    );
   });
 });
