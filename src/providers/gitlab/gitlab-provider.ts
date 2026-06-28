@@ -324,12 +324,12 @@ export class GitLabProvider implements ReviewProvider {
       throw new ProviderError(`Network error reaching ${url.hostname}${detail}: ${cause.message}`, 'gitlab');
     }
 
-    await this.throwOnError(res);
+    await this.ensureOk(res);
 
     return res.json() as Promise<T>;
   }
 
-  private async throwOnError(res: Response) {
+  private async ensureOk(res: Response): Promise<void> {
     if (res.status === 401) {
       throw new AuthenticationError('GitLab authentication failed (401)', 'gitlab');
     }
@@ -377,7 +377,7 @@ export class GitLabProvider implements ReviewProvider {
         throw new ProviderError(`Network error reaching ${url.hostname}${detail}: ${cause.message}`, 'gitlab');
       }
 
-      await this.throwOnError(res);
+      await this.ensureOk(res);
 
       const data = (await res.json()) as T[];
       results.push(...data);
