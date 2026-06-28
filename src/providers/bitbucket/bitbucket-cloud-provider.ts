@@ -166,17 +166,6 @@ export class BitbucketCloudProvider implements ReviewProvider {
     return Promise.reject(this.unsupported('inline review comments'));
   }
 
-  async findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<{ id: string; body: string } | null> {
-    const comments = await this.requestPaginated<BitbucketComment>(
-      `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}/comments`,
-      { pagelen: '100' },
-    );
-    const match = comments.find(
-      (comment) => !comment.deleted && !comment.parent && this.commentBody(comment).startsWith(marker),
-    );
-    return match ? { id: String(match.id), body: this.commentBody(match) } : null;
-  }
-
   createNote(_ref: ReviewTargetRef, _body: string, _options?: { internal?: boolean }): Promise<string> {
     return Promise.reject(this.unsupported('review notes'));
   }

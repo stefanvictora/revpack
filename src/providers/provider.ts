@@ -70,12 +70,6 @@ export interface ReviewProvider {
   /** Create a new discussion thread on the MR/PR diff. */
   createThread(ref: ReviewTargetRef, body: string, position?: NewThreadPosition): Promise<string>;
 
-  /**
-   * Find an existing MR/PR note whose body starts with the given marker.
-   * Returns the note ID and body if found, null otherwise.
-   */
-  findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<{ id: string; body: string } | null>;
-
   /** Create a standalone note (not a discussion thread) on the MR/PR. */
   createNote(ref: ReviewTargetRef, body: string, options?: { internal?: boolean }): Promise<string>;
 

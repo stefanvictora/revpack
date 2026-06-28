@@ -132,7 +132,6 @@ export class ReviewOrchestrator {
       if (descState) {
         remoteCheckpoint = {
           source: 'description_body',
-          providerNoteId: '',
           headSha: descState.checkpoint.headSha,
           baseSha: descState.checkpoint.baseSha,
           startSha: descState.checkpoint.startSha,
@@ -149,18 +148,6 @@ export class ReviewOrchestrator {
         throw err;
       }
       // Malformed state — treat as no checkpoint
-    }
-
-    // Identify body-only revpack review notes for exclusion from bundle context
-    let reviewNoteCommentId: string | null = null;
-    let reviewNote: { id: string; body: string } | null = null;
-    try {
-      reviewNote = await this.provider.findNoteByMarker(targetRef, REVIEW_NOTE_MARKER);
-    } catch {
-      // Provider lookup failed
-    }
-    if (reviewNote) {
-      reviewNoteCommentId = reviewNote.id;
     }
 
     // ─── Source consistency check ─────────────────────────
@@ -226,8 +213,8 @@ export class ReviewOrchestrator {
 
     // ─── Source consistency verified — proceed with writes ─
 
-    // Filter out system-only threads and the managed review note thread
-    const allThreads = filterReviewThreads(rawThreads, reviewNoteCommentId);
+    // Filter out provider/system-only threads.
+    const allThreads = filterReviewThreads(rawThreads);
 
     // Build position-based thread index
     const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
@@ -608,16 +595,7 @@ export class ReviewOrchestrator {
       this.provider.getDiffVersions(targetRef),
     ]);
 
-    // Identify existing review note for thread filtering
-    let reviewNoteId: string | null = null;
-    try {
-      const existingNote = await this.provider.findNoteByMarker(targetRef, REVIEW_NOTE_MARKER);
-      if (existingNote) reviewNoteId = existingNote.id;
-    } catch {
-      // Provider lookup failed
-    }
-
-    const allThreads = filterReviewThreads(rawThreads, reviewNoteId);
+    const allThreads = filterReviewThreads(rawThreads);
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
     const currentDescriptionDigest = computeContentHash(sanitizeDescriptionForAgent(target.description ?? ''));
     const threadDigests = computeThreadDigestMap(allThreads);

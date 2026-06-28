@@ -228,12 +228,6 @@ export class LocalGitProvider implements ReviewProvider {
     return threadId;
   }
 
-  async findNoteByMarker(_ref: ReviewTargetRef, marker: string): Promise<{ id: string; body: string } | null> {
-    const state = await this.loadState();
-    if (state.reviewNote?.body.startsWith(marker)) return state.reviewNote;
-    return null;
-  }
-
   async createNote(_ref: ReviewTargetRef, body: string): Promise<string> {
     const state = await this.loadState();
     const id = state.reviewNote?.id ?? 'local-review-note';

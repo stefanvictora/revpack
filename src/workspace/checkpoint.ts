@@ -27,7 +27,6 @@ export interface CheckpointState {
 
 export interface ParsedCheckpoint {
   state: CheckpointState;
-  providerNoteId: string;
   visibleContent: string;
 }
 

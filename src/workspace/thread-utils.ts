@@ -29,15 +29,8 @@ export function isSystemOnlyThread(thread: Pick<ReviewThread, 'comments'>): bool
   return thread.comments.every((comment) => comment.system);
 }
 
-export function threadContainsCommentId(thread: Pick<ReviewThread, 'comments'>, commentId: string): boolean {
-  return thread.comments.some((comment) => comment.id === commentId);
-}
-
-export function filterReviewThreads(rawThreads: ReviewThread[], managedReviewNoteId?: string | null): ReviewThread[] {
-  return rawThreads.filter(
-    (thread) =>
-      !isSystemOnlyThread(thread) && !(managedReviewNoteId && threadContainsCommentId(thread, managedReviewNoteId)),
-  );
+export function filterReviewThreads(rawThreads: ReviewThread[]): ReviewThread[] {
+  return rawThreads.filter((thread) => !isSystemOnlyThread(thread));
 }
 
 export function activeReviewThreads(threads: ReviewThread[]): ReviewThread[] {

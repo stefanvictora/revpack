@@ -236,14 +236,6 @@ export class GitHubProvider implements ReviewProvider {
     }
   }
 
-  async findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<{ id: string; body: string } | null> {
-    const notes = await this.requestPaginated<GitHubIssueComment>(
-      `${this.repoPath(ref.repository)}/issues/${ref.targetId}/comments`,
-    );
-    const match = notes.find((note) => note.body.startsWith(marker));
-    return match ? { id: String(match.id), body: match.body } : null;
-  }
-
   async createNote(ref: ReviewTargetRef, body: string, _options?: { internal?: boolean }): Promise<string> {
     const note = await this.request<GitHubIssueComment>(
       `${this.repoPath(ref.repository)}/issues/${ref.targetId}/comments`,

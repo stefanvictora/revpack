@@ -519,23 +519,6 @@ describe('BitbucketCloudProvider review comments', () => {
     expect(unresolved.map((thread) => thread.threadId)).toEqual(['300']);
   });
 
-  it('finds the managed review note by marker in top-level raw comment bodies', async () => {
-    installFetch(() =>
-      jsonResponse({
-        values: [
-          comment({ id: 400, content: { raw: 'Ordinary comment' } }),
-          comment({ id: 401, content: { raw: '<!-- revpack:review -->\nManaged note' } }),
-          comment({ id: 402, content: { raw: '<!-- revpack:review -->\nReply is ignored' }, parent: { id: 400 } }),
-        ],
-      }),
-    );
-
-    await expect(provider.findNoteByMarker(ref, '<!-- revpack:review -->')).resolves.toEqual({
-      id: '401',
-      body: '<!-- revpack:review -->\nManaged note',
-    });
-  });
-
   it('marks revpack marker comments as bot-origin and falls back across author fields', async () => {
     installFetch(() =>
       jsonResponse({

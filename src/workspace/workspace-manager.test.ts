@@ -825,7 +825,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'note-1',
             headSha: 'aaa',
             baseSha: 'xxx',
             startSha: 'xxx',
@@ -861,7 +860,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'note-1',
             headSha: 'aaa',
             baseSha: 'xxx',
             startSha: 'xxx',
@@ -902,7 +900,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'note-1',
             headSha: 'aaa',
             baseSha: 'xxx',
             startSha: 'xxx',
@@ -984,7 +981,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'note-1',
             headSha: 'aaa',
             baseSha: 'xxx',
             startSha: 'xxx',
@@ -1062,7 +1058,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'note-1',
             headSha: 'aaa',
             baseSha: 'xxx',
             startSha: 'xxx',
@@ -2521,7 +2516,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'n',
             headSha: 'aaa',
             baseSha: 'x',
             startSha: 'x',
@@ -2556,7 +2550,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'n',
             headSha: 'aaa',
             baseSha: 'x',
             startSha: 'x',
@@ -2600,7 +2593,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'n',
             headSha: 'aaa',
             baseSha: 'x',
             startSha: 'x',
@@ -2728,7 +2720,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'n',
             headSha: 'bbb',
             baseSha: 'x',
             startSha: 'x',
@@ -2757,7 +2748,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'n',
             headSha: 'bbb',
             baseSha: 'x',
             startSha: 'x',
@@ -2785,7 +2775,6 @@ describe('WorkspaceManager', () => {
           mode: 'refresh',
           checkpoint: {
             source: 'description_body',
-            providerNoteId: 'n',
             headSha: 'aaa',
             baseSha: 'x',
             startSha: 'x',

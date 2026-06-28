@@ -8,7 +8,6 @@ import {
   isSystemOnlyThread,
   latestNonSystemComment,
   nonSystemThreadComments,
-  threadContainsCommentId,
 } from './thread-utils.js';
 
 describe('thread utilities', () => {
@@ -72,22 +71,12 @@ describe('thread utilities', () => {
     );
   });
 
-  it('checks comment membership by id', () => {
-    const thread = makeThread('thread-1', { comments: [makeComment('a'), makeComment('b')] });
-
-    expect(threadContainsCommentId(thread, 'b')).toBe(true);
-    expect(threadContainsCommentId(thread, 'c')).toBe(false);
-  });
-
-  it('filters system-only and managed-note threads', () => {
+  it('filters system-only threads', () => {
     const visible = makeThread('visible', { comments: [makeComment('visible-comment')] });
     const systemOnly = makeThread('system-only', { comments: [makeComment('system-comment', { system: true })] });
     const managed = makeThread('managed', { comments: [makeComment('managed-note')] });
 
-    expect(
-      filterReviewThreads([visible, systemOnly, managed], 'managed-note').map((thread) => thread.threadId),
-    ).toEqual(['visible']);
-    expect(filterReviewThreads([visible, managed], null).map((thread) => thread.threadId)).toEqual([
+    expect(filterReviewThreads([visible, systemOnly, managed]).map((thread) => thread.threadId)).toEqual([
       'visible',
       'managed',
     ]);
