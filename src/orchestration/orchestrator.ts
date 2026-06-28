@@ -765,47 +765,131 @@ export class ReviewOrchestrator {
       );
     }
 
-    for (const sha of missing) {
-      try {
-        await this.git.fetchCommit(sha, 'origin', { depth: 1, noTags: true, progress: reportFetch });
-      } catch (err) {
-        fetchErrors.push(`git fetch origin ${sha}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-    missing = await this.missingCommits(baseSha, headSha);
+    const baseRepoRemote = this.baseRepositoryRemoteForFork(target);
+    const baseObjectRemotes = baseRepoRemote ? ['origin', baseRepoRemote] : ['origin'];
+
+    missing = await this.tryFetchMissingCommitsFromRemotes(
+      missing,
+      baseSha,
+      headSha,
+      baseObjectRemotes,
+      fetchErrors,
+      reportFetch,
+    );
     if (missing.length === 0) return;
 
-    try {
-      await this.git.fetchBranch(target.targetBranch, 'origin', { depth: 1, noTags: true, progress: reportFetch });
-    } catch (err) {
-      fetchErrors.push(`git fetch origin ${target.targetBranch}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    missing = await this.missingCommits(baseSha, headSha);
+    missing = await this.tryFetchBranchFromRemotes(
+      target.targetBranch,
+      baseSha,
+      headSha,
+      baseObjectRemotes,
+      fetchErrors,
+      reportFetch,
+    );
     if (missing.length === 0) return;
 
     if (target.sourceBranch && target.sourceBranch !== target.targetBranch) {
-      try {
-        await this.git.fetchBranch(target.sourceBranch, 'origin', { depth: 1, noTags: true, progress: reportFetch });
-      } catch (err) {
-        fetchErrors.push(
-          `git fetch origin ${target.sourceBranch}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-      missing = await this.missingCommits(baseSha, headSha);
+      missing = await this.tryFetchBranchFromRemotes(
+        target.sourceBranch,
+        baseSha,
+        headSha,
+        ['origin'],
+        fetchErrors,
+        reportFetch,
+      );
       if (missing.length === 0) return;
     }
 
-    try {
-      await this.git.fetch('origin', { noTags: true, progress: reportFetch });
-    } catch (err) {
-      fetchErrors.push(`git fetch origin: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    missing = await this.missingCommits(baseSha, headSha);
+    missing = await this.tryFetchAllFromRemotes(baseSha, headSha, baseObjectRemotes, fetchErrors, reportFetch);
     if (missing.length > 0) {
       const details =
         fetchErrors.length > 0 ? `\n\nFetch attempts:\n${fetchErrors.map((e) => `  ${e}`).join('\n')}` : '';
       throw new Error(`Required commit(s) not available locally: ${missing.join(', ')}.${details}`);
+    }
+  }
+
+  private baseRepositoryRemoteForFork(target: ReviewTarget): string | null {
+    return target.headRepository ? this.provider.getCloneUrl(target.repository) : null;
+  }
+
+  private async tryFetchMissingCommitsFromRemotes(
+    missing: string[],
+    baseSha: string,
+    headSha: string,
+    remotes: string[],
+    fetchErrors: string[],
+    reportFetch: boolean,
+  ): Promise<string[]> {
+    let stillMissing = missing;
+
+    for (const remote of remotes) {
+      await this.fetchMissingCommits(stillMissing, remote, fetchErrors, reportFetch);
+      stillMissing = await this.missingCommits(baseSha, headSha);
+      if (stillMissing.length === 0) return [];
+    }
+
+    return stillMissing;
+  }
+
+  private async tryFetchBranchFromRemotes(
+    branch: string,
+    baseSha: string,
+    headSha: string,
+    remotes: string[],
+    fetchErrors: string[],
+    reportFetch: boolean,
+  ): Promise<string[]> {
+    let stillMissing: string[] = [];
+
+    for (const remote of remotes) {
+      try {
+        await this.git.fetchBranch(branch, remote, { depth: 1, noTags: true, progress: reportFetch });
+      } catch (err) {
+        fetchErrors.push(`git fetch ${remote} ${branch}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      stillMissing = await this.missingCommits(baseSha, headSha);
+      if (stillMissing.length === 0) return [];
+    }
+
+    return stillMissing;
+  }
+
+  private async tryFetchAllFromRemotes(
+    baseSha: string,
+    headSha: string,
+    remotes: string[],
+    fetchErrors: string[],
+    reportFetch: boolean,
+  ): Promise<string[]> {
+    let stillMissing: string[] = [];
+
+    for (const remote of remotes) {
+      try {
+        await this.git.fetch(remote, { depth: 1, noTags: true, progress: reportFetch });
+      } catch (err) {
+        fetchErrors.push(`git fetch ${remote}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      stillMissing = await this.missingCommits(baseSha, headSha);
+      if (stillMissing.length === 0) return [];
+    }
+
+    return stillMissing;
+  }
+
+  private async fetchMissingCommits(
+    missing: string[],
+    remote: string,
+    fetchErrors: string[],
+    reportFetch: boolean,
+  ): Promise<void> {
+    for (const sha of missing) {
+      try {
+        await this.git.fetchCommit(sha, remote, { depth: 1, noTags: true, progress: reportFetch });
+      } catch (err) {
+        fetchErrors.push(`git fetch ${remote} ${sha}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 

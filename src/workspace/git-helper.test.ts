@@ -63,4 +63,24 @@ describe('GitHelper', () => {
       { cwd: 'parent', stdio: 'inherit' },
     );
   });
+
+  it('derives repository slugs from common HTTPS and SSH remotes', async () => {
+    const urls = [
+      ['https://bitbucket.org/workspace/repo.git', 'workspace/repo'],
+      ['git@bitbucket.org:workspace/repo.git', 'workspace/repo'],
+      ['ssh://git@bitbucket.org/workspace/repo.git', 'workspace/repo'],
+      ['https://github.com/owner/repo.git', 'owner/repo'],
+      ['git@gitlab.example.com:group/subgroup/project.git', 'group/subgroup/project'],
+    ];
+
+    for (const [url, slug] of urls) {
+      childProcessMock.execFile.mockImplementationOnce(
+        (_command: string, _args: string[], _options: unknown, callback: (...args: unknown[]) => void) => {
+          callback(null, `${url}\n`, '');
+        },
+      );
+
+      await expect(new GitHelper('repo').deriveRepoSlug()).resolves.toBe(slug);
+    }
+  });
 });

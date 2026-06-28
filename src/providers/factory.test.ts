@@ -68,6 +68,52 @@ describe('createProvider', () => {
     expect(() => createProvider(config)).toThrow('token is required for GitHub provider');
   });
 
+  it('creates a Bitbucket Cloud provider', () => {
+    const config: ResolvedAppConfig = {
+      provider: 'bitbucket-cloud',
+      url: 'https://bitbucket.org',
+      email: 'user@example.com',
+      token: 'bb-token',
+      sshClone: true,
+      tlsVerify: true,
+    };
+    const provider = createProvider(config);
+    expect(provider.providerType).toBe('bitbucket-cloud');
+    expect(provider.getCloneUrl('workspace/repo')).toBe('git@bitbucket.org:workspace/repo.git');
+  });
+
+  it('throws on missing Bitbucket Cloud email or token', () => {
+    expect(() =>
+      createProvider({
+        provider: 'bitbucket-cloud',
+        url: 'https://bitbucket.org',
+        token: 'bb-token',
+        tlsVerify: true,
+      }),
+    ).toThrow('email is required for Bitbucket Cloud provider');
+
+    expect(() =>
+      createProvider({
+        provider: 'bitbucket-cloud',
+        url: 'https://bitbucket.org',
+        email: 'user@example.com',
+        tlsVerify: true,
+      }),
+    ).toThrow('token is required for Bitbucket Cloud provider');
+  });
+
+  it('rejects Bitbucket Server/Data Center URLs for the Bitbucket Cloud provider', () => {
+    const config: ResolvedAppConfig = {
+      provider: 'bitbucket-cloud',
+      url: 'https://bitbucket.example.com',
+      email: 'user@example.com',
+      token: 'bb-token',
+      tlsVerify: true,
+    };
+
+    expect(() => createProvider(config)).toThrow('Bitbucket Server/Data Center URLs are not supported');
+  });
+
   it('throws on unknown providers', () => {
     const config = {
       provider: 'bitbucket',
