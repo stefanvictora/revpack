@@ -399,6 +399,22 @@ describe('BitbucketCloudProvider target reads', () => {
     await expect(provider.createThread(ref, 'general thread')).resolves.toBe('105');
   });
 
+  it('creates top-level threads without an inline anchor when the position has no line', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({ content: { raw: 'line-less thread' } });
+      return jsonResponse(comment({ id: 106, content: { raw: 'line-less thread' } }));
+    });
+
+    await expect(
+      provider.createThread(ref, 'line-less thread', {
+        oldPath: 'src/old.ts',
+        newPath: 'src/new.ts',
+      }),
+    ).resolves.toBe('106');
+  });
+
   it('updates existing notes through the pull request comment endpoint', async () => {
     installFetch((url, init) => {
       expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments/104');
@@ -747,9 +763,10 @@ describe('BitbucketCloudProvider errors and clone URLs', () => {
 
   it('redacts credentials from generic provider errors', async () => {
     const provider = new BitbucketCloudProvider('secret-email@example.com', 'secret-token');
+    const basicToken = Buffer.from('secret-email@example.com:secret-token', 'utf8').toString('base64');
     installFetch(() =>
       jsonResponse(
-        { error: { message: 'server echoed secret-email@example.com and secret-token' } },
+        { error: { message: `server echoed secret-email@example.com, secret-token, and ${basicToken}` } },
         { status: 500, statusText: 'Server Error' },
       ),
     );
@@ -758,7 +775,31 @@ describe('BitbucketCloudProvider errors and clone URLs', () => {
 
     await expect(publish).rejects.toThrow('[REDACTED_EMAIL]');
     await expect(publish).rejects.toThrow('[REDACTED_TOKEN]');
+    await expect(publish).rejects.toThrow('[REDACTED_BASIC_AUTH]');
     await expect(publish).rejects.not.toThrow('secret-email@example.com');
     await expect(publish).rejects.not.toThrow('secret-token');
+    await expect(publish).rejects.not.toThrow(basicToken);
+  });
+
+  it('redacts credentials from network error causes', async () => {
+    const provider = new BitbucketCloudProvider('secret-email@example.com', 'secret-token');
+    const basicToken = Buffer.from('secret-email@example.com:secret-token', 'utf8').toString('base64');
+    const networkError = Object.assign(new Error(`outer ${basicToken}`), {
+      cause: new Error(`inner secret-email@example.com secret-token ${basicToken}`),
+    });
+    installFetch(() => Promise.reject(networkError));
+
+    const createNote = provider.createNote(ref, 'body');
+    await expect(createNote).rejects.toThrow('[REDACTED_BASIC_AUTH]');
+    await expect(createNote).rejects.toThrow('[REDACTED_EMAIL]');
+    await expect(createNote).rejects.toThrow('[REDACTED_TOKEN]');
+    await expect(createNote).rejects.not.toThrow(basicToken);
+    await expect(createNote).rejects.not.toThrow('secret-email@example.com');
+    await expect(createNote).rejects.not.toThrow('secret-token');
+
+    const listTargets = provider.listOpenReviewTargets('workspace/repo');
+    await expect(listTargets).rejects.not.toThrow(basicToken);
+    await expect(listTargets).rejects.not.toThrow('secret-email@example.com');
+    await expect(listTargets).rejects.not.toThrow('secret-token');
   });
 });

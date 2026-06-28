@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed `revpack publish review` leaving `review.md` populated after publishing, which could republish the same review note during later incremental reviews.
 - Fixed `revpack publish all` updating the PR/MR description summary again when `revpack status` already reported the summary as published.
 - Fixed `revpack publish all` so real summary publishing failures stop before checkpointing and non-GitHub finding setup failures report partial-success warnings after earlier provider actions.
+- Fixed Bitbucket Cloud publishing to avoid invalid line-less inline anchors and redact derived Basic Auth credentials from provider and network errors.
 - Fixed debug error logging repeating the user-facing error message before the stack frames.
 
 ## [0.4.0] - 2026-06-07

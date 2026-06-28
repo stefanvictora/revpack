@@ -169,7 +169,8 @@ export class BitbucketCloudProvider implements ReviewProvider {
   async createThread(ref: ReviewTargetRef, body: string, position?: NewThreadPosition): Promise<string> {
     const payload: BitbucketCommentCreatePayload = { content: { raw: body } };
     if (position) {
-      payload.inline = this.buildInlinePosition(position);
+      const inline = this.buildInlinePosition(position);
+      if (inline) payload.inline = inline;
     }
     const comment = await this.createComment(ref, payload);
     return String(comment.id);
@@ -205,7 +206,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
     } catch (err) {
       const cause = err instanceof Error ? err : new Error(String(err));
       const detail = (cause as NodeJS.ErrnoException).cause
-        ? ` (${String((cause as NodeJS.ErrnoException).cause)})`
+        ? ` (${this.redact(String((cause as NodeJS.ErrnoException).cause))})`
         : '';
       throw new ProviderError(
         `Network error reaching ${new URL(url).hostname}${detail}: ${this.redact(cause.message)}`,
@@ -232,7 +233,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
       } catch (err) {
         const cause = err instanceof Error ? err : new Error(String(err));
         const detail = (cause as NodeJS.ErrnoException).cause
-          ? ` (${String((cause as NodeJS.ErrnoException).cause)})`
+          ? ` (${this.redact(String((cause as NodeJS.ErrnoException).cause))})`
           : '';
         throw new ProviderError(
           `Network error reaching ${new URL(nextUrl).hostname}${detail}: ${this.redact(cause.message)}`,
@@ -331,7 +332,8 @@ export class BitbucketCloudProvider implements ReviewProvider {
     });
   }
 
-  private buildInlinePosition(position: NewThreadPosition): BitbucketInlinePosition {
+  private buildInlinePosition(position: NewThreadPosition): BitbucketInlinePosition | undefined {
+    if (position.oldLine == null && position.newLine == null) return undefined;
     const isOldSide = position.oldLine != null && position.newLine == null;
     return isOldSide
       ? { path: position.oldPath, from: position.oldLine }
@@ -346,7 +348,14 @@ export class BitbucketCloudProvider implements ReviewProvider {
   }
 
   private redact(value: string): string {
-    return value.split(this.email).join('[REDACTED_EMAIL]').split(this.token).join('[REDACTED_TOKEN]');
+    const basicToken = Buffer.from(`${this.email}:${this.token}`, 'utf8').toString('base64');
+    return value
+      .split(this.email)
+      .join('[REDACTED_EMAIL]')
+      .split(this.token)
+      .join('[REDACTED_TOKEN]')
+      .split(basicToken)
+      .join('[REDACTED_BASIC_AUTH]');
   }
 
   private mapPullRequest(repo: string, pr: BitbucketPullRequest, diffRefs = this.mapDiffRefs(pr)): ReviewTarget {
