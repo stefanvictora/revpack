@@ -27,6 +27,7 @@ interface BitbucketCloudProviderOptions {
 
 export class BitbucketCloudProvider implements ReviewProvider {
   readonly providerType = 'bitbucket-cloud' as const;
+  readonly supportsDirectCommitFetch = false;
   private readonly apiBaseUrl = 'https://api.bitbucket.org/2.0';
   private readonly webBaseUrl = 'https://bitbucket.org';
   private readonly email: string;

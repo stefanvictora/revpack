@@ -162,6 +162,7 @@ function createBitbucketMockProvider(overrides: Partial<ReviewProvider> = {}): R
 
   return {
     providerType: 'bitbucket-cloud',
+    supportsDirectCommitFetch: false,
     resolveTarget: vi.fn().mockReturnValue(bitbucketRef),
     listOpenReviewTargets: vi.fn().mockResolvedValue([bitbucketTarget]),
     findTargetByBranch: vi.fn().mockResolvedValue([bitbucketTarget]),

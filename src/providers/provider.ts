@@ -80,6 +80,15 @@ export interface ReviewProvider {
   getCloneUrl(repo: string): string;
 
   /**
+   * Whether the remote supports fetching individual commits by SHA
+   * (i.e. `uploadpack.allowReachableSHA1InWant` is enabled).
+   * Defaults to true when not specified. Providers that do not support this
+   * (e.g. Bitbucket Cloud) should return false so the orchestrator skips
+   * direct SHA fetch and uses deeper branch-based strategies instead.
+   */
+  readonly supportsDirectCommitFetch?: boolean;
+
+  /**
    * Return the git refspec that can be fetched from the base repository to get the
    * PR/MR head, e.g. `refs/pull/42/head` for GitHub.
    * When defined, the orchestrator uses this instead of branch-based fetch/clone so

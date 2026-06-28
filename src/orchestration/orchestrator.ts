@@ -748,7 +748,7 @@ export class ReviewOrchestrator {
     const baseRepoRemote = this.baseRepositoryRemoteForFork(target);
     const baseObjectRemotes = baseRepoRemote ? ['origin', baseRepoRemote] : ['origin'];
 
-    if (target.provider !== 'bitbucket-cloud') {
+    if (this.provider.supportsDirectCommitFetch !== false) {
       missing = await this.tryFetchMissingCommitsFromRemotes(
         missing,
         baseSha,
@@ -778,6 +778,22 @@ export class ReviewOrchestrator {
         ['origin'],
         fetchErrors,
         reportFetch,
+      );
+      if (missing.length === 0) return;
+    }
+
+    // When the provider does not support direct SHA fetch (e.g. Bitbucket Cloud),
+    // shallow branch fetches may miss an older recorded base commit that is no
+    // longer at the branch tip. Try a full (non-shallow) branch fetch to resolve it.
+    if (this.provider.supportsDirectCommitFetch === false) {
+      missing = await this.tryFetchBranchFromRemotes(
+        target.targetBranch,
+        baseSha,
+        headSha,
+        baseObjectRemotes,
+        fetchErrors,
+        reportFetch,
+        { deep: true },
       );
       if (missing.length === 0) return;
     }
@@ -820,12 +836,17 @@ export class ReviewOrchestrator {
     remotes: string[],
     fetchErrors: string[],
     reportFetch: boolean,
+    options?: { deep?: boolean },
   ): Promise<string[]> {
     let stillMissing: string[] = [];
 
     for (const remote of remotes) {
       try {
-        await this.git.fetchBranch(branch, remote, { depth: 1, noTags: true, progress: reportFetch });
+        await this.git.fetchBranch(branch, remote, {
+          ...(options?.deep ? {} : { depth: 1 }),
+          noTags: true,
+          progress: reportFetch,
+        });
       } catch (err) {
         fetchErrors.push(`git fetch ${remote} ${branch}: ${err instanceof Error ? err.message : String(err)}`);
       }
