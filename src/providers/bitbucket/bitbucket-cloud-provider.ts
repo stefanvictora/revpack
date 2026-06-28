@@ -1,7 +1,16 @@
 import * as fs from 'node:fs';
 import { Agent } from 'undici';
 import type { NewThreadPosition, ReviewProvider } from '../provider.js';
-import type { DiffRefs, ReviewTarget, ReviewTargetRef, ReviewThread, ReviewVersion } from '../../core/types.js';
+import type {
+  CommentOrigin,
+  DiffPosition,
+  DiffRefs,
+  ReviewComment,
+  ReviewTarget,
+  ReviewTargetRef,
+  ReviewThread,
+  ReviewVersion,
+} from '../../core/types.js';
 import { AuthenticationError, ProviderError } from '../../core/errors.js';
 
 interface BitbucketRequestOptions {
@@ -110,12 +119,17 @@ export class BitbucketCloudProvider implements ReviewProvider {
     return this.mapPullRequest(ref.repository, pr, diffRefs);
   }
 
-  listUnresolvedThreads(_ref: ReviewTargetRef): Promise<ReviewThread[]> {
-    return Promise.resolve([]);
+  async listUnresolvedThreads(ref: ReviewTargetRef): Promise<ReviewThread[]> {
+    const all = await this.listAllThreads(ref);
+    return all.filter((thread) => thread.resolvable && !thread.resolved);
   }
 
-  listAllThreads(_ref: ReviewTargetRef): Promise<ReviewThread[]> {
-    return Promise.resolve([]);
+  async listAllThreads(ref: ReviewTargetRef): Promise<ReviewThread[]> {
+    const comments = await this.requestPaginated<BitbucketComment>(
+      `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}/comments`,
+      { pagelen: '100' },
+    );
+    return this.mapReviewThreads(ref, comments);
   }
 
   async getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]> {
@@ -152,8 +166,15 @@ export class BitbucketCloudProvider implements ReviewProvider {
     return Promise.reject(this.unsupported('inline review comments'));
   }
 
-  findNoteByMarker(_ref: ReviewTargetRef, _marker: string): Promise<{ id: string; body: string } | null> {
-    return Promise.resolve(null);
+  async findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<{ id: string; body: string } | null> {
+    const comments = await this.requestPaginated<BitbucketComment>(
+      `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}/comments`,
+      { pagelen: '100' },
+    );
+    const match = comments.find(
+      (comment) => !comment.deleted && !comment.parent && this.commentBody(comment).startsWith(marker),
+    );
+    return match ? { id: String(match.id), body: this.commentBody(match) } : null;
   }
 
   createNote(_ref: ReviewTargetRef, _body: string, _options?: { internal?: boolean }): Promise<string> {
@@ -335,6 +356,74 @@ export class BitbucketCloudProvider implements ReviewProvider {
     };
   }
 
+  private mapReviewThreads(ref: ReviewTargetRef, comments: BitbucketComment[]): ReviewThread[] {
+    const topLevel = new Map<number, BitbucketComment>();
+    for (const comment of comments) {
+      if (comment.deleted || comment.parent) continue;
+      topLevel.set(comment.id, comment);
+    }
+
+    const replies = new Map<number, BitbucketComment[]>();
+    for (const comment of comments) {
+      if (comment.deleted || !comment.parent) continue;
+      const parentId = comment.parent.id;
+      if (!topLevel.has(parentId)) continue;
+      const parentReplies = replies.get(parentId) ?? [];
+      parentReplies.push(comment);
+      replies.set(parentId, parentReplies);
+    }
+
+    return [...topLevel.values()].map((comment): ReviewThread => {
+      const threadComments = [comment, ...(replies.get(comment.id) ?? [])];
+      return {
+        provider: 'bitbucket-cloud',
+        targetRef: ref,
+        threadId: String(comment.id),
+        resolved: comment.resolution != null,
+        resolvable: true,
+        position: this.mapCommentPosition(comment),
+        comments: threadComments.map((threadComment) => this.mapReviewComment(threadComment)),
+      };
+    });
+  }
+
+  private mapCommentPosition(comment: BitbucketComment): DiffPosition | undefined {
+    const inline = comment.inline;
+    if (!inline?.path) return undefined;
+
+    return {
+      filePath: inline.path,
+      oldLine: inline.from ?? undefined,
+      newLine: inline.to ?? undefined,
+      oldPath: inline.path,
+      newPath: inline.path,
+    };
+  }
+
+  private mapReviewComment(comment: BitbucketComment): ReviewComment {
+    const body = this.commentBody(comment);
+    return {
+      id: String(comment.id),
+      body,
+      author: comment.user?.nickname ?? comment.user?.display_name ?? comment.user?.account_id ?? 'unknown',
+      createdAt: comment.created_on,
+      updatedAt: comment.updated_on,
+      origin: this.detectOrigin(body, comment.user),
+      system: false,
+    };
+  }
+
+  private commentBody(comment: BitbucketComment): string {
+    return comment.content?.raw ?? comment.content?.markup ?? '';
+  }
+
+  private detectOrigin(body: string, user?: BitbucketUser | null): CommentOrigin {
+    if (body.startsWith('<!-- revpack')) return 'bot';
+    const normalized = [user?.nickname, user?.display_name, user?.account_id].filter(Boolean).join(' ').toLowerCase();
+    if (normalized.includes('[bot]') || normalized.includes('bot')) return 'bot';
+    return 'human';
+  }
+
   private unsupported(feature: string): ProviderError {
     return new ProviderError(`Bitbucket Cloud ${feature} is not supported yet.`, 'bitbucket-cloud');
   }
@@ -395,6 +484,32 @@ interface BitbucketPullRequestEndpoint {
 
 interface BitbucketCommit {
   hash?: string;
+}
+
+interface BitbucketComment {
+  id: number;
+  content?: {
+    raw?: string | null;
+    markup?: string | null;
+    html?: string | null;
+  } | null;
+  user?: BitbucketUser | null;
+  created_on: string;
+  updated_on: string;
+  deleted?: boolean | null;
+  parent?: { id: number } | null;
+  inline?: {
+    path?: string | null;
+    from?: number | null;
+    to?: number | null;
+  } | null;
+  resolution?: unknown;
+}
+
+interface BitbucketUser {
+  display_name?: string | null;
+  nickname?: string | null;
+  account_id?: string | null;
 }
 
 function isAbbreviatedSha(hash: string): boolean {
