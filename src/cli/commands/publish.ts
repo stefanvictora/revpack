@@ -441,6 +441,11 @@ function isNoReviewNoteToPublishError(err: unknown): boolean {
   return err.message.includes('No review note found') || / is empty(?:; nothing to publish)?$/.test(err.message);
 }
 
+function isNoSummaryToPublishError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.message.includes('No summary found') || /^\.revpack\/outputs\/summary\.md is empty/.test(err.message);
+}
+
 function warnPartialSuccess(occurred: boolean): void {
   if (!occurred) return;
   console.error(
@@ -487,10 +492,15 @@ async function publishAllPending(opts: { refresh?: boolean } = {}): Promise<void
       throw err;
     }
   } else {
-    const findingCount = await publishFindings({ noRefresh: true });
-    if (findingCount === 0) console.log(chalk.dim('  (none pending)'));
-    total += findingCount;
-    if (findingCount > 0) partialSuccess = true;
+    try {
+      const findingCount = await publishFindings({ noRefresh: true });
+      if (findingCount === 0) console.log(chalk.dim('  (none pending)'));
+      total += findingCount;
+      if (findingCount > 0) partialSuccess = true;
+    } catch (err) {
+      warnPartialSuccess(partialSuccess);
+      throw err;
+    }
   }
 
   console.log('');
@@ -498,7 +508,11 @@ async function publishAllPending(opts: { refresh?: boolean } = {}): Promise<void
   try {
     total += await publishDescription({});
     partialSuccess = true;
-  } catch {
+  } catch (err) {
+    if (!isNoSummaryToPublishError(err)) {
+      warnPartialSuccess(partialSuccess);
+      throw err;
+    }
     console.log(chalk.dim('  (no summary to publish)'));
   }
 

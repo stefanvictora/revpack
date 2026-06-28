@@ -418,4 +418,49 @@ describe('publish command internals', () => {
     expect(orchestrator.publishReply).toHaveBeenCalledTimes(1);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Publishing failed after one or more'));
   });
+
+  it('warns about partial success when non-GitHub findings fail after a reply succeeds', async () => {
+    await writeBundleState('bitbucket-cloud');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.revpack', 'outputs', 'replies.json'),
+      JSON.stringify([{ threadId: '100', body: 'Reply body' }]),
+      'utf-8',
+    );
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'), '{not json', 'utf-8');
+
+    const orchestrator = {
+      publishReply: vi.fn().mockResolvedValue(undefined),
+      publishCheckpoint: vi.fn(),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow('must be a JSON array');
+
+    expect(orchestrator.publishReply).toHaveBeenCalledTimes(1);
+    expect(orchestrator.publishCheckpoint).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Publishing failed after one or more'));
+  });
+
+  it('stops before checkpoint when description publishing fails unexpectedly', async () => {
+    await writeBundleState('bitbucket-cloud');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), 'Generated summary', 'utf-8');
+
+    const orchestrator = {
+      open: vi.fn().mockRejectedValue(new Error('provider unavailable')),
+      updateDescription: vi.fn(),
+      publishReview: vi.fn(),
+      publishCheckpoint: vi.fn(),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow('provider unavailable');
+
+    expect(orchestrator.open).toHaveBeenCalledTimes(1);
+    expect(orchestrator.updateDescription).not.toHaveBeenCalled();
+    expect(orchestrator.publishReview).not.toHaveBeenCalled();
+    expect(orchestrator.publishCheckpoint).not.toHaveBeenCalled();
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('(no summary to publish)'));
+  });
 });
