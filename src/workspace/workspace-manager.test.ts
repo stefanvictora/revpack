@@ -173,6 +173,13 @@ describe('WorkspaceManager', () => {
     const outputEntries = await fs.readdir(path.join(bundleDir, 'outputs'));
     expect(outputEntries).toContain('new-findings.schema.json');
     expect(outputEntries).toContain('replies.schema.json');
+
+    const newFindingsSchema = await fs.readFile(path.join(bundleDir, 'outputs', 'new-findings.schema.json'), 'utf-8');
+    const repliesSchema = await fs.readFile(path.join(bundleDir, 'outputs', 'replies.schema.json'), 'utf-8');
+    expect(newFindingsSchema).toContain('Array of review findings to publish as provider diff threads.');
+    expect(newFindingsSchema).not.toContain('GitLab/GitHub');
+    expect(repliesSchema).toContain('Internal disposition tag (not published to the provider).');
+    expect(repliesSchema).not.toContain('not published to GitLab');
   });
 
   it('writeContext writes AGENT_CONTRACT.md, INSTRUCTIONS.md and instructions/', async () => {
@@ -225,6 +232,8 @@ describe('WorkspaceManager', () => {
     expect(suggestionsInstructions).toContain('```suggestion\n');
     expect(suggestionsInstructions).not.toContain('suggestion:-0+0');
     expect(suggestionsInstructions).not.toContain('suggestion:-1+2');
+    expect(suggestionsInstructions).toContain('For GitHub, Bitbucket Cloud, and local reviews');
+    expect(suggestionsInstructions).not.toContain('For GitHub and local reviews');
     expect(suggestionsInstructions).toContain('The fence stays plain `suggestion`');
     expect(findingsInstructions).toContain('<details>');
     expect(findingsInstructions).toContain('<summary>🤖 Prompt for AI Agents</summary>');
@@ -292,6 +301,10 @@ describe('WorkspaceManager', () => {
     expect(repliesInstructions).toContain('#### 🤖 Prompt for AI Agents');
     expect(findingsInstructions).toContain('#### 🤖 Prompt for AI Agents');
     expect(suggestionsInstructions).toContain('#### 🤖 Prompt for AI Agents');
+    expect(suggestionsInstructions).toContain('For GitHub, Bitbucket Cloud, and local reviews');
+    expect(suggestionsInstructions).toContain('The fence stays plain `suggestion`');
+    expect(suggestionsInstructions).not.toContain('For GitHub and local reviews');
+    expect(suggestionsInstructions).not.toContain('suggestion:-0+0');
     expect(findingsInstructions).toContain('> Verify this issue against the current code');
     expect(`${repliesInstructions}\n${findingsInstructions}\n${suggestionsInstructions}`).not.toContain('<details>');
     expect(`${repliesInstructions}\n${findingsInstructions}\n${suggestionsInstructions}`).not.toContain('<summary>');

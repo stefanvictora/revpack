@@ -172,7 +172,7 @@ export interface NewFinding {
 }
 
 /**
- * Reply disposition (internal tracking, not published to GitLab).
+ * Reply disposition (internal tracking, not published to the provider).
  */
 export type ReplyDisposition = 'already_fixed' | 'explain' | 'suggest_fix' | 'disagree' | 'escalate';
 

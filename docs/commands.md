@@ -7,6 +7,7 @@ Creates or refreshes the `.revpack/` bundle for a PR/MR.
 ```bash
 revpack prepare                             # auto-detect from current branch, or refresh existing bundle
 revpack prepare !42                         # prepare a specific GitLab MR
+revpack prepare 58 --profile myGithub       # prepare a specific GitHub PR
 revpack prepare --local                     # prepare a local branch review against the inferred base
 revpack prepare --local main                # prepare a local branch review against an explicit base
 revpack prepare --local main...HEAD         # prepare a local branch review from an explicit range
@@ -18,6 +19,7 @@ revpack prepare !42 --json                  # machine-readable output
 Behavior:
 
 - If no `ref` is given and no bundle exists, `prepare` finds an open PR/MR sourced from the current git branch.
+- Remote target refs can be provider URLs or compact refs. GitLab accepts `!42`; GitHub accepts `58`; Bitbucket Cloud accepts `42`, `#42`, `workspace/repo#42`, `workspace/repo/pull-requests/42`, and `https://bitbucket.org/workspace/repo/pull-requests/42`.
 - If a bundle already exists, `prepare` refreshes it and detects code or thread changes since the last recorded review state.
 - If the current git branch no longer matches the bundled PR/MR source branch, `prepare` stops and asks you to switch branches or run `clean`.
 - Thread IDs such as `T-001` are derived from the provider's thread creation order. They stay stable unless existing provider threads are deleted.
@@ -38,6 +40,9 @@ revpack checkout !42
 revpack checkout !42 --setup
 revpack checkout !42 --repo group/project --profile myprofile
 revpack checkout https://gitlab.example.com/group/project/-/merge_requests/42
+revpack checkout https://github.com/user/project/pull/58
+revpack checkout https://bitbucket.org/workspace/repo/pull-requests/42
+revpack checkout workspace/repo#42 --profile myBitbucket
 ```
 
 Notes:
@@ -55,6 +60,7 @@ Shows PR/MR state, branches, bundle freshness, local checkout status, agent outp
 ```bash
 revpack status
 revpack status !42
+revpack status https://bitbucket.org/workspace/repo/pull-requests/42
 revpack status !42 --json
 ```
 
@@ -73,6 +79,7 @@ revpack publish findings
 revpack publish summary
 revpack publish review
 revpack publish checkpoint
+revpack publish summary --repo workspace/repo
 ```
 
 After publishing, revpack refreshes the bundle by default so the new provider comments are reflected locally.
@@ -124,6 +131,7 @@ Creates, inspects, and edits provider profiles. Revpack stores provider settings
 ```bash
 # Create
 revpack config setup
+revpack config profile create myBitbucket --provider bitbucket-cloud --url https://bitbucket.org --email-env REVPACK_BITBUCKET_EMAIL --token-env REVPACK_BITBUCKET_TOKEN
 
 # Current project
 revpack config show
@@ -154,8 +162,15 @@ Use these options when changing profile-specific values:
 Configurable keys:
 
 ```text
-provider, url, tokenEnv, remotePatterns, caFile, tlsVerify, sshClone
+provider, url, tokenEnv, emailEnv, remotePatterns, caFile, tlsVerify, sshClone
 ```
+
+- `provider` is `gitlab`, `github`, or `bitbucket-cloud`.
+- `url` is the provider base URL. Bitbucket Cloud profiles must use `https://bitbucket.org`.
+- `tokenEnv` names the environment variable that contains the provider token.
+- `emailEnv` names the environment variable that contains the Atlassian account email. It is required for Bitbucket Cloud Basic Auth together with the API token; it is not a Bitbucket username.
+
+Bitbucket Cloud support covers pull request review workflows on `bitbucket.org`. It does not include Bitbucket Server/Data Center, OAuth, workspace/project/repository access tokens, Pipelines, or commit status integrations.
 
 > [!TIP]
 > The setup commands write the profiles to: `~/.config/revpack/config.json`

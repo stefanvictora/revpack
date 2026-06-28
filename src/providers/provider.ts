@@ -32,7 +32,7 @@ export interface CheckoutBranchTarget {
 
 /**
  * Provider-neutral interface for forge operations.
- * Implementations: GitLabProvider, (future) GitHubProvider.
+ * Implementations include hosted review providers and local git reviews.
  */
 export interface ReviewProvider {
   readonly providerType: 'gitlab' | 'github' | 'bitbucket-cloud' | 'local';
@@ -112,7 +112,7 @@ export interface ReviewProvider {
 
   /**
    * Submit a pull request review batch with inline comments and optional body.
-   * Only supported by GitHub. GitLab providers should not implement this.
+   * Only implemented by providers that support batched review submission.
    */
   submitReview?(
     ref: ReviewTargetRef,

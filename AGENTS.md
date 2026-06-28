@@ -7,7 +7,7 @@ This is a TypeScript ESM CLI project. Prefer small, focused changes that follow 
 Respect the layers:
 
 - `src/core/`: provider-neutral types, schemas, and errors
-- `src/providers/`: GitHub, GitLab, and local adapters
+- `src/providers/`: GitHub, GitLab, Bitbucket Cloud, and local adapters
 - `src/workspace/`: git operations and bundle creation
 - `src/orchestration/`: workflow coordination
 - `src/cli/`: Commander commands and CLI output
@@ -53,6 +53,8 @@ Choose headings by the user-visible effect relative to existing behavior: new ca
 Update `[Unreleased]` for user-visible changes: commands, flags, behavior, compatibility, setup, meaningful fixes, workflow documentation, or deprecations.
 
 `[Unreleased]` is an editable draft, not an append-only log. Add, merge, reword, move, or remove entries to keep the release note compact and coherent.
+
+When a feature is still unreleased, fold implementation-time fixes into the feature's `Added` or `Changed` entry instead of listing them under `Fixed`. Use `Fixed` only for regressions or defects in behavior that users could already have encountered in a released version.
 
 Do not edit released sections except for clear typos or formatting mistakes. Skip internal refactors, test-only changes, formatting, small wording tweaks, and maintenance with no visible user effect.
 

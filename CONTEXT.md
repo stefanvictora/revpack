@@ -26,6 +26,10 @@ _Avoid_: Context folder, workspace, review package
 The intentional action of applying agent output back to the review target through its provider.
 _Avoid_: Post, submit, send, upload
 
+**Guided Publish**:
+An interactive publish flow that summarizes publishable review material before asking which items to publish.
+_Avoid_: Publish all, auto-publish
+
 **Checkpoint**:
 A published marker of the review target state that future prepares use to decide what changed since the last intentional review.
 _Avoid_: Baseline, snapshot, save point

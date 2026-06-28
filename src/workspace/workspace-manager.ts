@@ -1515,7 +1515,7 @@ export class WorkspaceManager {
 const NEW_FINDINGS_JSON_SCHEMA = {
   $schema: 'http://json-schema.org/draft-07/schema#',
   title: 'new-findings',
-  description: 'Array of review findings to publish as GitLab/GitHub diff threads.',
+  description: 'Array of review findings to publish as provider diff threads.',
   type: 'array',
   items: {
     type: 'object',
@@ -1554,7 +1554,7 @@ const REPLIES_JSON_SCHEMA = {
       disposition: {
         type: 'string',
         enum: ['already_fixed', 'explain', 'suggest_fix', 'disagree', 'escalate'],
-        description: 'Internal disposition tag (not published to GitLab).',
+        description: 'Internal disposition tag (not published to the provider).',
       },
     },
     additionalProperties: false,
