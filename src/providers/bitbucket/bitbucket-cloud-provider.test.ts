@@ -493,6 +493,26 @@ describe('BitbucketCloudProvider review comments', () => {
     expect(threads[0].comments.map((comment) => comment.id)).toEqual(['200']);
   });
 
+  it('excludes pending comments and replies', async () => {
+    installFetch(() =>
+      jsonResponse({
+        values: [
+          comment({ id: 210, content: { raw: 'Visible parent' } }),
+          comment({ id: 211, content: { raw: 'Pending parent' }, pending: true }),
+          comment({ id: 212, content: { raw: 'Reply to pending parent' }, parent: { id: 211 } }),
+          comment({ id: 213, content: { raw: 'Pending reply' }, parent: { id: 210 }, pending: true }),
+          comment({ id: 214, content: { raw: 'Visible reply' }, parent: { id: 210 } }),
+        ],
+      }),
+    );
+
+    const threads = await provider.listAllThreads(ref);
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0].threadId).toBe('210');
+    expect(threads[0].comments.map((comment) => comment.id)).toEqual(['210', '214']);
+  });
+
   it('uses only top-level resolution for resolved state and lists unresolved threads', async () => {
     installFetch(() =>
       jsonResponse({

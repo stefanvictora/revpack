@@ -349,13 +349,13 @@ export class BitbucketCloudProvider implements ReviewProvider {
   private mapReviewThreads(ref: ReviewTargetRef, comments: BitbucketComment[]): ReviewThread[] {
     const topLevel = new Map<number, BitbucketComment>();
     for (const comment of comments) {
-      if (comment.deleted || comment.parent) continue;
+      if (!this.isVisibleComment(comment) || comment.parent) continue;
       topLevel.set(comment.id, comment);
     }
 
     const replies = new Map<number, BitbucketComment[]>();
     for (const comment of comments) {
-      if (comment.deleted || !comment.parent) continue;
+      if (!this.isVisibleComment(comment) || !comment.parent) continue;
       const parentId = comment.parent.id;
       if (!topLevel.has(parentId)) continue;
       const parentReplies = replies.get(parentId) ?? [];
@@ -375,6 +375,10 @@ export class BitbucketCloudProvider implements ReviewProvider {
         comments: threadComments.map((threadComment) => this.mapReviewComment(threadComment)),
       };
     });
+  }
+
+  private isVisibleComment(comment: BitbucketComment): boolean {
+    return !comment.deleted && !comment.pending;
   }
 
   private mapCommentPosition(comment: BitbucketComment): DiffPosition | undefined {
@@ -487,6 +491,7 @@ interface BitbucketComment {
   created_on: string;
   updated_on: string;
   deleted?: boolean | null;
+  pending?: boolean | null;
   parent?: { id: number } | null;
   inline?: {
     path?: string | null;
