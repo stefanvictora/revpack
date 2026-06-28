@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Added first-class Bitbucket Cloud support for configuring provider profiles, preparing and checking out pull request review bundles, reading pull request discussions, showing status, and publishing revpack outputs.
+- Added primary onboarding commands and help: `revpack connect`, top-level `revpack doctor`, `revpack setup --agent <target>`, a concise top-level workflow, and checkout target examples.
 
 ### Changed
 

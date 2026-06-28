@@ -12,7 +12,7 @@ import {
   validateProviderUrlForProvider,
 } from '../../config/index.js';
 import { ConfigError } from '../../core/errors.js';
-import { registerConfigCommand } from './config.js';
+import { registerConfigCommand, registerPrimaryConfigCommands } from './config.js';
 
 describe('config command', () => {
   it('prints help for the parent command instead of showing resolved config', async () => {
@@ -33,13 +33,38 @@ describe('config command', () => {
     expect(help).toContain('profile');
     expect(help).toContain('List, show, create, or delete saved profiles');
     expect(help).toContain('Create:');
-    expect(help).toContain('revpack config setup');
+    expect(help).toContain('revpack connect');
     expect(help).toContain('Current project:');
-    expect(help).toContain('revpack config doctor');
+    expect(help).toContain('revpack doctor');
     expect(help).toContain('Saved profiles:');
     expect(help).toContain('revpack config profile list');
     expect(help).toContain('revpack config profile delete <name>');
+    expect(help).toContain('setup');
+    expect(help).toContain('doctor');
     expect(help).not.toContain('No active profile');
+  });
+
+  it('registers top-level connect and doctor commands', async () => {
+    const output: string[] = [];
+    const program = new Command();
+    program.exitOverride();
+    program.configureOutput({
+      writeOut: (value) => output.push(value),
+      writeErr: (value) => output.push(value),
+    });
+    registerPrimaryConfigCommands(program);
+
+    try {
+      await program.parseAsync(['node', 'revpack', 'doctor', '--help']);
+    } catch {
+      // Commander exits after printing --help when exitOverride is enabled.
+    }
+
+    const help = output.join('');
+    expect(help).toContain('Usage: revpack doctor [options]');
+    expect(help).toContain('--profile <name>');
+    expect(help).toContain('--json');
+    expect(program.commands.map((command) => command.name())).toEqual(['connect', 'doctor']);
   });
 
   it('describes profile create as the non-interactive creation path', async () => {

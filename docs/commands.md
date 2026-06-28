@@ -1,5 +1,19 @@
 # Command reference
 
+## Primary workflow
+
+```bash
+revpack connect                    # create a provider profile interactively
+revpack doctor                     # check the matching provider profile
+revpack setup --agent codex        # create REVIEW.md and install one agent adapter
+revpack prepare                    # create or refresh the review bundle
+# run your agent
+revpack status
+revpack publish all
+```
+
+For another PR/MR, use `revpack checkout <url-or-id>`. For a local branch review, use `revpack prepare --local [base]`.
+
 ## `prepare [ref]`
 
 Creates or refreshes the `.revpack/` bundle for a PR/MR.
@@ -105,6 +119,10 @@ Creates project-level files that help agents review consistently.
 
 ```bash
 revpack setup
+revpack setup --agent claude
+revpack setup --agent codex
+revpack setup --agent cursor
+revpack setup --agent copilot
 revpack setup agent claude
 revpack setup agent codex
 revpack setup agent cursor
@@ -113,6 +131,8 @@ revpack setup --prompts
 revpack setup --dry-run
 ```
 
+`revpack setup` creates only `REVIEW.md`.
+`revpack setup --agent <target>` creates `REVIEW.md` when missing and installs one agent adapter.
 `revpack setup agent <target>` writes project-level instruction files for one agent target and does not create `REVIEW.md`.
 
 `--prompts` is kept as a deprecated compatibility flag. It creates `REVIEW.md` and installs the Copilot `/revpack-review` prompt.
@@ -129,16 +149,22 @@ Generated harness files:
 Creates, inspects, and edits provider profiles. Revpack stores provider settings in named profiles. Commands such as `show`, `doctor`, `get`, `set`, and `unset` use the profile resolved from the current git remote unless you pass `--profile`; `config profile` commands manage saved profiles directly.
 
 ```bash
-# Create
+# Primary onboarding
+revpack connect
+revpack doctor
+revpack doctor --profile myprofile
+
+# Compatibility aliases
 revpack config setup
+revpack config doctor
+
+# Non-interactive profile creation
 revpack config profile create myBitbucket --provider bitbucket-cloud --url https://bitbucket.org --email-env REVPACK_BITBUCKET_EMAIL --token-env REVPACK_BITBUCKET_TOKEN
 
 # Current project
 revpack config show
 revpack config show --profile myprofile
 revpack config show --sources
-revpack config doctor
-revpack config doctor --profile myprofile
 
 # Profile values
 revpack config get <key>

@@ -44,6 +44,15 @@ describe('runSetup', () => {
     await expect(fileExists(path.join('.claude', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(true);
   });
 
+  it('installs REVIEW.md and the selected adapter with setup --agent', async () => {
+    await runSetup({ cwd, agent: 'codex' });
+
+    await expect(fileExists('REVIEW.md')).resolves.toBe(true);
+    await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(true);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Use it in Codex with:'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('  $revpack-review'));
+  });
+
   it('installs the Cursor adapter at the canonical revpack-review path', async () => {
     await runSetupAgent({ cwd, target: 'cursor' });
 
@@ -98,6 +107,18 @@ describe('runSetup', () => {
     await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(false);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Would create:'));
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Dry run - no files written.'));
+  });
+
+  it('parses setup --agent as combined review guidance and adapter setup', async () => {
+    process.chdir(cwd);
+    const program = new Command();
+    program.exitOverride();
+    registerSetupCommand(program);
+
+    await program.parseAsync(['node', 'revpack', 'setup', '--agent', 'codex']);
+
+    await expect(fileExists('REVIEW.md')).resolves.toBe(true);
+    await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(true);
   });
 
   async function fileExists(relativePath: string): Promise<boolean> {

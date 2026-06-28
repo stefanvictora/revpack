@@ -175,7 +175,7 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
     checks.push({ ok: true, label: `Profile: ${profileName}` });
   } catch (err) {
     checks.push({ ok: false, label: 'Profile resolution', detail: (err as Error).message });
-    nextSteps.push('revpack config setup');
+    nextSteps.push('revpack connect');
     return { checks, profileName, nextSteps };
   }
 
