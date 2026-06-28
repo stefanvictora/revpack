@@ -949,16 +949,28 @@ export class ReviewOrchestrator {
     const repoDetail = target.headRepository
       ? `Source repository: ${target.headRepository}`
       : `Repository: ${target.repository}`;
+    const msg = errorMessage(sourceError);
+    const isMissingRef = /could(?:n't| not) find remote ref/i.test(msg);
+    const detail = isMissingRef
+      ? [
+          `The source branch "${target.sourceBranch}" is no longer reachable.`,
+          repoDetail,
+          '',
+          `revpack checks out this target by fetching its source branch from Git. This provider did not expose a checkout fallback ref, so the target can only be checked out while the source branch or head commit is reachable.`,
+        ]
+      : [
+          `Failed to fetch source branch "${target.sourceBranch}".`,
+          repoDetail,
+          '',
+          `revpack checks out this target by fetching its source branch from Git. This provider did not expose a checkout fallback ref, so a successful fetch is required.`,
+        ];
     return new Error(
       [
         `Could not check out ${targetKind} ${targetDisplayId}.`,
         '',
-        `The source branch "${target.sourceBranch}" is no longer reachable.`,
-        repoDetail,
+        ...detail,
         '',
-        `revpack checks out this target by fetching its source branch from Git. This provider did not expose a checkout fallback ref, so the target can only be checked out while the source branch or head commit is reachable.`,
-        '',
-        `Source branch fetch failed: ${errorMessage(sourceError)}`,
+        `Source branch fetch failed: ${msg}`,
       ].join('\n'),
       { cause: sourceError },
     );

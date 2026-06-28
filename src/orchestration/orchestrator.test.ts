@@ -452,6 +452,18 @@ describe('ReviewOrchestrator', () => {
       expect(switchBranchSpy).not.toHaveBeenCalled();
     });
 
+    it('uses neutral failure text when source branch fetch fails for non-ref reasons', async () => {
+      fetchBranchSpy.mockRejectedValueOnce(new Error('Authentication failed for https://bitbucket.org/'));
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const error = await captureError(orchestrator.checkout('21', 'workspace/repo'));
+
+      expect(error.message).toContain('Failed to fetch source branch "feature/bitbucket".');
+      expect(error.message).not.toContain('no longer reachable');
+      expect(error.message).toContain('Source branch fetch failed: Authentication failed for https://bitbucket.org/');
+    });
+
     it('shallow-clones a Bitbucket Cloud pull request source branch outside a git repo', async () => {
       isGitRepoSpy.mockResolvedValueOnce(false);
       const clonedTo = path.join(tmpDir, 'repo-feature-bitbucket');
