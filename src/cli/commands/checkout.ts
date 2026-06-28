@@ -6,7 +6,7 @@ import { formatGuidanceLine } from '../output.js';
 import { runSetup } from './setup.js';
 
 export function registerCheckoutCommand(program: Command): void {
-  program
+  const checkoutCmd = program
     .command('checkout <ref>')
     .description(
       [
@@ -82,6 +82,17 @@ export function registerCheckoutCommand(program: Command): void {
         handleError(err);
       }
     });
+
+  checkoutCmd.addHelpText(
+    'after',
+    `
+Examples:
+  revpack checkout !42
+  revpack checkout 58 --repo owner/repo
+  revpack checkout https://github.com/owner/repo/pull/58
+  revpack checkout workspace/repo#42 --profile bitbucket
+`,
+  );
 }
 
 function createPrepareFetchLogger(): (message: string) => void {

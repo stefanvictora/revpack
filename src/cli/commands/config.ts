@@ -48,174 +48,7 @@ export function registerConfigCommand(program: Command): void {
     .command('setup')
     .description('Create a profile interactively')
     .action(async () => {
-      try {
-        const remoteUrls = await getRemoteUrlsSafe();
-
-        // Derive suggested values from git remotes
-        let suggestedUrl = '';
-        let suggestedName = '';
-        let detectedProvider: ProviderType | null = null;
-        for (const remoteUrl of remoteUrls) {
-          try {
-            // Handle SSH URLs like git@host:group/project.git
-            const sshMatch = remoteUrl.match(/@([^:]+):/);
-            if (sshMatch) {
-              suggestedUrl = `https://${sshMatch[1]}`;
-              suggestedName = sshMatch[1].split('.')[0];
-            } else {
-              const parsed = new URL(remoteUrl);
-              suggestedUrl = `${parsed.protocol}//${parsed.host}`;
-              suggestedName = parsed.hostname.split('.')[0];
-            }
-          } catch {
-            continue;
-          }
-          // Detect provider from URL
-          if (remoteUrl.includes('github.com')) {
-            detectedProvider = 'github';
-          } else if (remoteUrl.includes('bitbucket.org')) {
-            detectedProvider = 'bitbucket-cloud';
-          } else if (remoteUrl.includes('gitlab.')) {
-            detectedProvider = 'gitlab';
-          }
-
-          if (detectedProvider) break;
-        }
-
-        // Use readline for interactive prompts
-        const { createInterface } = await import('node:readline');
-        const rl = createInterface({ input: process.stdin, output: process.stdout });
-        const ask = (prompt: string): Promise<string> => new Promise((resolve) => rl.question(prompt, resolve));
-
-        console.log(chalk.bold('revpack — Profile Setup'));
-        console.log('');
-        if (detectedProvider && suggestedUrl) {
-          console.log(`Detected ${formatProviderName(detectedProvider)} remote: ${new URL(suggestedUrl).host}`);
-          console.log('');
-        }
-
-        const urlInput = (await ask(`Provider URL${suggestedUrl ? ` [${suggestedUrl}]` : ''}: `)) || suggestedUrl;
-        let url: string;
-        try {
-          url = normalizeProviderUrlInput(urlInput);
-        } catch (err) {
-          rl.close();
-          throw err;
-        }
-        const defaultProvider = getSetupProviderDefault(url, detectedProvider);
-        const providerInput = shouldPromptForSetupProvider(url)
-          ? (await ask(`Provider (gitlab/github/bitbucket-cloud) [${defaultProvider}]: `)) || defaultProvider
-          : defaultProvider;
-        let provider: ProviderType;
-        try {
-          provider = normalizeProviderInput(providerInput);
-          validateProviderUrlForProvider(url, provider);
-        } catch (err) {
-          rl.close();
-          throw err;
-        }
-        const defaultName = deriveProfileNameFromProviderUrl(url) || suggestedName || 'default';
-        const name = (await ask(`Profile name [${defaultName}]: `)) || defaultName;
-        const defaultTokenEnv = getDefaultTokenEnv(provider);
-        const tokenEnv = (await ask(`Token environment variable [${defaultTokenEnv}]: `)) || defaultTokenEnv;
-        let emailEnv = '';
-        if (provider === 'bitbucket-cloud') {
-          emailEnv =
-            (await ask(`Atlassian account email environment variable [REVPACK_BITBUCKET_EMAIL]: `)) ||
-            'REVPACK_BITBUCKET_EMAIL';
-        }
-
-        // Derive host from URL for matching info
-        let derivedHost = '';
-        if (url) {
-          try {
-            derivedHost = new URL(url).host;
-          } catch {
-            /* ignore */
-          }
-        }
-        const extraPatternPrompt = derivedHost
-          ? `Additional remote match pattern (optional): `
-          : `Remote match pattern: `;
-        const extraPattern = await ask(extraPatternPrompt);
-
-        let caFileInput = '';
-        let tlsInput = 'yes';
-        let sshCloneInput = 'no';
-        const isCloudProvider = isManagedCloudProvider(url, provider);
-        if (!isCloudProvider) {
-          caFileInput = await ask(`Custom CA file (optional): `);
-          tlsInput = (await ask(`Verify TLS certificates [yes]: `)) || 'yes';
-          sshCloneInput = (await ask(`Use SSH for git clone (revpack checkout) [no]: `)) || 'no';
-        }
-
-        rl.close();
-
-        const profile: RevpackProfile = {
-          provider,
-        };
-        if (url) profile.url = url;
-        if (tokenEnv) profile.tokenEnv = tokenEnv;
-        if (emailEnv) profile.emailEnv = emailEnv;
-        if (extraPattern) {
-          profile.remotePatterns = extraPattern
-            .split(',')
-            .map((p) => p.trim())
-            .filter(Boolean);
-        }
-        if (caFileInput) profile.caFile = caFileInput.replace(/^['"]|['"]$/g, '');
-        if (tlsInput.trim().toLowerCase() === 'no' || tlsInput.trim().toLowerCase() === 'false') {
-          profile.tlsVerify = false;
-        }
-        if (['yes', 'true', '1', 'on'].includes(sshCloneInput.trim().toLowerCase())) {
-          profile.sshClone = true;
-        }
-
-        // Write
-        const config = await loadFileConfig();
-        config.profiles ??= {};
-        config.profiles[name] = profile;
-        await saveFileConfig(config);
-
-        // Summary
-        const tokenResolved = profile.tokenEnv ? isTokenEnvResolved(profile.tokenEnv) : false;
-        console.log('');
-        console.log(chalk.green(`✓ Profile "${name}" created`));
-        console.log('');
-        console.log(`  ${chalk.dim('Provider:')}         ${profile.provider}`);
-        if (profile.url) console.log(`  ${chalk.dim('URL:')}              ${profile.url}`);
-        if (profile.tokenEnv) {
-          const tokenStatus = tokenResolved ? chalk.green('set') : chalk.red('missing');
-          console.log(`  ${chalk.dim('Token:')}           ${tokenStatus}`);
-          console.log(`  ${chalk.dim('Token env:')}       ${profile.tokenEnv}`);
-        }
-        if (profile.emailEnv) {
-          const emailStatus = isTokenEnvResolved(profile.emailEnv) ? chalk.green('set') : chalk.red('missing');
-          console.log(`  ${chalk.dim('Email:')}           ${emailStatus}`);
-          console.log(`  ${chalk.dim('Email env:')}       ${profile.emailEnv}`);
-        }
-        const matchDisplay = derivedHost ? `${derivedHost} ${chalk.dim('(derived from URL)')}` : chalk.dim('(none)');
-        console.log(`  ${chalk.dim('Remote matching:')}  ${matchDisplay}`);
-        if (profile.remotePatterns?.length) {
-          console.log(`  ${chalk.dim('Extra patterns:')}   ${profile.remotePatterns.join(', ')}`);
-        }
-        if (profile.caFile) console.log(`  ${chalk.dim('CA file:')}          ${profile.caFile}`);
-        if (!isCloudProvider) {
-          console.log(`  ${chalk.dim('TLS verify:')}       ${profile.tlsVerify === false ? 'false' : 'true'}`);
-          if (profile.sshClone) console.log(`  ${chalk.dim('SSH clone:')}        true`);
-        }
-        console.log('');
-        console.log(chalk.bold('Next:'));
-        if (profile.tokenEnv && !tokenResolved) {
-          console.log(`  export ${profile.tokenEnv}=...`);
-        }
-        if (profile.emailEnv && !isTokenEnvResolved(profile.emailEnv)) {
-          console.log(`  export ${profile.emailEnv}=you@example.com`);
-        }
-        console.log(`  revpack config doctor --profile ${name}`);
-      } catch (err) {
-        handleError(err);
-      }
+      await connectAction();
     });
 
   // ─── config doctor ───────────────────────────────────────
@@ -226,33 +59,7 @@ export function registerConfigCommand(program: Command): void {
     .option('--profile <name>', 'Check a specific profile')
     .option('--json', 'Output as JSON')
     .action(async (opts: { profile?: string; json?: boolean }) => {
-      try {
-        const remoteUrls = await getRemoteUrlsSafe();
-        const result = await runDoctor(remoteUrls, opts.profile);
-
-        if (opts.json) {
-          outputJson(result);
-          return;
-        }
-
-        console.log(chalk.bold('Configuration check'));
-        console.log('');
-        for (const check of result.checks) {
-          const icon = check.ok ? chalk.green('✓') : chalk.red('✗');
-          const detail = check.detail ? chalk.dim(` — ${check.detail}`) : '';
-          console.log(`  ${icon} ${check.label}${detail}`);
-        }
-
-        if (result.nextSteps.length > 0) {
-          console.log('');
-          console.log(chalk.bold('Next:'));
-          for (const step of result.nextSteps) {
-            console.log(`  ${step}`);
-          }
-        }
-      } catch (err) {
-        handleError(err);
-      }
+      await doctorAction(opts);
     });
 
   // ─── config get ──────────────────────────────────────────
@@ -353,7 +160,7 @@ export function registerConfigCommand(program: Command): void {
         if (names.length === 0) {
           console.log(chalk.dim('No profiles configured.'));
           console.log('');
-          console.log(`Run ${chalk.cyan('revpack config setup')} to create one.`);
+          console.log(`Run ${chalk.cyan('revpack connect')} to create one.`);
           return;
         }
 
@@ -501,11 +308,11 @@ export function registerConfigCommand(program: Command): void {
     'after',
     `
 Create:
-  revpack config setup
+  revpack connect
 
 Current project:
   revpack config show
-  revpack config doctor
+  revpack doctor
 
 Saved profiles:
   revpack config profile list
@@ -514,7 +321,224 @@ Saved profiles:
   );
 }
 
+export function registerPrimaryConfigCommands(program: Command): void {
+  program
+    .command('connect')
+    .description('Create a provider profile interactively')
+    .action(async () => {
+      await connectAction();
+    });
+
+  program
+    .command('doctor')
+    .description('Check the matching or selected provider profile')
+    .option('--profile <name>', 'Check a specific profile')
+    .option('--json', 'Output as JSON')
+    .action(async (opts: { profile?: string; json?: boolean }) => {
+      await doctorAction(opts);
+    });
+}
+
 // ─── Helpers ─────────────────────────────────────────────
+
+async function connectAction(): Promise<void> {
+  try {
+    const remoteUrls = await getRemoteUrlsSafe();
+
+    // Derive suggested values from git remotes
+    let suggestedUrl = '';
+    let suggestedName = '';
+    let detectedProvider: ProviderType | null = null;
+    for (const remoteUrl of remoteUrls) {
+      try {
+        // Handle SSH URLs like git@host:group/project.git
+        const sshMatch = remoteUrl.match(/@([^:]+):/);
+        if (sshMatch) {
+          suggestedUrl = `https://${sshMatch[1]}`;
+          suggestedName = sshMatch[1].split('.')[0];
+        } else {
+          const parsed = new URL(remoteUrl);
+          suggestedUrl = `${parsed.protocol}//${parsed.host}`;
+          suggestedName = parsed.hostname.split('.')[0];
+        }
+      } catch {
+        continue;
+      }
+      // Detect provider from URL
+      if (remoteUrl.includes('github.com')) {
+        detectedProvider = 'github';
+      } else if (remoteUrl.includes('bitbucket.org')) {
+        detectedProvider = 'bitbucket-cloud';
+      } else if (remoteUrl.includes('gitlab.')) {
+        detectedProvider = 'gitlab';
+      }
+
+      if (detectedProvider) break;
+    }
+
+    // Use readline for interactive prompts
+    const { createInterface } = await import('node:readline');
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const ask = (prompt: string): Promise<string> => new Promise((resolve) => rl.question(prompt, resolve));
+
+    console.log(chalk.bold('revpack — Profile Setup'));
+    console.log('');
+    if (detectedProvider && suggestedUrl) {
+      console.log(`Detected ${formatProviderName(detectedProvider)} remote: ${new URL(suggestedUrl).host}`);
+      console.log('');
+    }
+
+    const urlInput = (await ask(`Provider URL${suggestedUrl ? ` [${suggestedUrl}]` : ''}: `)) || suggestedUrl;
+    let url: string;
+    try {
+      url = normalizeProviderUrlInput(urlInput);
+    } catch (err) {
+      rl.close();
+      throw err;
+    }
+    const defaultProvider = getSetupProviderDefault(url, detectedProvider);
+    const providerInput = shouldPromptForSetupProvider(url)
+      ? (await ask(`Provider (gitlab/github/bitbucket-cloud) [${defaultProvider}]: `)) || defaultProvider
+      : defaultProvider;
+    let provider: ProviderType;
+    try {
+      provider = normalizeProviderInput(providerInput);
+      validateProviderUrlForProvider(url, provider);
+    } catch (err) {
+      rl.close();
+      throw err;
+    }
+    const defaultName = deriveProfileNameFromProviderUrl(url) || suggestedName || 'default';
+    const name = (await ask(`Profile name [${defaultName}]: `)) || defaultName;
+    const defaultTokenEnv = getDefaultTokenEnv(provider);
+    const tokenEnv = (await ask(`Token environment variable [${defaultTokenEnv}]: `)) || defaultTokenEnv;
+    let emailEnv = '';
+    if (provider === 'bitbucket-cloud') {
+      emailEnv =
+        (await ask(`Atlassian account email environment variable [REVPACK_BITBUCKET_EMAIL]: `)) ||
+        'REVPACK_BITBUCKET_EMAIL';
+    }
+
+    // Derive host from URL for matching info
+    let derivedHost = '';
+    if (url) {
+      try {
+        derivedHost = new URL(url).host;
+      } catch {
+        /* ignore */
+      }
+    }
+    const extraPatternPrompt = derivedHost ? `Additional remote match pattern (optional): ` : `Remote match pattern: `;
+    const extraPattern = await ask(extraPatternPrompt);
+
+    let caFileInput = '';
+    let tlsInput = 'yes';
+    let sshCloneInput = 'no';
+    const isCloudProvider = isManagedCloudProvider(url, provider);
+    if (!isCloudProvider) {
+      caFileInput = await ask(`Custom CA file (optional): `);
+      tlsInput = (await ask(`Verify TLS certificates [yes]: `)) || 'yes';
+      sshCloneInput = (await ask(`Use SSH for git clone (revpack checkout) [no]: `)) || 'no';
+    }
+
+    rl.close();
+
+    const profile: RevpackProfile = {
+      provider,
+    };
+    if (url) profile.url = url;
+    if (tokenEnv) profile.tokenEnv = tokenEnv;
+    if (emailEnv) profile.emailEnv = emailEnv;
+    if (extraPattern) {
+      profile.remotePatterns = extraPattern
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean);
+    }
+    if (caFileInput) profile.caFile = caFileInput.replace(/^['"]|['"]$/g, '');
+    if (tlsInput.trim().toLowerCase() === 'no' || tlsInput.trim().toLowerCase() === 'false') {
+      profile.tlsVerify = false;
+    }
+    if (['yes', 'true', '1', 'on'].includes(sshCloneInput.trim().toLowerCase())) {
+      profile.sshClone = true;
+    }
+
+    // Write
+    const config = await loadFileConfig();
+    config.profiles ??= {};
+    config.profiles[name] = profile;
+    await saveFileConfig(config);
+
+    // Summary
+    const tokenResolved = profile.tokenEnv ? isTokenEnvResolved(profile.tokenEnv) : false;
+    console.log('');
+    console.log(chalk.green(`✓ Profile "${name}" created`));
+    console.log('');
+    console.log(`  ${chalk.dim('Provider:')}         ${profile.provider}`);
+    if (profile.url) console.log(`  ${chalk.dim('URL:')}              ${profile.url}`);
+    if (profile.tokenEnv) {
+      const tokenStatus = tokenResolved ? chalk.green('set') : chalk.red('missing');
+      console.log(`  ${chalk.dim('Token:')}           ${tokenStatus}`);
+      console.log(`  ${chalk.dim('Token env:')}       ${profile.tokenEnv}`);
+    }
+    if (profile.emailEnv) {
+      const emailStatus = isTokenEnvResolved(profile.emailEnv) ? chalk.green('set') : chalk.red('missing');
+      console.log(`  ${chalk.dim('Email:')}           ${emailStatus}`);
+      console.log(`  ${chalk.dim('Email env:')}       ${profile.emailEnv}`);
+    }
+    const matchDisplay = derivedHost ? `${derivedHost} ${chalk.dim('(derived from URL)')}` : chalk.dim('(none)');
+    console.log(`  ${chalk.dim('Remote matching:')}  ${matchDisplay}`);
+    if (profile.remotePatterns?.length) {
+      console.log(`  ${chalk.dim('Extra patterns:')}   ${profile.remotePatterns.join(', ')}`);
+    }
+    if (profile.caFile) console.log(`  ${chalk.dim('CA file:')}          ${profile.caFile}`);
+    if (!isCloudProvider) {
+      console.log(`  ${chalk.dim('TLS verify:')}       ${profile.tlsVerify === false ? 'false' : 'true'}`);
+      if (profile.sshClone) console.log(`  ${chalk.dim('SSH clone:')}        true`);
+    }
+    console.log('');
+    console.log(chalk.bold('Next:'));
+    if (profile.tokenEnv && !tokenResolved) {
+      console.log(`  export ${profile.tokenEnv}=...`);
+    }
+    if (profile.emailEnv && !isTokenEnvResolved(profile.emailEnv)) {
+      console.log(`  export ${profile.emailEnv}=you@example.com`);
+    }
+    console.log(`  revpack doctor --profile ${name}`);
+  } catch (err) {
+    handleError(err);
+  }
+}
+
+async function doctorAction(opts: { profile?: string; json?: boolean }): Promise<void> {
+  try {
+    const remoteUrls = await getRemoteUrlsSafe();
+    const result = await runDoctor(remoteUrls, opts.profile);
+
+    if (opts.json) {
+      outputJson(result);
+      return;
+    }
+
+    console.log(chalk.bold('Configuration check'));
+    console.log('');
+    for (const check of result.checks) {
+      const icon = check.ok ? chalk.green('✓') : chalk.red('✗');
+      const detail = check.detail ? chalk.dim(` — ${check.detail}`) : '';
+      console.log(`  ${icon} ${check.label}${detail}`);
+    }
+
+    if (result.nextSteps.length > 0) {
+      console.log('');
+      console.log(chalk.bold('Next:'));
+      for (const step of result.nextSteps) {
+        console.log(`  ${step}`);
+      }
+    }
+  } catch (err) {
+    handleError(err);
+  }
+}
 
 async function showAction(opts: { profile?: string; json?: boolean; sources?: boolean }): Promise<void> {
   try {
@@ -621,7 +645,7 @@ async function showNoMatchMessage(remoteUrls: string[]): Promise<void> {
   }
 
   console.log(chalk.bold('Next:'));
-  console.log(`  revpack config setup`);
+  console.log(`  revpack connect`);
   if (remoteUrls.length > 0 && names.length > 0) {
     const firstName = names[0];
     console.log(`  revpack config set remotePatterns <pattern> --profile ${firstName}`);
