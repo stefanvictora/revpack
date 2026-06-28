@@ -479,7 +479,6 @@ export class GitLabProvider implements ReviewProvider {
       baseCommitSha: v.base_commit_sha,
       startCommitSha: v.start_commit_sha,
       createdAt: v.created_at,
-      realSize: v.real_size ?? 0,
     };
   }
 
@@ -550,7 +549,6 @@ interface GitLabDiffVersion {
   base_commit_sha: string;
   start_commit_sha: string;
   created_at: string;
-  real_size?: number;
 }
 
 // ─── TLS / dispatcher helper ──────────────────────────────

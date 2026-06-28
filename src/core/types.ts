@@ -70,7 +70,6 @@ export interface ReviewVersion extends ReviewVersionRef {
   baseCommitSha: string;
   startCommitSha: string;
   createdAt: string;
-  realSize: number;
 }
 
 // ─── Review Diff ─────────────────────────────────────────

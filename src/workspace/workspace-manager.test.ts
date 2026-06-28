@@ -78,7 +78,6 @@ const makeVersion = (versionId: string, createdAt: string): ReviewVersion => ({
   baseCommitSha: 'aaa',
   startCommitSha: 'aaa',
   createdAt,
-  realSize: 1,
 });
 
 const makeStructuredDiff = (): ReviewDiff => ({

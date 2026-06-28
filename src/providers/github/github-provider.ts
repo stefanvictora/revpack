@@ -491,7 +491,6 @@ export class GitHubProvider implements ReviewProvider {
       baseCommitSha: pr.base.sha,
       startCommitSha: pr.base.sha,
       createdAt: pr.updated_at,
-      realSize: pr.changed_files ?? 0,
     };
   }
 

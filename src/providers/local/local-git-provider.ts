@@ -143,7 +143,6 @@ export class LocalGitProvider implements ReviewProvider {
         baseCommitSha: target.diffRefs.baseSha,
         startCommitSha: target.diffRefs.startSha,
         createdAt: target.updatedAt,
-        realSize: 0,
       },
     ];
   }

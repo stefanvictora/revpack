@@ -223,7 +223,6 @@ describe('GitHubProvider REST reads', () => {
         baseCommitSha: 'base-sha',
         startCommitSha: 'base-sha',
         createdAt: '2026-01-02T00:00:00Z',
-        realSize: 3,
       },
     ]);
   });

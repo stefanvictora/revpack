@@ -79,7 +79,6 @@ const mockVersion: ReviewVersion = {
   baseCommitSha: 'aaa',
   startCommitSha: 'aaa',
   createdAt: '2026-01-01T00:00:00Z',
-  realSize: 1,
 };
 
 function createMockProvider(): ReviewProvider {
@@ -160,7 +159,6 @@ function createBitbucketMockProvider(overrides: Partial<ReviewProvider> = {}): R
     baseCommitSha: 'aaa',
     startCommitSha: 'aaa',
     createdAt: '2026-01-02T00:00:00Z',
-    realSize: 1,
   };
 
   return {
@@ -502,7 +500,6 @@ describe('ReviewOrchestrator', () => {
         headCommitSha: 'bbb',
         baseCommitSha: 'aaa',
         startCommitSha: 'aaa',
-        realSize: 1,
       });
       expect(result.bundleState.local).toMatchObject({
         branch: 'feature/bitbucket',
@@ -559,7 +556,6 @@ describe('ReviewOrchestrator', () => {
             baseCommitSha: 'aaa',
             startCommitSha: 'aaa',
             createdAt: '2026-01-02T00:00:00Z',
-            realSize: 1,
           },
         ]),
       });
