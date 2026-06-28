@@ -1,7 +1,16 @@
 import * as fs from 'node:fs';
 import { Agent } from 'undici';
 import type { NewThreadPosition, ReviewProvider } from '../provider.js';
-import type { DiffRefs, ReviewTarget, ReviewTargetRef, ReviewThread, ReviewVersion } from '../../core/types.js';
+import type {
+  CommentOrigin,
+  DiffPosition,
+  DiffRefs,
+  ReviewComment,
+  ReviewTarget,
+  ReviewTargetRef,
+  ReviewThread,
+  ReviewVersion,
+} from '../../core/types.js';
 import { AuthenticationError, ProviderError } from '../../core/errors.js';
 
 interface BitbucketRequestOptions {
@@ -18,6 +27,7 @@ interface BitbucketCloudProviderOptions {
 
 export class BitbucketCloudProvider implements ReviewProvider {
   readonly providerType = 'bitbucket-cloud' as const;
+  readonly supportsDirectCommitFetch = false;
   private readonly apiBaseUrl = 'https://api.bitbucket.org/2.0';
   private readonly webBaseUrl = 'https://bitbucket.org';
   private readonly email: string;
@@ -106,15 +116,21 @@ export class BitbucketCloudProvider implements ReviewProvider {
     const pr = await this.request<BitbucketPullRequest>(
       `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}`,
     );
-    return this.mapPullRequest(ref.repository, pr);
+    const diffRefs = await this.expandDiffRefs(ref.repository, pr);
+    return this.mapPullRequest(ref.repository, pr, diffRefs);
   }
 
-  listUnresolvedThreads(_ref: ReviewTargetRef): Promise<ReviewThread[]> {
-    return Promise.resolve([]);
+  async listUnresolvedThreads(ref: ReviewTargetRef): Promise<ReviewThread[]> {
+    const all = await this.listAllThreads(ref);
+    return all.filter((thread) => thread.resolvable && !thread.resolved);
   }
 
-  listAllThreads(_ref: ReviewTargetRef): Promise<ReviewThread[]> {
-    return Promise.resolve([]);
+  async listAllThreads(ref: ReviewTargetRef): Promise<ReviewThread[]> {
+    const comments = await this.requestPaginated<BitbucketComment>(
+      `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}/comments`,
+      { pagelen: '100' },
+    );
+    return this.mapReviewThreads(ref, comments);
   }
 
   async getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]> {
@@ -128,7 +144,6 @@ export class BitbucketCloudProvider implements ReviewProvider {
         baseCommitSha: target.diffRefs.baseSha,
         startCommitSha: target.diffRefs.startSha,
         createdAt: target.updatedAt,
-        realSize: 0,
       },
     ];
   }
@@ -150,10 +165,6 @@ export class BitbucketCloudProvider implements ReviewProvider {
 
   createThread(_ref: ReviewTargetRef, _body: string, _position?: NewThreadPosition): Promise<string> {
     return Promise.reject(this.unsupported('inline review comments'));
-  }
-
-  findNoteByMarker(_ref: ReviewTargetRef, _marker: string): Promise<{ id: string; body: string } | null> {
-    return Promise.resolve(null);
   }
 
   createNote(_ref: ReviewTargetRef, _body: string, _options?: { internal?: boolean }): Promise<string> {
@@ -279,7 +290,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
     return `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}`;
   }
 
-  private mapPullRequest(repo: string, pr: BitbucketPullRequest): ReviewTarget {
+  private mapPullRequest(repo: string, pr: BitbucketPullRequest, diffRefs = this.mapDiffRefs(pr)): ReviewTarget {
     const sourceRepository = pr.source?.repository?.full_name;
     const isFork = sourceRepository != null && sourceRepository !== repo;
 
@@ -298,9 +309,31 @@ export class BitbucketCloudProvider implements ReviewProvider {
       createdAt: pr.created_on,
       updatedAt: pr.updated_on,
       labels: [],
-      diffRefs: this.mapDiffRefs(pr),
+      diffRefs,
       ...(isFork ? { headRepository: sourceRepository } : {}),
     };
+  }
+
+  private async expandDiffRefs(repo: string, pr: BitbucketPullRequest): Promise<DiffRefs> {
+    const diffRefs = this.mapDiffRefs(pr);
+    const sourceRepo = pr.source?.repository?.full_name ?? repo;
+    const destinationRepo = pr.destination?.repository?.full_name ?? repo;
+    const [baseSha, headSha] = await Promise.all([
+      this.expandCommitHash(destinationRepo, diffRefs.baseSha),
+      this.expandCommitHash(sourceRepo, diffRefs.headSha),
+    ]);
+
+    return {
+      baseSha,
+      headSha,
+      startSha: baseSha,
+    };
+  }
+
+  private async expandCommitHash(repo: string, hash: string): Promise<string> {
+    if (!isAbbreviatedSha(hash)) return hash;
+    const commit = await this.request<BitbucketCommit>(`${this.repoPath(repo)}/commit/${hash}`);
+    return commit.hash || hash;
   }
 
   private mapDiffRefs(pr: BitbucketPullRequest): DiffRefs {
@@ -311,6 +344,78 @@ export class BitbucketCloudProvider implements ReviewProvider {
       headSha,
       startSha: baseSha,
     };
+  }
+
+  private mapReviewThreads(ref: ReviewTargetRef, comments: BitbucketComment[]): ReviewThread[] {
+    const topLevel = new Map<number, BitbucketComment>();
+    for (const comment of comments) {
+      if (!this.isVisibleComment(comment) || comment.parent) continue;
+      topLevel.set(comment.id, comment);
+    }
+
+    const replies = new Map<number, BitbucketComment[]>();
+    for (const comment of comments) {
+      if (!this.isVisibleComment(comment) || !comment.parent) continue;
+      const parentId = comment.parent.id;
+      if (!topLevel.has(parentId)) continue;
+      const parentReplies = replies.get(parentId) ?? [];
+      parentReplies.push(comment);
+      replies.set(parentId, parentReplies);
+    }
+
+    return [...topLevel.values()].map((comment): ReviewThread => {
+      const threadComments = [comment, ...(replies.get(comment.id) ?? [])];
+      return {
+        provider: 'bitbucket-cloud',
+        targetRef: ref,
+        threadId: String(comment.id),
+        resolved: comment.resolution != null,
+        resolvable: true,
+        position: this.mapCommentPosition(comment),
+        comments: threadComments.map((threadComment) => this.mapReviewComment(threadComment)),
+      };
+    });
+  }
+
+  private isVisibleComment(comment: BitbucketComment): boolean {
+    return !comment.deleted && !comment.pending;
+  }
+
+  private mapCommentPosition(comment: BitbucketComment): DiffPosition | undefined {
+    const inline = comment.inline;
+    if (!inline?.path) return undefined;
+
+    return {
+      filePath: inline.path,
+      oldLine: inline.from ?? undefined,
+      newLine: inline.to ?? undefined,
+      oldPath: inline.path,
+      newPath: inline.path,
+    };
+  }
+
+  private mapReviewComment(comment: BitbucketComment): ReviewComment {
+    const body = this.commentBody(comment);
+    return {
+      id: String(comment.id),
+      body,
+      author: comment.user?.nickname ?? comment.user?.display_name ?? comment.user?.account_id ?? 'unknown',
+      createdAt: comment.created_on,
+      updatedAt: comment.updated_on,
+      origin: this.detectOrigin(body, comment.user),
+      system: false,
+    };
+  }
+
+  private commentBody(comment: BitbucketComment): string {
+    return comment.content?.raw ?? '';
+  }
+
+  private detectOrigin(body: string, user?: BitbucketUser | null): CommentOrigin {
+    if (body.startsWith('<!-- revpack')) return 'bot';
+    const normalized = [user?.nickname, user?.display_name, user?.account_id].filter(Boolean).join(' ').toLowerCase();
+    if (normalized.includes('[bot]') || normalized.includes('bot')) return 'bot';
+    return 'human';
   }
 
   private unsupported(feature: string): ProviderError {
@@ -369,4 +474,39 @@ interface BitbucketPullRequestEndpoint {
   branch?: { name?: string | null } | null;
   commit?: { hash?: string | null } | null;
   repository?: { full_name?: string | null } | null;
+}
+
+interface BitbucketCommit {
+  hash?: string;
+}
+
+interface BitbucketComment {
+  id: number;
+  content?: {
+    raw?: string | null;
+    markup?: string | null;
+    html?: string | null;
+  } | null;
+  user?: BitbucketUser | null;
+  created_on: string;
+  updated_on: string;
+  deleted?: boolean | null;
+  pending?: boolean | null;
+  parent?: { id: number } | null;
+  inline?: {
+    path?: string | null;
+    from?: number | null;
+    to?: number | null;
+  } | null;
+  resolution?: unknown;
+}
+
+interface BitbucketUser {
+  display_name?: string | null;
+  nickname?: string | null;
+  account_id?: string | null;
+}
+
+function isAbbreviatedSha(hash: string): boolean {
+  return /^[0-9a-f]{7,39}$/i.test(hash);
 }

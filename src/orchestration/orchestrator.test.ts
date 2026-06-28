@@ -79,7 +79,6 @@ const mockVersion: ReviewVersion = {
   baseCommitSha: 'aaa',
   startCommitSha: 'aaa',
   createdAt: '2026-01-01T00:00:00Z',
-  realSize: 1,
 };
 
 function createMockProvider(): ReviewProvider {
@@ -96,7 +95,6 @@ function createMockProvider(): ReviewProvider {
     resolveThread: vi.fn().mockResolvedValue(undefined),
     updateDescription: vi.fn().mockResolvedValue(undefined),
     createThread: vi.fn().mockResolvedValue('new-thread-id'),
-    findNoteByMarker: vi.fn().mockResolvedValue(null),
     createNote: vi.fn().mockResolvedValue('note-1'),
     updateNote: vi.fn().mockResolvedValue(undefined),
     getCloneUrl: vi.fn().mockReturnValue('https://gitlab.example.com/group/project.git'),
@@ -128,6 +126,58 @@ function createMockProvider(): ReviewProvider {
             ].join('\n'),
           ),
       ),
+  };
+}
+
+function createBitbucketMockProvider(overrides: Partial<ReviewProvider> = {}): ReviewProvider {
+  const bitbucketRef: ReviewTargetRef = {
+    provider: 'bitbucket-cloud',
+    repository: 'workspace/repo',
+    targetType: 'pull_request',
+    targetId: '21',
+  };
+  const bitbucketTarget: ReviewTarget = {
+    ...bitbucketRef,
+    title: 'Bitbucket PR',
+    description: 'PR body',
+    author: 'alice',
+    state: 'OPEN',
+    sourceBranch: 'feature/bitbucket',
+    targetBranch: 'main',
+    webUrl: 'https://bitbucket.org/workspace/repo/pull-requests/21',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-02T00:00:00Z',
+    labels: [],
+    diffRefs: { baseSha: 'aaa', headSha: 'bbb', startSha: 'aaa' },
+  };
+  const bitbucketVersion: ReviewVersion = {
+    provider: 'bitbucket-cloud',
+    targetRef: bitbucketRef,
+    versionId: 'bbb',
+    headCommitSha: 'bbb',
+    baseCommitSha: 'aaa',
+    startCommitSha: 'aaa',
+    createdAt: '2026-01-02T00:00:00Z',
+  };
+
+  return {
+    providerType: 'bitbucket-cloud',
+    supportsDirectCommitFetch: false,
+    resolveTarget: vi.fn().mockReturnValue(bitbucketRef),
+    listOpenReviewTargets: vi.fn().mockResolvedValue([bitbucketTarget]),
+    findTargetByBranch: vi.fn().mockResolvedValue([bitbucketTarget]),
+    getTargetSnapshot: vi.fn().mockResolvedValue(bitbucketTarget),
+    listUnresolvedThreads: vi.fn().mockResolvedValue([]),
+    listAllThreads: vi.fn().mockResolvedValue([]),
+    getDiffVersions: vi.fn().mockResolvedValue([bitbucketVersion]),
+    postReply: vi.fn().mockRejectedValue(new Error('unsupported')),
+    resolveThread: vi.fn().mockRejectedValue(new Error('unsupported')),
+    updateDescription: vi.fn().mockResolvedValue(undefined),
+    createThread: vi.fn().mockRejectedValue(new Error('unsupported')),
+    createNote: vi.fn().mockRejectedValue(new Error('unsupported')),
+    updateNote: vi.fn().mockRejectedValue(new Error('unsupported')),
+    getCloneUrl: vi.fn((repo: string) => `https://bitbucket.org/${repo}.git`),
+    ...overrides,
   };
 }
 
@@ -346,6 +396,105 @@ describe('ReviewOrchestrator', () => {
       expect(fetchBranchFromUrlSpy).not.toHaveBeenCalled();
       expect(switchBranchSpy).toHaveBeenCalledWith('feature/github');
     });
+
+    it('checks out a same-repository Bitbucket Cloud pull request from its source branch', async () => {
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.checkout('21', 'workspace/repo');
+
+      expect(result.branch).toBe('feature/bitbucket');
+      expect(fetchBranchSpy).toHaveBeenCalledWith('feature/bitbucket');
+      expect(fetchRefSpy).not.toHaveBeenCalled();
+      expect(fetchBranchFromUrlSpy).not.toHaveBeenCalled();
+      expect(switchBranchSpy).toHaveBeenCalledWith('feature/bitbucket');
+    });
+
+    it('checks out a fork Bitbucket Cloud pull request from the source repository URL', async () => {
+      const forkRef: ReviewTargetRef = {
+        provider: 'bitbucket-cloud',
+        repository: 'workspace/repo',
+        targetType: 'pull_request',
+        targetId: '21',
+      };
+      const forkTarget = {
+        ...(await createBitbucketMockProvider().getTargetSnapshot(forkRef)),
+        headRepository: 'contributor/repo',
+      };
+      const bitbucketProvider = createBitbucketMockProvider({
+        getTargetSnapshot: vi.fn().mockResolvedValue(forkTarget),
+      });
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.checkout('21', 'workspace/repo');
+
+      expect(result.branch).toBe('feature/bitbucket');
+      expect(fetchBranchFromUrlSpy).toHaveBeenCalledWith(
+        'https://bitbucket.org/contributor/repo.git',
+        'feature/bitbucket',
+      );
+      expect(fetchRefSpy).not.toHaveBeenCalled();
+      expect(fetchBranchSpy).not.toHaveBeenCalled();
+      expect(switchBranchSpy).toHaveBeenCalledWith('feature/bitbucket');
+    });
+
+    it('explains unreachable Bitbucket Cloud source branches without using a permanent PR refspec', async () => {
+      fetchBranchSpy.mockRejectedValueOnce(new Error('could not find remote ref feature/bitbucket'));
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const error = await captureError(orchestrator.checkout('21', 'workspace/repo'));
+
+      expect(error.message).toContain('The source branch "feature/bitbucket" is no longer reachable.');
+      expect(error.message).toContain('This provider did not expose a checkout fallback ref');
+      expect(error.message).toContain('Source branch fetch failed: could not find remote ref feature/bitbucket');
+      expect(fetchRefSpy).not.toHaveBeenCalled();
+      expect(switchBranchSpy).not.toHaveBeenCalled();
+    });
+
+    it('detects deleted branches from clone --branch errors as unreachable', async () => {
+      isGitRepoSpy.mockResolvedValueOnce(false);
+      vi.spyOn(GitHelper, 'clone').mockRejectedValueOnce(
+        new Error('fatal: Remote branch feature/bitbucket not found in upstream origin'),
+      );
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const error = await captureError(orchestrator.checkout('21', 'workspace/repo'));
+
+      expect(error.message).toContain('The source branch "feature/bitbucket" is no longer reachable.');
+      expect(error.message).not.toContain('Failed to fetch');
+    });
+
+    it('uses neutral failure text when source branch fetch fails for non-ref reasons', async () => {
+      fetchBranchSpy.mockRejectedValueOnce(new Error('Authentication failed for https://bitbucket.org/'));
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const error = await captureError(orchestrator.checkout('21', 'workspace/repo'));
+
+      expect(error.message).toContain('Failed to fetch source branch "feature/bitbucket".');
+      expect(error.message).not.toContain('no longer reachable');
+      expect(error.message).toContain('Source branch fetch failed: Authentication failed for https://bitbucket.org/');
+    });
+
+    it('shallow-clones a Bitbucket Cloud pull request source branch outside a git repo', async () => {
+      isGitRepoSpy.mockResolvedValueOnce(false);
+      const clonedTo = path.join(tmpDir, 'repo-feature-bitbucket');
+      const cloneSpy = vi.spyOn(GitHelper, 'clone').mockResolvedValue(clonedTo);
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      try {
+        const result = await orchestrator.checkout('21', 'workspace/repo');
+
+        expect(result).toMatchObject({ branch: 'feature/bitbucket', clonedTo });
+        expect(cloneSpy).toHaveBeenCalledWith('https://bitbucket.org/workspace/repo.git', 'feature/bitbucket', tmpDir);
+        expect(fetchRefSpy).not.toHaveBeenCalled();
+      } finally {
+        cloneSpy.mockRestore();
+      }
+    });
   });
 
   describe('prepare', () => {
@@ -360,6 +509,138 @@ describe('ReviewOrchestrator', () => {
       expect(onProgress).not.toHaveBeenCalled();
       const latestPatch = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'latest.patch'), 'utf-8');
       expect(latestPatch).toBe(localPatch());
+    });
+
+    it('prepares Bitbucket Cloud pull requests from local git diff artifacts', async () => {
+      currentBranchSpy.mockResolvedValue('feature/bitbucket');
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.prepare('21', 'workspace/repo');
+
+      expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
+      expect(result.bundle.target.provider).toBe('bitbucket-cloud');
+      expect(result.bundle.versions[0]).toMatchObject({
+        versionId: 'bbb',
+        headCommitSha: 'bbb',
+        baseCommitSha: 'aaa',
+        startCommitSha: 'aaa',
+      });
+      expect(result.bundleState.local).toMatchObject({
+        branch: 'feature/bitbucket',
+        headSha: 'bbb',
+        matchesTargetSourceBranch: true,
+        matchesTargetHead: true,
+      });
+
+      const diffsDir = path.join(tmpDir, '.revpack', 'diffs');
+      const latestPatch = await fs.readFile(path.join(diffsDir, 'latest.patch'), 'utf-8');
+      const filesJson = JSON.parse(await fs.readFile(path.join(diffsDir, 'files.json'), 'utf-8')) as {
+        files: Array<{ newPath: string; oldPath: string; patchFile: string }>;
+      };
+      const lineMap = await fs.readFile(path.join(diffsDir, 'line-map.ndjson'), 'utf-8');
+      const changeBlocks = JSON.parse(await fs.readFile(path.join(diffsDir, 'change-blocks.json'), 'utf-8')) as {
+        blocks: unknown[];
+      };
+      const perFilePatch = await fs.readFile(path.join(diffsDir, filesJson.files[0].patchFile), 'utf-8');
+
+      expect(latestPatch).toBe(localPatch());
+      expect(filesJson.files[0]).toMatchObject({ oldPath: 'src/app.ts', newPath: 'src/app.ts' });
+      expect(filesJson.files[0].patchFile).toMatch(/patches\/by-file\/F001-/);
+      expect(lineMap).toContain('"fileId":"F001"');
+      expect(changeBlocks.blocks).toHaveLength(1);
+      expect(perFilePatch).toBe(localPatch());
+    });
+
+    it('accepts Bitbucket Cloud abbreviated head hashes when local HEAD expands them', async () => {
+      const shortHeadSha = 'fb0aebbd3d5b';
+      const fullHeadSha = 'fb0aebbd3d5b858c6024745659c9f4211d186589';
+      currentBranchSpy.mockResolvedValue('feature/bitbucket');
+      headShaSpy.mockResolvedValue(fullHeadSha);
+      const bitbucketProvider = createBitbucketMockProvider({
+        getTargetSnapshot: vi.fn().mockResolvedValue({
+          ...(await createBitbucketMockProvider().getTargetSnapshot({
+            provider: 'bitbucket-cloud',
+            repository: 'workspace/repo',
+            targetType: 'pull_request',
+            targetId: '21',
+          })),
+          diffRefs: { baseSha: 'aaa', headSha: shortHeadSha, startSha: 'aaa' },
+        }),
+        getDiffVersions: vi.fn().mockResolvedValue([
+          {
+            provider: 'bitbucket-cloud',
+            targetRef: {
+              provider: 'bitbucket-cloud',
+              repository: 'workspace/repo',
+              targetType: 'pull_request',
+              targetId: '21',
+            },
+            versionId: shortHeadSha,
+            headCommitSha: shortHeadSha,
+            baseCommitSha: 'aaa',
+            startCommitSha: 'aaa',
+            createdAt: '2026-01-02T00:00:00Z',
+          },
+        ]),
+      });
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.prepare('21', 'workspace/repo');
+
+      expect(result.bundleState.local).toMatchObject({
+        headSha: fullHeadSha,
+        matchesTargetHead: true,
+      });
+      expect(result.bundleState.prepare.current.targetHeadSha).toBe(shortHeadSha);
+      expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', shortHeadSha);
+    });
+
+    it('fetches target branches instead of Bitbucket Cloud commit hashes', async () => {
+      const fullBaseSha = '0731551ad42031e97ee04a34c7fe40e3bd906833';
+      const fullHeadSha = 'fb0aebbd3d5b858c6024745659c9f4211d186589';
+      currentBranchSpy.mockResolvedValue('feature/bitbucket');
+      headShaSpy.mockResolvedValue(fullHeadSha);
+      hasCommitSpy
+        .mockResolvedValueOnce(false) // initial check baseSha
+        .mockResolvedValueOnce(true) // initial check headSha
+        .mockResolvedValueOnce(true) // after fetchBranch(targetBranch): baseSha resolved
+        .mockResolvedValueOnce(true); // after fetchBranch(targetBranch): headSha ok
+
+      const bitbucketProvider = createBitbucketMockProvider({
+        getTargetSnapshot: vi.fn().mockResolvedValue({
+          ...(await createBitbucketMockProvider().getTargetSnapshot({
+            provider: 'bitbucket-cloud',
+            repository: 'workspace/repo',
+            targetType: 'pull_request',
+            targetId: '21',
+          })),
+          diffRefs: { baseSha: fullBaseSha, headSha: fullHeadSha, startSha: fullBaseSha },
+        }),
+        getDiffVersions: vi.fn().mockResolvedValue([
+          {
+            provider: 'bitbucket-cloud',
+            targetRef: {
+              provider: 'bitbucket-cloud',
+              repository: 'workspace/repo',
+              targetType: 'pull_request',
+              targetId: '21',
+            },
+            versionId: fullHeadSha,
+            headCommitSha: fullHeadSha,
+            baseCommitSha: fullBaseSha,
+            startCommitSha: fullBaseSha,
+            createdAt: '2026-01-02T00:00:00Z',
+          },
+        ]),
+      });
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      await orchestrator.prepare('21', 'workspace/repo', { onProgress: vi.fn() });
+
+      expect(fetchCommitSpy).not.toHaveBeenCalled();
+      expect(fetchBranchSpy).toHaveBeenCalledWith('main', 'origin', { depth: 1, noTags: true, progress: true });
+      expect(diffForReviewSpy).toHaveBeenCalledWith(fullBaseSha, fullHeadSha);
     });
 
     it('prints a minimal message and streams git fetch when commits are missing', async () => {
@@ -614,7 +895,6 @@ describe('ReviewOrchestrator', () => {
 
     it('does not attempt incremental diff without checkpoint even when code changes between prepares', async () => {
       // Without a checkpoint, there's no baseline for incremental diff
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
@@ -848,8 +1128,8 @@ describe('ReviewOrchestrator', () => {
       expect(t2.threadId).toBe('general-comment-1');
     });
 
-    it('excludes threads containing the managed review note comment', async () => {
-      // A thread that wraps the revpack review note (should be excluded from bundle)
+    it('keeps review note comments in the bundle context', async () => {
+      // A thread that wraps the revpack review note is treated like any other visible comment.
       const reviewNoteThread: ReviewThread = {
         provider: 'gitlab',
         targetRef,
@@ -870,17 +1150,12 @@ describe('ReviewOrchestrator', () => {
       };
 
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([mockThread, reviewNoteThread]);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'review-note-123',
-        body: `${REVIEW_NOTE_MARKER}\n## Review\nLooks good.`,
-      });
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
 
-      // Only mockThread should be in the bundle (review note thread excluded)
-      expect(result.bundle.threads).toHaveLength(1);
-      expect(result.bundle.threads[0].threadId).toBe('thread-1');
+      expect(result.bundle.threads).toHaveLength(2);
+      expect(result.bundle.threads.map((thread) => thread.threadId)).toEqual(['thread-1', 'review-note-thread']);
     });
   });
 
@@ -1459,7 +1734,6 @@ describe('ReviewOrchestrator', () => {
 
       const targetWithState = { ...mockTarget, description: descriptionWithState };
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
@@ -1486,7 +1760,6 @@ describe('ReviewOrchestrator', () => {
 
       const targetWithState = { ...mockTarget, description: descriptionWithState };
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
@@ -1546,7 +1819,6 @@ describe('ReviewOrchestrator', () => {
 
       const targetWithState = { ...mockTarget, description: descriptionWithState };
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
@@ -1557,7 +1829,6 @@ describe('ReviewOrchestrator', () => {
 
     it('reports descriptionChanged=false when description matches checkpoint digest', async () => {
       // We need to compute the actual digest that matches
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       // First prepare without checkpoint to get the description digest
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
@@ -1679,7 +1950,6 @@ describe('ReviewOrchestrator', () => {
   describe('remote checkpoint behavior', () => {
     it('prepare with no checkpoint generates fresh review context', async () => {
       // No managed review note exists
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
@@ -1710,7 +1980,6 @@ describe('ReviewOrchestrator', () => {
 
       const targetWithState = { ...mockTarget, description: descriptionWithState };
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const result = await orchestrator.prepare('!42', 'group/project');
@@ -1733,7 +2002,6 @@ describe('ReviewOrchestrator', () => {
 
       const targetWithState = { ...mockTarget, description: descriptionWithState };
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
@@ -1763,7 +2031,6 @@ describe('ReviewOrchestrator', () => {
 
       const targetWithState = { ...mockTarget, description: descriptionWithState };
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
@@ -1784,7 +2051,6 @@ describe('ReviewOrchestrator', () => {
 
       const targetWithState = { ...mockTarget, description: descriptionWithState };
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -1800,7 +2066,6 @@ describe('ReviewOrchestrator', () => {
 
       const targetWithState = { ...mockTarget, description: descriptionWithState };
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -1815,7 +2080,6 @@ describe('ReviewOrchestrator', () => {
 
   describe('publishReview', () => {
     it('creates visible comment without advancing checkpoint when review content is non-empty', async () => {
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
       (mockProvider.createNote as ReturnType<typeof vi.fn>).mockResolvedValue('new-note-id');
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
@@ -1839,8 +2103,6 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('with empty review.md publishes no visible comment and does not advance checkpoint', async () => {
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
@@ -1853,8 +2115,6 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('with whitespace-only content publishes no visible comment', async () => {
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 
@@ -1865,7 +2125,6 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('advanceCheckpoint sets providerVersionId to undefined when no versions exist', async () => {
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
       (mockProvider.getDiffVersions as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
@@ -1887,7 +2146,6 @@ describe('ReviewOrchestrator', () => {
     it('submits findings and review body via submitReview', async () => {
       const submitReviewMock = vi.fn().mockResolvedValue(undefined);
       mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -1916,7 +2174,6 @@ describe('ReviewOrchestrator', () => {
     it('returns created=false with empty findings and whitespace-only reviewBody', async () => {
       const submitReviewMock = vi.fn().mockResolvedValue(undefined);
       mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -1936,7 +2193,6 @@ describe('ReviewOrchestrator', () => {
     it('sets LEFT side for findings with oldLine only', async () => {
       const submitReviewMock = vi.fn().mockResolvedValue(undefined);
       mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -1965,7 +2221,6 @@ describe('ReviewOrchestrator', () => {
     it('sets RIGHT side when both oldLine and newLine are present', async () => {
       const submitReviewMock = vi.fn().mockResolvedValue(undefined);
       mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -2119,7 +2374,6 @@ describe('ReviewOrchestrator', () => {
 
       const targetWithState = { ...mockTarget, description: descriptionWithState };
       (mockProvider.getTargetSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue(targetWithState);
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 
@@ -2205,7 +2459,6 @@ describe('ReviewOrchestrator', () => {
     it('skips submitReview when provider does not implement it', async () => {
       // Provider WITHOUT submitReview
       const providerWithoutSubmit = createMockProvider();
-      (providerWithoutSubmit.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: providerWithoutSubmit, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -2233,7 +2486,6 @@ describe('ReviewOrchestrator', () => {
     it('trims whitespace from reviewBody in submitted review', async () => {
       const submitReviewMock = vi.fn().mockResolvedValue(undefined);
       mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -2262,7 +2514,6 @@ describe('ReviewOrchestrator', () => {
     it('uses RIGHT side and newPath for file-level findings without line info', async () => {
       const submitReviewMock = vi.fn().mockResolvedValue(undefined);
       mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -2314,55 +2565,6 @@ describe('ReviewOrchestrator', () => {
       expect(progressMsg).toBeDefined();
       expect(progressMsg).toContain('abcdef12');
       expect(progressMsg).not.toContain(longBaseSha);
-    });
-  });
-
-  // ─── advanceCheckpoint with existing review note ───────
-
-  describe('advanceCheckpoint filters by review note', () => {
-    it('excludes review note thread from digest computation', async () => {
-      // findNoteByMarker returns an existing note with an ID
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'review-note-42',
-        body: '<!-- revpack:review-note -->\nReview content',
-      });
-
-      // One thread that IS the review note comment, one that is a real thread
-      const reviewNoteThread: ReviewThread = {
-        provider: 'gitlab',
-        targetRef,
-        threadId: 'review-note-42',
-        resolved: false,
-        resolvable: true,
-        comments: [
-          {
-            id: 'review-note-42',
-            body: 'Review content',
-            author: 'bot',
-            createdAt: '2026-01-01T00:00:00Z',
-            updatedAt: '2026-01-01T00:00:00Z',
-            origin: 'human',
-            system: false,
-          },
-        ],
-      };
-      const realThread: ReviewThread = {
-        ...mockThread,
-        threadId: 'real-thread-1',
-      };
-      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([reviewNoteThread, realThread]);
-
-      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.prepare('!42', 'group/project');
-      await orchestrator.publishReview('Some review', 'group/project');
-      await orchestrator.publishCheckpoint('group/project');
-
-      // The description state should reflect the digest WITHOUT the review note thread
-      const updatedDesc = (mockProvider.updateDescription as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      const state = parseDescriptionState(updatedDesc);
-      expect(state).not.toBeNull();
-      // If note filtering works, the threads digest should not include the review note thread
-      expect(state!.checkpoint.threadsDigest).toBeTruthy();
     });
   });
 
@@ -2462,7 +2664,6 @@ describe('ReviewOrchestrator', () => {
         ...mockTarget,
         description: descriptionWithContent,
       });
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
@@ -2478,7 +2679,6 @@ describe('ReviewOrchestrator', () => {
     });
 
     it('sets providerVersionId from latest version in advanceCheckpoint', async () => {
-      (mockProvider.findNoteByMarker as ReturnType<typeof vi.fn>).mockResolvedValue(null);
       (mockProvider.getDiffVersions as ReturnType<typeof vi.fn>).mockResolvedValue([
         { ...mockVersion, versionId: 'version-42' },
       ]);

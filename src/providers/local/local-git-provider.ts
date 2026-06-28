@@ -143,7 +143,6 @@ export class LocalGitProvider implements ReviewProvider {
         baseCommitSha: target.diffRefs.baseSha,
         startCommitSha: target.diffRefs.startSha,
         createdAt: target.updatedAt,
-        realSize: 0,
       },
     ];
   }
@@ -227,12 +226,6 @@ export class LocalGitProvider implements ReviewProvider {
     state.threads.push(thread);
     await this.saveState(state);
     return threadId;
-  }
-
-  async findNoteByMarker(_ref: ReviewTargetRef, marker: string): Promise<{ id: string; body: string } | null> {
-    const state = await this.loadState();
-    if (state.reviewNote?.body.startsWith(marker)) return state.reviewNote;
-    return null;
   }
 
   async createNote(_ref: ReviewTargetRef, body: string): Promise<string> {

@@ -70,7 +70,6 @@ export interface ReviewVersion extends ReviewVersionRef {
   baseCommitSha: string;
   startCommitSha: string;
   createdAt: string;
-  realSize: number;
 }
 
 // ─── Review Diff ─────────────────────────────────────────
@@ -247,7 +246,6 @@ export interface PrepareSummary {
 /** Remote checkpoint parsed from the MR/PR description body. */
 export interface RemoteCheckpoint {
   source: 'description_body';
-  providerNoteId: string;
   headSha: string;
   baseSha: string;
   startSha: string;

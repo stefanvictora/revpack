@@ -223,7 +223,6 @@ describe('GitHubProvider REST reads', () => {
         baseCommitSha: 'base-sha',
         startCommitSha: 'base-sha',
         createdAt: '2026-01-02T00:00:00Z',
-        realSize: 3,
       },
     ]);
   });
@@ -602,16 +601,10 @@ describe('GitHubProvider writes', () => {
     ).resolves.toBe('6001');
   });
 
-  it('finds, creates, and updates PR timeline notes', async () => {
+  it('creates and updates PR timeline notes', async () => {
     const requests: { url: string; method?: string; body?: unknown }[] = [];
     installFetch((url, init) => {
       requests.push({ url, method: init?.method, body: init?.body ? requestBodyJson(init) : undefined });
-      if (url === 'https://api.github.com/repos/octo/repo/issues/42/comments' && !init?.method) {
-        return jsonResponse([
-          { id: 1, body: 'hello' },
-          { id: 2, body: '<!-- revpack:review -->\nstate' },
-        ]);
-      }
       if (url === 'https://api.github.com/repos/octo/repo/issues/42/comments' && init?.method === 'POST') {
         return jsonResponse({ id: 3, body: 'created' });
       }
@@ -621,18 +614,14 @@ describe('GitHubProvider writes', () => {
       throw new Error(`Unexpected request: ${url}`);
     });
 
-    await expect(provider.findNoteByMarker(ref, '<!-- revpack:review -->')).resolves.toEqual({
-      id: '2',
-      body: '<!-- revpack:review -->\nstate',
-    });
     await expect(provider.createNote(ref, 'created', { internal: true })).resolves.toBe('3');
     await provider.updateNote(ref, '2', 'updated');
 
-    expect(requests[1]).toMatchObject({
+    expect(requests[0]).toMatchObject({
       method: 'POST',
       body: { body: 'created' },
     });
-    expect(requests[2]).toMatchObject({
+    expect(requests[1]).toMatchObject({
       method: 'PATCH',
       body: { body: 'updated' },
     });

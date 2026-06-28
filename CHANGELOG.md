@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Added first-class Bitbucket Cloud profile configuration with `bitbucket-cloud`, `https://bitbucket.org`, `REVPACK_BITBUCKET_EMAIL`, and `REVPACK_BITBUCKET_TOKEN` defaults.
 - Added Bitbucket Cloud pull request target resolution, branch auto-detection, metadata mapping, and `revpack status` display support.
+- Added Bitbucket Cloud pull request checkout and prepare support using source branch/fork checkout plus local Git diff bundle generation.
+- Added Bitbucket Cloud pull request comment mapping so prepared bundles include review threads, replies, inline positions, resolution state, and managed review note filtering.
 
 ### Changed
 
@@ -20,6 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Fixed generated review instructions so GitHub and local review bundles use plain suggestion fences while GitLab bundles keep range-offset suggestion fences.
 - Fixed prepare after Bitbucket Cloud fork checkouts so missing base commits can be fetched from the base repository.
+- Fixed Bitbucket Cloud prepare and status checks comparing abbreviated provider commit hashes against full local Git SHAs.
+- Fixed Bitbucket Cloud prepare after shallow checkout so pull request commit hashes are expanded before bundle generation and missing commits are recovered through branch fetches instead of noisy direct SHA fetches.
+- Fixed Bitbucket Cloud prepare so pending draft review comments and replies are excluded from review bundles.
 - Improved `revpack config setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.
 - Fixed GitLab fallback checkout for deleted MR source branches, including follow-up bundle commands run from the fallback branch and fork fallback fetches.
 - Fixed review summary instructions so incremental MR/PR updates keep newly introduced capabilities under `Added` instead of `Changed`.

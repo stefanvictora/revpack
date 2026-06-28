@@ -55,6 +55,11 @@ function createMockGit(overrides: Partial<MockGit> = {}): MockGit {
   };
 }
 
+async function readLocalState(workingDir: string): Promise<Record<string, unknown>> {
+  const raw = await fs.readFile(path.join(workingDir, '.revpack', 'local', 'state.json'), 'utf-8');
+  return JSON.parse(raw) as Record<string, unknown>;
+}
+
 function localPatch(): string {
   return [
     'diff --git a/src/app.ts b/src/app.ts',
@@ -132,10 +137,8 @@ describe('LocalGitProvider unit', () => {
 
     const target = await provider.getTargetSnapshot(ref);
     expect(target.description).toBe('Review description');
-    await expect(provider.findNoteByMarker(ref, '<!-- marker -->')).resolves.toEqual({
-      id: noteId,
-      body: '<!-- marker -->\nVisible review note',
-    });
+    const state = await readLocalState(tmpDir);
+    expect(state.reviewNote).toEqual({ id: noteId, body: '<!-- marker -->\nVisible review note' });
   });
 
   it('fails clearly instead of resetting malformed local state', async () => {
@@ -353,32 +356,6 @@ describe('LocalGitProvider note and thread operations', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('findNoteByMarker returns null when no note exists', async () => {
-    const provider = new LocalGitProvider(tmpDir, 'main', { git: createMockGit() });
-    const ref = provider.resolveTarget('main');
-
-    const result = await provider.findNoteByMarker(ref, '<!-- marker -->');
-    expect(result).toBeNull();
-  });
-
-  it('findNoteByMarker returns null when note body does not start with marker', async () => {
-    const provider = new LocalGitProvider(tmpDir, 'main', { git: createMockGit() });
-    const ref = provider.resolveTarget('main');
-
-    await provider.createNote(ref, 'No marker here');
-    const result = await provider.findNoteByMarker(ref, '<!-- marker -->');
-    expect(result).toBeNull();
-  });
-
-  it('findNoteByMarker returns note when body starts with marker', async () => {
-    const provider = new LocalGitProvider(tmpDir, 'main', { git: createMockGit() });
-    const ref = provider.resolveTarget('main');
-
-    const noteId = await provider.createNote(ref, '<!-- marker -->\nContent');
-    const result = await provider.findNoteByMarker(ref, '<!-- marker -->');
-    expect(result).toEqual({ id: noteId, body: '<!-- marker -->\nContent' });
-  });
-
   it('createNote uses existing note id when state already has a note', async () => {
     const provider = new LocalGitProvider(tmpDir, 'main', { git: createMockGit() });
     const ref = provider.resolveTarget('main');
@@ -403,8 +380,11 @@ describe('LocalGitProvider note and thread operations', () => {
     const noteId = await provider.createNote(ref, 'Old body');
     await provider.updateNote(ref, noteId, '<!-- marker -->\nNew body');
 
-    const found = await provider.findNoteByMarker(ref, '<!-- marker -->');
-    expect(found).toEqual({ id: noteId, body: '<!-- marker -->\nNew body' });
+    const secondId = await provider.createNote(ref, 'Replacement body');
+    expect(secondId).toBe(noteId);
+
+    const state = await readLocalState(tmpDir);
+    expect(state.reviewNote).toEqual({ id: noteId, body: 'Replacement body' });
   });
 
   it('postReply throws when thread does not exist', async () => {
@@ -819,9 +799,8 @@ describeRealGit('LocalGitProvider integration', () => {
     expect(first.bundle.diffs).toHaveLength(1);
 
     await orchestrator.publishCheckpoint();
-    const stateRaw = await fs.readFile(path.join(tmpDir, '.revpack', 'local', 'state.json'), 'utf-8');
-    const state = JSON.parse(stateRaw) as { description: string };
-    const checkpoint = parseDescriptionState(state.description);
+    const state = await readLocalState(tmpDir);
+    const checkpoint = parseDescriptionState(state.description as string);
     expect(checkpoint?.target.provider).toBe('local');
     expect(checkpoint?.checkpoint.headSha).toBe(first.bundle.target.diffRefs.headSha);
 

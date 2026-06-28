@@ -217,15 +217,6 @@ export class GitLabProvider implements ReviewProvider {
     return result.id;
   }
 
-  async findNoteByMarker(ref: ReviewTargetRef, marker: string): Promise<{ id: string; body: string } | null> {
-    const projectId = encodeURIComponent(ref.repository);
-    const notes = await this.requestPaginated<GitLabNote>(
-      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/notes`,
-    );
-    const match = notes.find((n) => n.body.startsWith(marker));
-    return match ? { id: String(match.id), body: match.body } : null;
-  }
-
   async createNote(ref: ReviewTargetRef, body: string, options?: { internal?: boolean }): Promise<string> {
     const projectId = encodeURIComponent(ref.repository);
     const payload: Record<string, unknown> = { body };
@@ -479,7 +470,6 @@ export class GitLabProvider implements ReviewProvider {
       baseCommitSha: v.base_commit_sha,
       startCommitSha: v.start_commit_sha,
       createdAt: v.created_at,
-      realSize: v.real_size ?? 0,
     };
   }
 
@@ -550,7 +540,6 @@ interface GitLabDiffVersion {
   base_commit_sha: string;
   start_commit_sha: string;
   created_at: string;
-  real_size?: number;
 }
 
 // ─── TLS / dispatcher helper ──────────────────────────────

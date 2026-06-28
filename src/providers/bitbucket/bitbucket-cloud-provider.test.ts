@@ -43,6 +43,22 @@ function pullRequest(overrides: Partial<Record<string, unknown>> = {}): Record<s
   };
 }
 
+function comment(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    id: 100,
+    content: {
+      raw: 'Top-level comment **markdown**',
+      markup: 'Top-level comment **markup**',
+      html: '<p>Top-level comment <strong>markdown</strong></p>',
+    },
+    user: { display_name: 'Bob Reviewer', nickname: 'bob', account_id: 'bob-id' },
+    created_on: '2026-01-03T00:00:00.000000+00:00',
+    updated_on: '2026-01-03T00:00:00.000000+00:00',
+    deleted: false,
+    ...overrides,
+  };
+}
+
 function installFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>): void {
   vi.stubGlobal(
     'fetch',
@@ -146,6 +162,46 @@ describe('BitbucketCloudProvider target reads', () => {
     });
   });
 
+  it('expands abbreviated pull request commit hashes for snapshots', async () => {
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      if (url.endsWith('/commit/0731551ad420')) {
+        return jsonResponse({ type: 'commit', hash: '0731551ad42031e97ee04a34c7fe40e3bd906833' });
+      }
+      if (url.endsWith('/commit/fb0aebbd3d5b')) {
+        return jsonResponse({ type: 'commit', hash: 'fb0aebbd3d5b858c6024745659c9f4211d186589' });
+      }
+      return jsonResponse(
+        pullRequest({
+          source: {
+            branch: { name: 'pr-test' },
+            commit: { hash: 'fb0aebbd3d5b' },
+            repository: { full_name: 'workspace/repo' },
+          },
+          destination: {
+            branch: { name: 'main' },
+            commit: { hash: '0731551ad420' },
+            repository: { full_name: 'workspace/repo' },
+          },
+        }),
+      );
+    });
+
+    const target = await provider.getTargetSnapshot(ref);
+
+    expect(target.diffRefs).toEqual({
+      baseSha: '0731551ad42031e97ee04a34c7fe40e3bd906833',
+      headSha: 'fb0aebbd3d5b858c6024745659c9f4211d186589',
+      startSha: '0731551ad42031e97ee04a34c7fe40e3bd906833',
+    });
+    expect(urls).toEqual([
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42',
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/commit/0731551ad420',
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/commit/fb0aebbd3d5b',
+    ]);
+  });
+
   it('falls back across nullable description, author, and URL fields', async () => {
     installFetch(() =>
       jsonResponse(
@@ -211,8 +267,18 @@ describe('BitbucketCloudProvider target reads', () => {
     expect(targets.map((target) => target.targetId)).toEqual(['1', '2']);
   });
 
-  it('uses pull request head metadata as the diff version', async () => {
-    installFetch(() => jsonResponse(pullRequest()));
+  it('uses pull request head metadata as the synthetic diff version', async () => {
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      if (url.endsWith('/commit/0731551ad420')) {
+        return jsonResponse({ type: 'commit', hash: '0731551ad42031e97ee04a34c7fe40e3bd906833' });
+      }
+      if (url.endsWith('/commit/fb0aebbd3d5b')) {
+        return jsonResponse({ type: 'commit', hash: 'fb0aebbd3d5b858c6024745659c9f4211d186589' });
+      }
+      return jsonResponse(pullRequest());
+    });
 
     await expect(provider.getDiffVersions(ref)).resolves.toEqual([
       {
@@ -223,9 +289,11 @@ describe('BitbucketCloudProvider target reads', () => {
         baseCommitSha: 'base-sha',
         startCommitSha: 'base-sha',
         createdAt: '2026-01-02T00:00:00.000000+00:00',
-        realSize: 0,
       },
     ]);
+    expect(urls).toEqual(['https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42']);
+    expect(urls.some((url) => url.includes('/diffstat'))).toBe(false);
+    expect(urls.some((url) => url.endsWith('/patch'))).toBe(false);
   });
 
   it('updates pull request descriptions through the pullrequests API', async () => {
@@ -237,6 +305,261 @@ describe('BitbucketCloudProvider target reads', () => {
     });
 
     await provider.updateDescription(ref, 'new body');
+  });
+});
+
+describe('BitbucketCloudProvider review comments', () => {
+  let provider: BitbucketCloudProvider;
+
+  beforeEach(() => {
+    provider = new BitbucketCloudProvider('user@example.com', 'api-token');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('maps paginated Bitbucket comments into provider-neutral review threads', async () => {
+    const firstPage = {
+      values: [
+        comment({
+          id: 100,
+          content: {
+            raw: 'Global top-level **markdown**',
+            markup: 'Global top-level markup',
+            html: '<p>Global top-level <strong>markdown</strong></p>',
+          },
+        }),
+        comment({
+          id: 101,
+          content: { raw: 'Inline new-side comment' },
+          inline: { path: 'src/new.ts', to: 12 },
+        }),
+        comment({
+          id: 102,
+          content: { raw: 'Reply to global thread' },
+          parent: { id: 100 },
+          user: { display_name: 'Carol Reply', nickname: 'carol', account_id: 'carol-id' },
+          created_on: '2026-01-03T01:00:00.000000+00:00',
+          updated_on: '2026-01-03T01:00:00.000000+00:00',
+        }),
+      ],
+      next: 'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments?page=2',
+    };
+    const secondPage = {
+      values: [
+        comment({
+          id: 103,
+          content: { raw: 'Inline old-side comment' },
+          inline: { path: 'src/old.ts', from: 8 },
+        }),
+        comment({
+          id: 104,
+          content: { raw: 'Resolved top-level comment' },
+          resolution: { id: 1 },
+        }),
+      ],
+    };
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      return jsonResponse(url.includes('page=2') ? secondPage : firstPage);
+    });
+
+    const threads = await provider.listAllThreads(ref);
+
+    expect(urls).toEqual([
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments?pagelen=100',
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments?page=2',
+    ]);
+    expect(threads).toEqual([
+      {
+        provider: 'bitbucket-cloud',
+        targetRef: ref,
+        threadId: '100',
+        resolved: false,
+        resolvable: true,
+        position: undefined,
+        comments: [
+          {
+            id: '100',
+            body: 'Global top-level **markdown**',
+            author: 'bob',
+            createdAt: '2026-01-03T00:00:00.000000+00:00',
+            updatedAt: '2026-01-03T00:00:00.000000+00:00',
+            origin: 'human',
+            system: false,
+          },
+          {
+            id: '102',
+            body: 'Reply to global thread',
+            author: 'carol',
+            createdAt: '2026-01-03T01:00:00.000000+00:00',
+            updatedAt: '2026-01-03T01:00:00.000000+00:00',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      },
+      {
+        provider: 'bitbucket-cloud',
+        targetRef: ref,
+        threadId: '101',
+        resolved: false,
+        resolvable: true,
+        position: {
+          filePath: 'src/new.ts',
+          oldLine: undefined,
+          newLine: 12,
+          oldPath: 'src/new.ts',
+          newPath: 'src/new.ts',
+        },
+        comments: [
+          {
+            id: '101',
+            body: 'Inline new-side comment',
+            author: 'bob',
+            createdAt: '2026-01-03T00:00:00.000000+00:00',
+            updatedAt: '2026-01-03T00:00:00.000000+00:00',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      },
+      {
+        provider: 'bitbucket-cloud',
+        targetRef: ref,
+        threadId: '103',
+        resolved: false,
+        resolvable: true,
+        position: {
+          filePath: 'src/old.ts',
+          oldLine: 8,
+          newLine: undefined,
+          oldPath: 'src/old.ts',
+          newPath: 'src/old.ts',
+        },
+        comments: [
+          {
+            id: '103',
+            body: 'Inline old-side comment',
+            author: 'bob',
+            createdAt: '2026-01-03T00:00:00.000000+00:00',
+            updatedAt: '2026-01-03T00:00:00.000000+00:00',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      },
+      {
+        provider: 'bitbucket-cloud',
+        targetRef: ref,
+        threadId: '104',
+        resolved: true,
+        resolvable: true,
+        position: undefined,
+        comments: [
+          {
+            id: '104',
+            body: 'Resolved top-level comment',
+            author: 'bob',
+            createdAt: '2026-01-03T00:00:00.000000+00:00',
+            updatedAt: '2026-01-03T00:00:00.000000+00:00',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('excludes deleted comments and orphan replies', async () => {
+    installFetch(() =>
+      jsonResponse({
+        values: [
+          comment({ id: 200, content: { raw: 'Visible parent' } }),
+          comment({ id: 201, content: { raw: 'Deleted parent' }, deleted: true }),
+          comment({ id: 202, content: { raw: 'Reply to deleted parent' }, parent: { id: 201 } }),
+          comment({ id: 203, content: { raw: 'Orphan reply' }, parent: { id: 999 } }),
+          comment({ id: 204, content: { raw: 'Deleted reply' }, parent: { id: 200 }, deleted: true }),
+        ],
+      }),
+    );
+
+    const threads = await provider.listAllThreads(ref);
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0].threadId).toBe('200');
+    expect(threads[0].comments.map((comment) => comment.id)).toEqual(['200']);
+  });
+
+  it('excludes pending comments and replies', async () => {
+    installFetch(() =>
+      jsonResponse({
+        values: [
+          comment({ id: 210, content: { raw: 'Visible parent' } }),
+          comment({ id: 211, content: { raw: 'Pending parent' }, pending: true }),
+          comment({ id: 212, content: { raw: 'Reply to pending parent' }, parent: { id: 211 } }),
+          comment({ id: 213, content: { raw: 'Pending reply' }, parent: { id: 210 }, pending: true }),
+          comment({ id: 214, content: { raw: 'Visible reply' }, parent: { id: 210 } }),
+        ],
+      }),
+    );
+
+    const threads = await provider.listAllThreads(ref);
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0].threadId).toBe('210');
+    expect(threads[0].comments.map((comment) => comment.id)).toEqual(['210', '214']);
+  });
+
+  it('uses only top-level resolution for resolved state and lists unresolved threads', async () => {
+    installFetch(() =>
+      jsonResponse({
+        values: [
+          comment({ id: 300, content: { raw: 'Parent stays unresolved' } }),
+          comment({
+            id: 301,
+            content: { raw: 'Reply resolution is ignored' },
+            parent: { id: 300 },
+            resolution: { id: 1 },
+          }),
+          comment({ id: 302, content: { raw: 'Parent is resolved' }, resolution: { id: 2 } }),
+        ],
+      }),
+    );
+
+    const allThreads = await provider.listAllThreads(ref);
+    const unresolved = await provider.listUnresolvedThreads(ref);
+
+    expect(allThreads.map((thread) => [thread.threadId, thread.resolved])).toEqual([
+      ['300', false],
+      ['302', true],
+    ]);
+    expect(unresolved.map((thread) => thread.threadId)).toEqual(['300']);
+  });
+
+  it('marks revpack marker comments as bot-origin and falls back across author fields', async () => {
+    installFetch(() =>
+      jsonResponse({
+        values: [
+          comment({
+            id: 500,
+            content: { raw: '<!-- revpack:finding -->\nManaged finding' },
+            user: { display_name: 'Revpack Automation', nickname: null, account_id: 'automation-id' },
+          }),
+        ],
+      }),
+    );
+
+    const threads = await provider.listAllThreads(ref);
+
+    expect(threads[0].comments[0]).toMatchObject({
+      id: '500',
+      body: '<!-- revpack:finding -->\nManaged finding',
+      author: 'Revpack Automation',
+      origin: 'bot',
+    });
   });
 });
 
@@ -288,8 +611,5 @@ describe('BitbucketCloudProvider errors and clone URLs', () => {
     await expect(provider.updateNote(ref, 'note-1', 'body')).rejects.toThrow(
       'Bitbucket Cloud review notes is not supported yet',
     );
-    await expect(provider.listAllThreads(ref)).resolves.toEqual([]);
-    await expect(provider.listUnresolvedThreads(ref)).resolves.toEqual([]);
-    await expect(provider.findNoteByMarker(ref, '<!-- revpack')).resolves.toBeNull();
   });
 });

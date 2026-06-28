@@ -1,4 +1,5 @@
 import type { CheckoutBranchTarget, CheckoutFallbackRef, ReviewProvider } from '../providers/provider.js';
+import { sameCommitSha } from '../core/commits.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
@@ -131,7 +132,6 @@ export class ReviewOrchestrator {
       if (descState) {
         remoteCheckpoint = {
           source: 'description_body',
-          providerNoteId: '',
           headSha: descState.checkpoint.headSha,
           baseSha: descState.checkpoint.baseSha,
           startSha: descState.checkpoint.startSha,
@@ -148,18 +148,6 @@ export class ReviewOrchestrator {
         throw err;
       }
       // Malformed state — treat as no checkpoint
-    }
-
-    // Identify body-only revpack review notes for exclusion from bundle context
-    let reviewNoteCommentId: string | null = null;
-    let reviewNote: { id: string; body: string } | null = null;
-    try {
-      reviewNote = await this.provider.findNoteByMarker(targetRef, REVIEW_NOTE_MARKER);
-    } catch {
-      // Provider lookup failed
-    }
-    if (reviewNote) {
-      reviewNoteCommentId = reviewNote.id;
     }
 
     // ─── Source consistency check ─────────────────────────
@@ -198,7 +186,8 @@ export class ReviewOrchestrator {
     }
 
     // Check local HEAD matches MR/PR head
-    if (localHeadSha !== mrHeadSha) {
+    const localHeadMatchesTarget = sameCommitSha(localHeadSha, mrHeadSha);
+    if (!localHeadMatchesTarget) {
       const isAncestor = await this.git.isAncestor(mrHeadSha).catch(() => false);
       if (isAncestor) {
         // Local is ahead of MR head
@@ -224,8 +213,8 @@ export class ReviewOrchestrator {
 
     // ─── Source consistency verified — proceed with writes ─
 
-    // Filter out system-only threads and the managed review note thread
-    const allThreads = filterReviewThreads(rawThreads, reviewNoteCommentId);
+    // Filter out provider/system-only threads.
+    const allThreads = filterReviewThreads(rawThreads);
 
     // Build position-based thread index
     const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
@@ -246,7 +235,7 @@ export class ReviewOrchestrator {
     const currentDescriptionDigest = computeContentHash(sanitizeDescriptionForAgent(target.description ?? ''));
 
     // Compare against checkpoint (not previous local prepare)
-    const targetCodeChanged = remoteCheckpoint ? remoteCheckpoint.headSha !== mrHeadSha : null;
+    const targetCodeChanged = remoteCheckpoint ? !sameCommitSha(remoteCheckpoint.headSha, mrHeadSha) : null;
 
     const threadsChanged = remoteCheckpoint?.threadsDigest
       ? remoteCheckpoint.threadsDigest !== currentThreadsDigest
@@ -281,7 +270,7 @@ export class ReviewOrchestrator {
       branch: localBranch,
       headSha: localHeadSha,
       matchesTargetSourceBranch: localBranch === target.sourceBranch,
-      matchesTargetHead: localHeadSha === mrHeadSha,
+      matchesTargetHead: localHeadMatchesTarget,
       checkedAt: new Date().toISOString(),
     };
 
@@ -445,7 +434,7 @@ export class ReviewOrchestrator {
           clonedDir = await GitHelper.clone(cloneUrl, target.sourceBranch, this.git.cwd);
         } catch (sourceError) {
           if (!checkoutFallback) {
-            throw sourceError;
+            throw this.sourceBranchCheckoutError(target, sourceError);
           }
 
           try {
@@ -606,16 +595,7 @@ export class ReviewOrchestrator {
       this.provider.getDiffVersions(targetRef),
     ]);
 
-    // Identify existing review note for thread filtering
-    let reviewNoteId: string | null = null;
-    try {
-      const existingNote = await this.provider.findNoteByMarker(targetRef, REVIEW_NOTE_MARKER);
-      if (existingNote) reviewNoteId = existingNote.id;
-    } catch {
-      // Provider lookup failed
-    }
-
-    const allThreads = filterReviewThreads(rawThreads, reviewNoteId);
+    const allThreads = filterReviewThreads(rawThreads);
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
     const currentDescriptionDigest = computeContentHash(sanitizeDescriptionForAgent(target.description ?? ''));
     const threadDigests = computeThreadDigestMap(allThreads);
@@ -768,15 +748,17 @@ export class ReviewOrchestrator {
     const baseRepoRemote = this.baseRepositoryRemoteForFork(target);
     const baseObjectRemotes = baseRepoRemote ? ['origin', baseRepoRemote] : ['origin'];
 
-    missing = await this.tryFetchMissingCommitsFromRemotes(
-      missing,
-      baseSha,
-      headSha,
-      baseObjectRemotes,
-      fetchErrors,
-      reportFetch,
-    );
-    if (missing.length === 0) return;
+    if (this.provider.supportsDirectCommitFetch !== false) {
+      missing = await this.tryFetchMissingCommitsFromRemotes(
+        missing,
+        baseSha,
+        headSha,
+        baseObjectRemotes,
+        fetchErrors,
+        reportFetch,
+      );
+      if (missing.length === 0) return;
+    }
 
     missing = await this.tryFetchBranchFromRemotes(
       target.targetBranch,
@@ -796,6 +778,22 @@ export class ReviewOrchestrator {
         ['origin'],
         fetchErrors,
         reportFetch,
+      );
+      if (missing.length === 0) return;
+    }
+
+    // When the provider does not support direct SHA fetch (e.g. Bitbucket Cloud),
+    // shallow branch fetches may miss an older recorded base commit that is no
+    // longer at the branch tip. Try a full (non-shallow) branch fetch to resolve it.
+    if (this.provider.supportsDirectCommitFetch === false) {
+      missing = await this.tryFetchBranchFromRemotes(
+        target.targetBranch,
+        baseSha,
+        headSha,
+        baseObjectRemotes,
+        fetchErrors,
+        reportFetch,
+        { deep: true },
       );
       if (missing.length === 0) return;
     }
@@ -838,12 +836,17 @@ export class ReviewOrchestrator {
     remotes: string[],
     fetchErrors: string[],
     reportFetch: boolean,
+    options?: { deep?: boolean },
   ): Promise<string[]> {
     let stillMissing: string[] = [];
 
     for (const remote of remotes) {
       try {
-        await this.git.fetchBranch(branch, remote, { depth: 1, noTags: true, progress: reportFetch });
+        await this.git.fetchBranch(branch, remote, {
+          ...(options?.deep ? { unshallow: true } : { depth: 1 }),
+          noTags: true,
+          progress: reportFetch,
+        });
       } catch (err) {
         fetchErrors.push(`git fetch ${remote} ${branch}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -885,6 +888,8 @@ export class ReviewOrchestrator {
     reportFetch: boolean,
   ): Promise<void> {
     for (const sha of missing) {
+      if (isAbbreviatedCommitSha(sha)) continue;
+
       try {
         await this.git.fetchCommit(sha, remote, { depth: 1, noTags: true, progress: reportFetch });
       } catch (err) {
@@ -907,7 +912,7 @@ export class ReviewOrchestrator {
     sourceError: unknown,
   ): Promise<string> {
     if (!fallback) {
-      throw sourceError;
+      throw this.sourceBranchCheckoutError(target, sourceError);
     }
 
     try {
@@ -935,6 +940,40 @@ export class ReviewOrchestrator {
         ].join('\n'),
         { cause: fallbackError },
       )
+    );
+  }
+
+  private sourceBranchCheckoutError(target: ReviewTarget, sourceError: unknown): Error {
+    const targetKind = formatTargetKind(target);
+    const targetDisplayId = formatTargetDisplayId(target);
+    const repoDetail = target.headRepository
+      ? `Source repository: ${target.headRepository}`
+      : `Repository: ${target.repository}`;
+    const msg = errorMessage(sourceError);
+    const isMissingRef =
+      /could(?:n't| not) find remote ref/i.test(msg) || /remote branch .+ not found in upstream/i.test(msg);
+    const detail = isMissingRef
+      ? [
+          `The source branch "${target.sourceBranch}" is no longer reachable.`,
+          repoDetail,
+          '',
+          `revpack checks out this target by fetching its source branch from Git. This provider did not expose a checkout fallback ref, so the target can only be checked out while the source branch or head commit is reachable.`,
+        ]
+      : [
+          `Failed to fetch source branch "${target.sourceBranch}".`,
+          repoDetail,
+          '',
+          `revpack checks out this target by fetching its source branch from Git. This provider did not expose a checkout fallback ref, so a successful fetch is required.`,
+        ];
+    return new Error(
+      [
+        `Could not check out ${targetKind} ${targetDisplayId}.`,
+        '',
+        ...detail,
+        '',
+        `Source branch fetch failed: ${msg}`,
+      ].join('\n'),
+      { cause: sourceError },
     );
   }
 
@@ -984,4 +1023,8 @@ function errorMessage(error: unknown): string {
 
 function shortSha(sha: string): string {
   return sha ? sha.slice(0, 8) : '<missing>';
+}
+
+function isAbbreviatedCommitSha(sha: string): boolean {
+  return /^[0-9a-f]{7,39}$/i.test(sha);
 }

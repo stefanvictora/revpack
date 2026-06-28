@@ -179,7 +179,6 @@ describe('publish command internals', () => {
     await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('');
     const bundleState = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'bundle.json'), 'utf-8'));
     expect(bundleState.outputs.review.lastPublishedHash).toBeUndefined();
-    expect(bundleState.outputs.review.providerNoteId).toBeUndefined();
   });
 
   it('clears the default review note even when bundle state is unavailable', async () => {
