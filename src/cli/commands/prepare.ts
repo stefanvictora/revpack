@@ -4,6 +4,7 @@ import { formatTargetKind } from '../../core/display.js';
 import { formatTargetDisplayId } from '../../providers/display.js';
 import { createLocalOrchestrator, createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
 import { formatGuidanceLine } from '../output.js';
+import { getTargetStateColor } from '../target-state.js';
 
 export function registerPrepareCommand(program: Command): void {
   program
@@ -51,7 +52,7 @@ export function registerPrepareCommand(program: Command): void {
 
           const { bundle, mode } = result;
           const target = bundle.target;
-          const stateColor = getStateColor(target.state);
+          const stateColor = getTargetStateColor(target.state);
           const isLocal = target.provider === 'local';
           const targetLabel = formatTargetKind(target);
           const targetDisplayId = formatTargetDisplayId(target);
@@ -127,21 +128,6 @@ function createPrepareFetchLogger(): (message: string) => void {
   return (message: string) => {
     console.log(chalk.dim(message));
   };
-}
-
-function getStateColor(state: string): (text: string) => string {
-  switch (state) {
-    case 'opened':
-      return chalk.green;
-    case 'merged':
-      return chalk.magenta;
-    case 'closed':
-      return chalk.red;
-    case 'locked':
-      return chalk.yellow;
-    default:
-      return chalk.white;
-  }
 }
 
 function formatDate(iso: string): string {

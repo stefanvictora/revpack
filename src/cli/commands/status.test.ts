@@ -6,8 +6,8 @@ import {
   buildPendingOlderBundleLines,
   buildStatusNextLines,
   compareCheckoutToTargetHead,
-  getTargetStateTone,
 } from './status.js';
+import { getTargetStateTone } from '../target-state.js';
 
 describe('buildBundleStatusDisplayTarget', () => {
   const bundleTarget: BundleTarget = {
@@ -293,11 +293,7 @@ describe('compareCheckoutToTargetHead', () => {
     });
 
     await expect(
-      compareCheckoutToTargetHead(
-        git,
-        'fb0aebbd3d5b',
-        'fb0aebbd3d5b858c6024745659c9f4211d186589',
-      ),
+      compareCheckoutToTargetHead(git, 'fb0aebbd3d5b', 'fb0aebbd3d5b858c6024745659c9f4211d186589'),
     ).resolves.toBe('current');
   });
 

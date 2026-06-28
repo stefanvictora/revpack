@@ -9,6 +9,7 @@ import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { GitHelper } from '../../workspace/git-helper.js';
 import { createOrchestrator, getRepoFromGit, handleError, outputJson } from '../helpers.js';
 import { formatGuidanceLine } from '../output.js';
+import { getTargetStateColor } from '../target-state.js';
 
 export function registerStatusCommand(program: Command): void {
   program
@@ -75,7 +76,7 @@ export function registerStatusCommand(program: Command): void {
             targetId: t.id,
           });
           const displayTarget = buildBundleStatusDisplayTarget(t, latestTarget);
-          const stateColor = getStateColor(displayTarget.state);
+          const stateColor = getTargetStateColor(displayTarget.state);
           const hasPublishableSummary = isPublishableOutputState(summaryState);
           const hasPublishableReview = isPublishableOutputState(reviewState);
 
@@ -184,7 +185,7 @@ export function registerStatusCommand(program: Command): void {
           const target = await orchestrator.open(ref, defaultRepo);
           const targetKind = formatTargetKind(target);
           const targetDisplayId = formatTargetDisplayId(target);
-          const stateColor = getStateColor(target.state);
+          const stateColor = getTargetStateColor(target.state);
 
           console.log(chalk.bold(`${targetKind} ${targetDisplayId}: ${target.title}`));
           console.log('');
@@ -202,41 +203,6 @@ export function registerStatusCommand(program: Command): void {
         handleError(err);
       }
     });
-}
-
-export type TargetStateTone = 'open' | 'merged' | 'closed' | 'locked' | 'default';
-
-export function getTargetStateTone(state: string): TargetStateTone {
-  switch (state.toLowerCase()) {
-    case 'open':
-    case 'opened':
-      return 'open';
-    case 'merged':
-      return 'merged';
-    case 'closed':
-    case 'declined':
-    case 'superseded':
-      return 'closed';
-    case 'locked':
-      return 'locked';
-    default:
-      return 'default';
-  }
-}
-
-function getStateColor(state: string): (text: string) => string {
-  switch (getTargetStateTone(state)) {
-    case 'open':
-      return chalk.green;
-    case 'merged':
-      return chalk.magenta;
-    case 'closed':
-      return chalk.red;
-    case 'locked':
-      return chalk.yellow;
-    case 'default':
-      return chalk.white;
-  }
 }
 
 async function countJsonArray(filePath: string): Promise<number> {
