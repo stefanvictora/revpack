@@ -38,6 +38,7 @@ export default defineConfig(
         {
           argsIgnorePattern: '^_',
           caughtErrorsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
         },
       ],
 

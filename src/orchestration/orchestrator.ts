@@ -843,7 +843,7 @@ export class ReviewOrchestrator {
     for (const remote of remotes) {
       try {
         await this.git.fetchBranch(branch, remote, {
-          ...(options?.deep ? {} : { depth: 1 }),
+          ...(options?.deep ? { unshallow: true } : { depth: 1 }),
           noTags: true,
           progress: reportFetch,
         });
@@ -950,7 +950,8 @@ export class ReviewOrchestrator {
       ? `Source repository: ${target.headRepository}`
       : `Repository: ${target.repository}`;
     const msg = errorMessage(sourceError);
-    const isMissingRef = /could(?:n't| not) find remote ref/i.test(msg);
+    const isMissingRef =
+      /could(?:n't| not) find remote ref/i.test(msg) || /remote branch .+ not found in upstream/i.test(msg);
     const detail = isMissingRef
       ? [
           `The source branch "${target.sourceBranch}" is no longer reachable.`,

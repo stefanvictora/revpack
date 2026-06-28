@@ -1,4 +1,5 @@
 import { execFile, spawn as nodeSpawn } from 'node:child_process';
+import { resolve as resolvePath } from 'node:path';
 
 const GIT_LONG_PATHS_CONFIG = ['-c', 'core.longpaths=true'];
 
@@ -19,10 +20,39 @@ async function execGit(args: string[], cwd: string): Promise<{ stdout: string; s
   });
 }
 
-function spawnGit(args: string[], cwd: string): ReturnType<typeof nodeSpawn> {
-  return nodeSpawn('git', gitArgs(args), {
-    cwd,
-    stdio: 'inherit',
+function resolveCloneDir(cloneUrl: string, branch: string, dirName?: string): string {
+  const repoName = cloneUrl
+    .replace(/\.git$/, '')
+    .split('/')
+    .pop()!;
+  const sanitizedBranch = branch.replace(/[/\\:*?"<>|]/g, '-');
+  return dirName ?? `${repoName}-${sanitizedBranch}`;
+}
+
+/**
+ * Spawn git with inherited stdin/stdout and piped stderr.
+ * Forwards stderr to the terminal in real time for progress visibility,
+ * while capturing it to produce detailed error messages on failure.
+ */
+async function runGitSpawn(args: string[], cwd: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = nodeSpawn('git', gitArgs(args), {
+      cwd,
+      stdio: ['inherit', 'inherit', 'pipe'],
+    });
+    const stderrChunks: Buffer[] = [];
+    child.stderr?.on('data', (chunk: Buffer) => {
+      process.stderr.write(chunk);
+      stderrChunks.push(chunk);
+    });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else {
+        const stderr = Buffer.concat(stderrChunks).toString().trim();
+        reject(new Error(stderr || `git ${args.join(' ')} exited with code ${code}`));
+      }
+    });
+    child.on('error', reject);
   });
 }
 
@@ -50,27 +80,12 @@ export class GitHelper {
     parentDir: string,
     dirName?: string,
   ): Promise<string> {
-    const repoName = cloneUrl
-      .replace(/\.git$/, '')
-      .split('/')
-      .pop()!;
-    const sanitizedBranch = localBranch.replace(/[/\\:*?"<>|]/g, '-');
-    const resolvedName = dirName ?? `${repoName}-${sanitizedBranch}`;
+    const resolvedName = resolveCloneDir(cloneUrl, localBranch, dirName);
 
     // Step 1: clone without checking out any branch (avoids downloading default branch content)
-    await new Promise<void>((resolve, reject) => {
-      const child = spawnGit(
-        ['clone', '--depth', '1', '--no-checkout', '--progress', cloneUrl, resolvedName],
-        parentDir,
-      );
-      child.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`git clone exited with code ${code}`));
-      });
-      child.on('error', reject);
-    });
+    await runGitSpawn(['clone', '--depth', '1', '--no-checkout', '--progress', cloneUrl, resolvedName], parentDir);
 
-    const clonedPath = (await import('node:path')).resolve(parentDir, resolvedName);
+    const clonedPath = resolvePath(parentDir, resolvedName);
 
     // Step 2: fetch the PR/MR refspec into a local branch (shallow to match the clone depth)
     await execGit(['fetch', '--depth', '1', 'origin', `${remoteRef}:${localBranch}`], clonedPath);
@@ -87,28 +102,13 @@ export class GitHelper {
    * Returns the absolute path of the cloned directory.
    */
   static async clone(cloneUrl: string, branch: string, parentDir: string, dirName?: string): Promise<string> {
-    // Derive directory name: <repo>-<branch> for easy multi-branch checkout
-    const repoName = cloneUrl
-      .replace(/\.git$/, '')
-      .split('/')
-      .pop()!;
-    const sanitizedBranch = branch.replace(/[/\\:*?"<>|]/g, '-');
-    const resolvedName = dirName ?? `${repoName}-${sanitizedBranch}`;
+    const resolvedName = resolveCloneDir(cloneUrl, branch, dirName);
 
-    const args = ['clone', '--depth', '1', '--branch', branch, '--progress', cloneUrl, resolvedName];
+    // Captures stderr for error details (e.g. "Remote branch not found")
+    // while still forwarding output to the terminal for progress visibility.
+    await runGitSpawn(['clone', '--depth', '1', '--branch', branch, '--progress', cloneUrl, resolvedName], parentDir);
 
-    // Use spawn with inherited stdio so clone progress is shown in terminal,
-    // and stdin is inherited so SSH passphrase prompts can be answered interactively.
-    await new Promise<void>((resolve, reject) => {
-      const child = spawnGit(args, parentDir);
-      child.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`git clone exited with code ${code}`));
-      });
-      child.on('error', reject);
-    });
-
-    return (await import('node:path')).resolve(parentDir, resolvedName);
+    return resolvePath(parentDir, resolvedName);
   }
 
   /** Get current branch name. */
@@ -225,15 +225,19 @@ export class GitHelper {
   async fetchBranch(
     branch: string,
     remote = 'origin',
-    options?: { depth?: number; noTags?: boolean; progress?: boolean },
+    options?: { depth?: number; unshallow?: boolean; noTags?: boolean; progress?: boolean },
   ): Promise<void> {
-    const args = this.buildFetchArgs(remote, branch, options);
-    if (options?.progress) {
-      await this.runGitWithInheritedOutput(this.buildFetchArgs(remote, branch, options, true));
-      return;
+    // --unshallow is only valid in a shallow repo; fall back to a plain fetch otherwise.
+    if (options?.unshallow && !(await this.isShallow())) {
+      const { unshallow: _, ...rest } = options;
+      return this.fetchBranch(branch, remote, rest);
     }
 
-    await execGit(args, this.cwd);
+    if (options?.progress) {
+      await runGitSpawn(this.buildFetchArgs(remote, branch, options, true), this.cwd);
+    } else {
+      await execGit(this.buildFetchArgs(remote, branch, options), this.cwd);
+    }
   }
 
   /** Check if we're inside a git repository. */
@@ -246,15 +250,23 @@ export class GitHelper {
     }
   }
 
+  /** Check if this is a shallow clone. */
+  async isShallow(): Promise<boolean> {
+    try {
+      const { stdout } = await execGit(['rev-parse', '--is-shallow-repository'], this.cwd);
+      return stdout.trim() === 'true';
+    } catch {
+      return false;
+    }
+  }
+
   /** Fetch latest from remote. */
   async fetch(remote = 'origin', options?: { depth?: number; noTags?: boolean; progress?: boolean }): Promise<void> {
-    const args = this.buildFetchArgs(remote, undefined, options);
     if (options?.progress) {
-      await this.runGitWithInheritedOutput(this.buildFetchArgs(remote, undefined, options, true));
-      return;
+      await runGitSpawn(this.buildFetchArgs(remote, undefined, options, true), this.cwd);
+    } else {
+      await execGit(this.buildFetchArgs(remote, undefined, options), this.cwd);
     }
-
-    await execGit(args, this.cwd);
   }
 
   /** Fetch a specific commit/object from a remote into FETCH_HEAD when the server allows it. */
@@ -263,13 +275,11 @@ export class GitHelper {
     remote = 'origin',
     options?: { depth?: number; noTags?: boolean; progress?: boolean },
   ): Promise<void> {
-    const args = this.buildFetchArgs(remote, commitSha, options);
     if (options?.progress) {
-      await this.runGitWithInheritedOutput(this.buildFetchArgs(remote, commitSha, options, true));
-      return;
+      await runGitSpawn(this.buildFetchArgs(remote, commitSha, options, true), this.cwd);
+    } else {
+      await execGit(this.buildFetchArgs(remote, commitSha, options), this.cwd);
     }
-
-    await execGit(args, this.cwd);
   }
 
   /** Read a file at a specific ref. */
@@ -337,28 +347,17 @@ export class GitHelper {
     return stdout.trim().split('\n').filter(Boolean);
   }
 
-  private async runGitWithInheritedOutput(args: string[]): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawnGit(args, this.cwd);
-      child.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`git ${args.join(' ')} exited with code ${code}`));
-      });
-      child.on('error', reject);
-    });
-  }
-
   private buildFetchArgs(
     remote: string,
     ref?: string,
-    options?: { depth?: number; noTags?: boolean },
+    options?: { depth?: number; unshallow?: boolean; noTags?: boolean },
     progress = false,
   ): string[] {
     return [
       'fetch',
       ...(progress ? ['--progress'] : []),
       ...(options?.noTags ? ['--no-tags'] : []),
-      ...(options?.depth ? [`--depth=${options.depth}`] : []),
+      ...(options?.unshallow ? ['--unshallow'] : options?.depth ? [`--depth=${options.depth}`] : []),
       remote,
       ...(ref ? [ref] : []),
     ];

@@ -452,6 +452,20 @@ describe('ReviewOrchestrator', () => {
       expect(switchBranchSpy).not.toHaveBeenCalled();
     });
 
+    it('detects deleted branches from clone --branch errors as unreachable', async () => {
+      isGitRepoSpy.mockResolvedValueOnce(false);
+      vi.spyOn(GitHelper, 'clone').mockRejectedValueOnce(
+        new Error('fatal: Remote branch feature/bitbucket not found in upstream origin'),
+      );
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const error = await captureError(orchestrator.checkout('21', 'workspace/repo'));
+
+      expect(error.message).toContain('The source branch "feature/bitbucket" is no longer reachable.');
+      expect(error.message).not.toContain('Failed to fetch');
+    });
+
     it('uses neutral failure text when source branch fetch fails for non-ref reasons', async () => {
       fetchBranchSpy.mockRejectedValueOnce(new Error('Authentication failed for https://bitbucket.org/'));
       const bitbucketProvider = createBitbucketMockProvider();
