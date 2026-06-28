@@ -285,6 +285,22 @@ describe('compareCheckoutToTargetHead', () => {
     await expect(compareCheckoutToTargetHead(git, 'missing-target-head', 'current-head')).resolves.toBe('unknown');
   });
 
+  it('reports current when the provider head is an abbreviated form of local HEAD', async () => {
+    const git = gitDouble({
+      hasCommit: () => {
+        throw new Error('commit existence should not be checked for matching commits');
+      },
+    });
+
+    await expect(
+      compareCheckoutToTargetHead(
+        git,
+        'fb0aebbd3d5b',
+        'fb0aebbd3d5b858c6024745659c9f4211d186589',
+      ),
+    ).resolves.toBe('current');
+  });
+
   it('reports unknown when the current commit cannot be inspected locally', async () => {
     const git = gitDouble({
       hasCommit: (sha) => sha === 'target-head',

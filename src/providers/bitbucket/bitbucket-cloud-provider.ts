@@ -118,7 +118,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
   }
 
   async getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]> {
-    const target = await this.getTargetSnapshot(ref);
+    const [target, diffstatCount] = await Promise.all([this.getTargetSnapshot(ref), this.getDiffstatCount(ref)]);
     return [
       {
         provider: 'bitbucket-cloud',
@@ -128,7 +128,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
         baseCommitSha: target.diffRefs.baseSha,
         startCommitSha: target.diffRefs.startSha,
         createdAt: target.updatedAt,
-        realSize: 0,
+        realSize: diffstatCount,
       },
     ];
   }
@@ -224,6 +224,14 @@ export class BitbucketCloudProvider implements ReviewProvider {
     }
 
     return results;
+  }
+
+  private async getDiffstatCount(ref: ReviewTargetRef): Promise<number> {
+    const entries = await this.requestPaginated<unknown>(
+      `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}/diffstat`,
+      { pagelen: '100' },
+    );
+    return entries.length;
   }
 
   private headers(): Record<string, string> {

@@ -131,6 +131,59 @@ function createMockProvider(): ReviewProvider {
   };
 }
 
+function createBitbucketMockProvider(overrides: Partial<ReviewProvider> = {}): ReviewProvider {
+  const bitbucketRef: ReviewTargetRef = {
+    provider: 'bitbucket-cloud',
+    repository: 'workspace/repo',
+    targetType: 'pull_request',
+    targetId: '21',
+  };
+  const bitbucketTarget: ReviewTarget = {
+    ...bitbucketRef,
+    title: 'Bitbucket PR',
+    description: 'PR body',
+    author: 'alice',
+    state: 'OPEN',
+    sourceBranch: 'feature/bitbucket',
+    targetBranch: 'main',
+    webUrl: 'https://bitbucket.org/workspace/repo/pull-requests/21',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-02T00:00:00Z',
+    labels: [],
+    diffRefs: { baseSha: 'aaa', headSha: 'bbb', startSha: 'aaa' },
+  };
+  const bitbucketVersion: ReviewVersion = {
+    provider: 'bitbucket-cloud',
+    targetRef: bitbucketRef,
+    versionId: 'bbb',
+    headCommitSha: 'bbb',
+    baseCommitSha: 'aaa',
+    startCommitSha: 'aaa',
+    createdAt: '2026-01-02T00:00:00Z',
+    realSize: 1,
+  };
+
+  return {
+    providerType: 'bitbucket-cloud',
+    resolveTarget: vi.fn().mockReturnValue(bitbucketRef),
+    listOpenReviewTargets: vi.fn().mockResolvedValue([bitbucketTarget]),
+    findTargetByBranch: vi.fn().mockResolvedValue([bitbucketTarget]),
+    getTargetSnapshot: vi.fn().mockResolvedValue(bitbucketTarget),
+    listUnresolvedThreads: vi.fn().mockResolvedValue([]),
+    listAllThreads: vi.fn().mockResolvedValue([]),
+    getDiffVersions: vi.fn().mockResolvedValue([bitbucketVersion]),
+    postReply: vi.fn().mockRejectedValue(new Error('unsupported')),
+    resolveThread: vi.fn().mockRejectedValue(new Error('unsupported')),
+    updateDescription: vi.fn().mockResolvedValue(undefined),
+    createThread: vi.fn().mockRejectedValue(new Error('unsupported')),
+    findNoteByMarker: vi.fn().mockResolvedValue(null),
+    createNote: vi.fn().mockRejectedValue(new Error('unsupported')),
+    updateNote: vi.fn().mockRejectedValue(new Error('unsupported')),
+    getCloneUrl: vi.fn((repo: string) => `https://bitbucket.org/${repo}.git`),
+    ...overrides,
+  };
+}
+
 async function captureError<T>(promise: Promise<T>): Promise<Error> {
   try {
     await promise;
@@ -346,6 +399,79 @@ describe('ReviewOrchestrator', () => {
       expect(fetchBranchFromUrlSpy).not.toHaveBeenCalled();
       expect(switchBranchSpy).toHaveBeenCalledWith('feature/github');
     });
+
+    it('checks out a same-repository Bitbucket Cloud pull request from its source branch', async () => {
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.checkout('21', 'workspace/repo');
+
+      expect(result.branch).toBe('feature/bitbucket');
+      expect(fetchBranchSpy).toHaveBeenCalledWith('feature/bitbucket');
+      expect(fetchRefSpy).not.toHaveBeenCalled();
+      expect(fetchBranchFromUrlSpy).not.toHaveBeenCalled();
+      expect(switchBranchSpy).toHaveBeenCalledWith('feature/bitbucket');
+    });
+
+    it('checks out a fork Bitbucket Cloud pull request from the source repository URL', async () => {
+      const forkRef: ReviewTargetRef = {
+        provider: 'bitbucket-cloud',
+        repository: 'workspace/repo',
+        targetType: 'pull_request',
+        targetId: '21',
+      };
+      const forkTarget = {
+        ...(await createBitbucketMockProvider().getTargetSnapshot(forkRef)),
+        headRepository: 'contributor/repo',
+      };
+      const bitbucketProvider = createBitbucketMockProvider({
+        getTargetSnapshot: vi.fn().mockResolvedValue(forkTarget),
+      });
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.checkout('21', 'workspace/repo');
+
+      expect(result.branch).toBe('feature/bitbucket');
+      expect(fetchBranchFromUrlSpy).toHaveBeenCalledWith(
+        'https://bitbucket.org/contributor/repo.git',
+        'feature/bitbucket',
+      );
+      expect(fetchRefSpy).not.toHaveBeenCalled();
+      expect(fetchBranchSpy).not.toHaveBeenCalled();
+      expect(switchBranchSpy).toHaveBeenCalledWith('feature/bitbucket');
+    });
+
+    it('explains unreachable Bitbucket Cloud source branches without using a permanent PR refspec', async () => {
+      fetchBranchSpy.mockRejectedValueOnce(new Error('could not find remote ref feature/bitbucket'));
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const error = await captureError(orchestrator.checkout('21', 'workspace/repo'));
+
+      expect(error.message).toContain('The source branch "feature/bitbucket" is no longer reachable.');
+      expect(error.message).toContain('This provider did not expose a checkout fallback ref');
+      expect(error.message).toContain('Source branch fetch failed: could not find remote ref feature/bitbucket');
+      expect(fetchRefSpy).not.toHaveBeenCalled();
+      expect(switchBranchSpy).not.toHaveBeenCalled();
+    });
+
+    it('shallow-clones a Bitbucket Cloud pull request source branch outside a git repo', async () => {
+      isGitRepoSpy.mockResolvedValueOnce(false);
+      const clonedTo = path.join(tmpDir, 'repo-feature-bitbucket');
+      const cloneSpy = vi.spyOn(GitHelper, 'clone').mockResolvedValue(clonedTo);
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      try {
+        const result = await orchestrator.checkout('21', 'workspace/repo');
+
+        expect(result).toMatchObject({ branch: 'feature/bitbucket', clonedTo });
+        expect(cloneSpy).toHaveBeenCalledWith('https://bitbucket.org/workspace/repo.git', 'feature/bitbucket', tmpDir);
+        expect(fetchRefSpy).not.toHaveBeenCalled();
+      } finally {
+        cloneSpy.mockRestore();
+      }
+    });
   });
 
   describe('prepare', () => {
@@ -360,6 +486,93 @@ describe('ReviewOrchestrator', () => {
       expect(onProgress).not.toHaveBeenCalled();
       const latestPatch = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'latest.patch'), 'utf-8');
       expect(latestPatch).toBe(localPatch());
+    });
+
+    it('prepares Bitbucket Cloud pull requests from local git diff artifacts', async () => {
+      currentBranchSpy.mockResolvedValue('feature/bitbucket');
+      const bitbucketProvider = createBitbucketMockProvider();
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.prepare('21', 'workspace/repo');
+
+      expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
+      expect(result.bundle.target.provider).toBe('bitbucket-cloud');
+      expect(result.bundle.versions[0]).toMatchObject({
+        versionId: 'bbb',
+        headCommitSha: 'bbb',
+        baseCommitSha: 'aaa',
+        startCommitSha: 'aaa',
+        realSize: 1,
+      });
+      expect(result.bundleState.local).toMatchObject({
+        branch: 'feature/bitbucket',
+        headSha: 'bbb',
+        matchesTargetSourceBranch: true,
+        matchesTargetHead: true,
+      });
+
+      const diffsDir = path.join(tmpDir, '.revpack', 'diffs');
+      const latestPatch = await fs.readFile(path.join(diffsDir, 'latest.patch'), 'utf-8');
+      const filesJson = JSON.parse(await fs.readFile(path.join(diffsDir, 'files.json'), 'utf-8')) as {
+        files: Array<{ newPath: string; oldPath: string; patchFile: string }>;
+      };
+      const lineMap = await fs.readFile(path.join(diffsDir, 'line-map.ndjson'), 'utf-8');
+      const changeBlocks = JSON.parse(await fs.readFile(path.join(diffsDir, 'change-blocks.json'), 'utf-8')) as {
+        blocks: unknown[];
+      };
+      const perFilePatch = await fs.readFile(path.join(diffsDir, filesJson.files[0].patchFile), 'utf-8');
+
+      expect(latestPatch).toBe(localPatch());
+      expect(filesJson.files[0]).toMatchObject({ oldPath: 'src/app.ts', newPath: 'src/app.ts' });
+      expect(filesJson.files[0].patchFile).toMatch(/patches\/by-file\/F001-/);
+      expect(lineMap).toContain('"fileId":"F001"');
+      expect(changeBlocks.blocks).toHaveLength(1);
+      expect(perFilePatch).toBe(localPatch());
+    });
+
+    it('accepts Bitbucket Cloud abbreviated head hashes when local HEAD expands them', async () => {
+      const shortHeadSha = 'fb0aebbd3d5b';
+      const fullHeadSha = 'fb0aebbd3d5b858c6024745659c9f4211d186589';
+      currentBranchSpy.mockResolvedValue('feature/bitbucket');
+      headShaSpy.mockResolvedValue(fullHeadSha);
+      const bitbucketProvider = createBitbucketMockProvider({
+        getTargetSnapshot: vi.fn().mockResolvedValue({
+          ...(await createBitbucketMockProvider().getTargetSnapshot({
+            provider: 'bitbucket-cloud',
+            repository: 'workspace/repo',
+            targetType: 'pull_request',
+            targetId: '21',
+          })),
+          diffRefs: { baseSha: 'aaa', headSha: shortHeadSha, startSha: 'aaa' },
+        }),
+        getDiffVersions: vi.fn().mockResolvedValue([
+          {
+            provider: 'bitbucket-cloud',
+            targetRef: {
+              provider: 'bitbucket-cloud',
+              repository: 'workspace/repo',
+              targetType: 'pull_request',
+              targetId: '21',
+            },
+            versionId: shortHeadSha,
+            headCommitSha: shortHeadSha,
+            baseCommitSha: 'aaa',
+            startCommitSha: 'aaa',
+            createdAt: '2026-01-02T00:00:00Z',
+            realSize: 1,
+          },
+        ]),
+      });
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      const result = await orchestrator.prepare('21', 'workspace/repo');
+
+      expect(result.bundleState.local).toMatchObject({
+        headSha: fullHeadSha,
+        matchesTargetHead: true,
+      });
+      expect(result.bundleState.prepare.current.targetHeadSha).toBe(shortHeadSha);
+      expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', shortHeadSha);
     });
 
     it('prints a minimal message and streams git fetch when commits are missing', async () => {

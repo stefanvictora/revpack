@@ -211,8 +211,15 @@ describe('BitbucketCloudProvider target reads', () => {
     expect(targets.map((target) => target.targetId)).toEqual(['1', '2']);
   });
 
-  it('uses pull request head metadata as the diff version', async () => {
-    installFetch(() => jsonResponse(pullRequest()));
+  it('uses pull request head metadata and diffstat count as the synthetic diff version', async () => {
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      if (url.includes('/diffstat')) {
+        return jsonResponse({ values: [{}, {}] });
+      }
+      return jsonResponse(pullRequest());
+    });
 
     await expect(provider.getDiffVersions(ref)).resolves.toEqual([
       {
@@ -223,9 +230,33 @@ describe('BitbucketCloudProvider target reads', () => {
         baseCommitSha: 'base-sha',
         startCommitSha: 'base-sha',
         createdAt: '2026-01-02T00:00:00.000000+00:00',
-        realSize: 0,
+        realSize: 2,
       },
     ]);
+    expect(urls).toEqual([
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42',
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/diffstat?pagelen=100',
+    ]);
+    expect(urls.some((url) => url.endsWith('/patch'))).toBe(false);
+  });
+
+  it('counts diffstat entries across pages', async () => {
+    installFetch((url) => {
+      if (url.includes('/diffstat') && !url.includes('page=2')) {
+        return jsonResponse({
+          values: [{}],
+          next: 'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/diffstat?page=2',
+        });
+      }
+      if (url.includes('/diffstat?page=2')) {
+        return jsonResponse({ values: [{}, {}] });
+      }
+      return jsonResponse(pullRequest());
+    });
+
+    const versions = await provider.getDiffVersions(ref);
+
+    expect(versions[0].realSize).toBe(3);
   });
 
   it('updates pull request descriptions through the pullrequests API', async () => {

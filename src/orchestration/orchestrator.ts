@@ -1,4 +1,5 @@
 import type { CheckoutBranchTarget, CheckoutFallbackRef, ReviewProvider } from '../providers/provider.js';
+import { sameCommitSha } from '../core/commits.js';
 import type {
   ReviewTarget,
   ReviewTargetRef,
@@ -198,7 +199,8 @@ export class ReviewOrchestrator {
     }
 
     // Check local HEAD matches MR/PR head
-    if (localHeadSha !== mrHeadSha) {
+    const localHeadMatchesTarget = sameCommitSha(localHeadSha, mrHeadSha);
+    if (!localHeadMatchesTarget) {
       const isAncestor = await this.git.isAncestor(mrHeadSha).catch(() => false);
       if (isAncestor) {
         // Local is ahead of MR head
@@ -246,7 +248,7 @@ export class ReviewOrchestrator {
     const currentDescriptionDigest = computeContentHash(sanitizeDescriptionForAgent(target.description ?? ''));
 
     // Compare against checkpoint (not previous local prepare)
-    const targetCodeChanged = remoteCheckpoint ? remoteCheckpoint.headSha !== mrHeadSha : null;
+    const targetCodeChanged = remoteCheckpoint ? !sameCommitSha(remoteCheckpoint.headSha, mrHeadSha) : null;
 
     const threadsChanged = remoteCheckpoint?.threadsDigest
       ? remoteCheckpoint.threadsDigest !== currentThreadsDigest
@@ -281,7 +283,7 @@ export class ReviewOrchestrator {
       branch: localBranch,
       headSha: localHeadSha,
       matchesTargetSourceBranch: localBranch === target.sourceBranch,
-      matchesTargetHead: localHeadSha === mrHeadSha,
+      matchesTargetHead: localHeadMatchesTarget,
       checkedAt: new Date().toISOString(),
     };
 
@@ -445,7 +447,7 @@ export class ReviewOrchestrator {
           clonedDir = await GitHelper.clone(cloneUrl, target.sourceBranch, this.git.cwd);
         } catch (sourceError) {
           if (!checkoutFallback) {
-            throw sourceError;
+            throw this.sourceBranchCheckoutError(target, sourceError);
           }
 
           try {
@@ -907,7 +909,7 @@ export class ReviewOrchestrator {
     sourceError: unknown,
   ): Promise<string> {
     if (!fallback) {
-      throw sourceError;
+      throw this.sourceBranchCheckoutError(target, sourceError);
     }
 
     try {
@@ -935,6 +937,27 @@ export class ReviewOrchestrator {
         ].join('\n'),
         { cause: fallbackError },
       )
+    );
+  }
+
+  private sourceBranchCheckoutError(target: ReviewTarget, sourceError: unknown): Error {
+    const targetKind = formatTargetKind(target);
+    const targetDisplayId = formatTargetDisplayId(target);
+    const repoDetail = target.headRepository
+      ? `Source repository: ${target.headRepository}`
+      : `Repository: ${target.repository}`;
+    return new Error(
+      [
+        `Could not check out ${targetKind} ${targetDisplayId}.`,
+        '',
+        `The source branch "${target.sourceBranch}" is no longer reachable.`,
+        repoDetail,
+        '',
+        `revpack checks out this target by fetching its source branch from Git. This provider did not expose a checkout fallback ref, so the target can only be checked out while the source branch or head commit is reachable.`,
+        '',
+        `Source branch fetch failed: ${errorMessage(sourceError)}`,
+      ].join('\n'),
+      { cause: sourceError },
     );
   }
 
