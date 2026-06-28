@@ -106,7 +106,8 @@ export class BitbucketCloudProvider implements ReviewProvider {
     const pr = await this.request<BitbucketPullRequest>(
       `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}`,
     );
-    return this.mapPullRequest(ref.repository, pr);
+    const diffRefs = await this.expandDiffRefs(ref.repository, pr);
+    return this.mapPullRequest(ref.repository, pr, diffRefs);
   }
 
   listUnresolvedThreads(_ref: ReviewTargetRef): Promise<ReviewThread[]> {
@@ -278,7 +279,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
     return `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}`;
   }
 
-  private mapPullRequest(repo: string, pr: BitbucketPullRequest): ReviewTarget {
+  private mapPullRequest(repo: string, pr: BitbucketPullRequest, diffRefs = this.mapDiffRefs(pr)): ReviewTarget {
     const sourceRepository = pr.source?.repository?.full_name;
     const isFork = sourceRepository != null && sourceRepository !== repo;
 
@@ -297,9 +298,31 @@ export class BitbucketCloudProvider implements ReviewProvider {
       createdAt: pr.created_on,
       updatedAt: pr.updated_on,
       labels: [],
-      diffRefs: this.mapDiffRefs(pr),
+      diffRefs,
       ...(isFork ? { headRepository: sourceRepository } : {}),
     };
+  }
+
+  private async expandDiffRefs(repo: string, pr: BitbucketPullRequest): Promise<DiffRefs> {
+    const diffRefs = this.mapDiffRefs(pr);
+    const sourceRepo = pr.source?.repository?.full_name ?? repo;
+    const destinationRepo = pr.destination?.repository?.full_name ?? repo;
+    const [baseSha, headSha] = await Promise.all([
+      this.expandCommitHash(destinationRepo, diffRefs.baseSha),
+      this.expandCommitHash(sourceRepo, diffRefs.headSha),
+    ]);
+
+    return {
+      baseSha,
+      headSha,
+      startSha: baseSha,
+    };
+  }
+
+  private async expandCommitHash(repo: string, hash: string): Promise<string> {
+    if (!isAbbreviatedSha(hash)) return hash;
+    const commit = await this.request<BitbucketCommit>(`${this.repoPath(repo)}/commit/${hash}`);
+    return commit.hash || hash;
   }
 
   private mapDiffRefs(pr: BitbucketPullRequest): DiffRefs {
@@ -368,4 +391,12 @@ interface BitbucketPullRequestEndpoint {
   branch?: { name?: string | null } | null;
   commit?: { hash?: string | null } | null;
   repository?: { full_name?: string | null } | null;
+}
+
+interface BitbucketCommit {
+  hash?: string;
+}
+
+function isAbbreviatedSha(hash: string): boolean {
+  return /^[0-9a-f]{7,39}$/i.test(hash);
 }

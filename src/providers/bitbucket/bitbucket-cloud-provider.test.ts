@@ -146,6 +146,46 @@ describe('BitbucketCloudProvider target reads', () => {
     });
   });
 
+  it('expands abbreviated pull request commit hashes for snapshots', async () => {
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      if (url.endsWith('/commit/0731551ad420')) {
+        return jsonResponse({ type: 'commit', hash: '0731551ad42031e97ee04a34c7fe40e3bd906833' });
+      }
+      if (url.endsWith('/commit/fb0aebbd3d5b')) {
+        return jsonResponse({ type: 'commit', hash: 'fb0aebbd3d5b858c6024745659c9f4211d186589' });
+      }
+      return jsonResponse(
+        pullRequest({
+          source: {
+            branch: { name: 'pr-test' },
+            commit: { hash: 'fb0aebbd3d5b' },
+            repository: { full_name: 'workspace/repo' },
+          },
+          destination: {
+            branch: { name: 'main' },
+            commit: { hash: '0731551ad420' },
+            repository: { full_name: 'workspace/repo' },
+          },
+        }),
+      );
+    });
+
+    const target = await provider.getTargetSnapshot(ref);
+
+    expect(target.diffRefs).toEqual({
+      baseSha: '0731551ad42031e97ee04a34c7fe40e3bd906833',
+      headSha: 'fb0aebbd3d5b858c6024745659c9f4211d186589',
+      startSha: '0731551ad42031e97ee04a34c7fe40e3bd906833',
+    });
+    expect(urls).toEqual([
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42',
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/commit/0731551ad420',
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/commit/fb0aebbd3d5b',
+    ]);
+  });
+
   it('falls back across nullable description, author, and URL fields', async () => {
     installFetch(() =>
       jsonResponse(
@@ -215,6 +255,12 @@ describe('BitbucketCloudProvider target reads', () => {
     const urls: string[] = [];
     installFetch((url) => {
       urls.push(url);
+      if (url.endsWith('/commit/0731551ad420')) {
+        return jsonResponse({ type: 'commit', hash: '0731551ad42031e97ee04a34c7fe40e3bd906833' });
+      }
+      if (url.endsWith('/commit/fb0aebbd3d5b')) {
+        return jsonResponse({ type: 'commit', hash: 'fb0aebbd3d5b858c6024745659c9f4211d186589' });
+      }
       return jsonResponse(pullRequest());
     });
 

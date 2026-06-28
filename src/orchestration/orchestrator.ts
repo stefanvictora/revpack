@@ -770,15 +770,17 @@ export class ReviewOrchestrator {
     const baseRepoRemote = this.baseRepositoryRemoteForFork(target);
     const baseObjectRemotes = baseRepoRemote ? ['origin', baseRepoRemote] : ['origin'];
 
-    missing = await this.tryFetchMissingCommitsFromRemotes(
-      missing,
-      baseSha,
-      headSha,
-      baseObjectRemotes,
-      fetchErrors,
-      reportFetch,
-    );
-    if (missing.length === 0) return;
+    if (target.provider !== 'bitbucket-cloud') {
+      missing = await this.tryFetchMissingCommitsFromRemotes(
+        missing,
+        baseSha,
+        headSha,
+        baseObjectRemotes,
+        fetchErrors,
+        reportFetch,
+      );
+      if (missing.length === 0) return;
+    }
 
     missing = await this.tryFetchBranchFromRemotes(
       target.targetBranch,
@@ -887,6 +889,8 @@ export class ReviewOrchestrator {
     reportFetch: boolean,
   ): Promise<void> {
     for (const sha of missing) {
+      if (isAbbreviatedCommitSha(sha)) continue;
+
       try {
         await this.git.fetchCommit(sha, remote, { depth: 1, noTags: true, progress: reportFetch });
       } catch (err) {
@@ -1007,4 +1011,8 @@ function errorMessage(error: unknown): string {
 
 function shortSha(sha: string): string {
   return sha ? sha.slice(0, 8) : '<missing>';
+}
+
+function isAbbreviatedCommitSha(sha: string): boolean {
+  return /^[0-9a-f]{7,39}$/i.test(sha);
 }

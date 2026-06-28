@@ -571,6 +571,53 @@ describe('ReviewOrchestrator', () => {
       expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', shortHeadSha);
     });
 
+    it('fetches target branches instead of Bitbucket Cloud commit hashes', async () => {
+      const fullBaseSha = '0731551ad42031e97ee04a34c7fe40e3bd906833';
+      const fullHeadSha = 'fb0aebbd3d5b858c6024745659c9f4211d186589';
+      currentBranchSpy.mockResolvedValue('feature/bitbucket');
+      headShaSpy.mockResolvedValue(fullHeadSha);
+      hasCommitSpy
+        .mockResolvedValueOnce(false) // initial check baseSha
+        .mockResolvedValueOnce(true) // initial check headSha
+        .mockResolvedValueOnce(true) // after fetchBranch(targetBranch): baseSha resolved
+        .mockResolvedValueOnce(true); // after fetchBranch(targetBranch): headSha ok
+
+      const bitbucketProvider = createBitbucketMockProvider({
+        getTargetSnapshot: vi.fn().mockResolvedValue({
+          ...(await createBitbucketMockProvider().getTargetSnapshot({
+            provider: 'bitbucket-cloud',
+            repository: 'workspace/repo',
+            targetType: 'pull_request',
+            targetId: '21',
+          })),
+          diffRefs: { baseSha: fullBaseSha, headSha: fullHeadSha, startSha: fullBaseSha },
+        }),
+        getDiffVersions: vi.fn().mockResolvedValue([
+          {
+            provider: 'bitbucket-cloud',
+            targetRef: {
+              provider: 'bitbucket-cloud',
+              repository: 'workspace/repo',
+              targetType: 'pull_request',
+              targetId: '21',
+            },
+            versionId: fullHeadSha,
+            headCommitSha: fullHeadSha,
+            baseCommitSha: fullBaseSha,
+            startCommitSha: fullBaseSha,
+            createdAt: '2026-01-02T00:00:00Z',
+          },
+        ]),
+      });
+      const orchestrator = new ReviewOrchestrator({ provider: bitbucketProvider, workingDir: tmpDir });
+
+      await orchestrator.prepare('21', 'workspace/repo', { onProgress: vi.fn() });
+
+      expect(fetchCommitSpy).not.toHaveBeenCalled();
+      expect(fetchBranchSpy).toHaveBeenCalledWith('main', 'origin', { depth: 1, noTags: true, progress: true });
+      expect(diffForReviewSpy).toHaveBeenCalledWith(fullBaseSha, fullHeadSha);
+    });
+
     it('prints a minimal message and streams git fetch when commits are missing', async () => {
       hasCommitSpy
         .mockResolvedValueOnce(false)
