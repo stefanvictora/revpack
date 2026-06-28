@@ -404,7 +404,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
   }
 
   private commentBody(comment: BitbucketComment): string {
-    return comment.content?.raw ?? comment.content?.markup ?? '';
+    return comment.content?.raw ?? '';
   }
 
   private detectOrigin(body: string, user?: BitbucketUser | null): CommentOrigin {
