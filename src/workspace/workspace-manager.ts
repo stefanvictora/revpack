@@ -120,6 +120,7 @@ interface ContextTemplateView {
 interface InstructionTemplateView {
   suggestionFence: 'suggestion' | 'suggestion:-0+0';
   suggestionSupportsRangeOffsets: boolean;
+  useBitbucketHandoverMarkdown: boolean;
 }
 
 function buildInstructionRoute(
@@ -1258,9 +1259,11 @@ export class WorkspaceManager {
 
   private buildInstructionTemplateView(target: ReviewTarget): InstructionTemplateView {
     const suggestionSupportsRangeOffsets = target.provider === 'gitlab';
+    const usesBitbucketMarkdown = target.provider === 'bitbucket-cloud';
     return {
       suggestionFence: suggestionSupportsRangeOffsets ? 'suggestion:-0+0' : 'suggestion',
       suggestionSupportsRangeOffsets,
+      useBitbucketHandoverMarkdown: usesBitbucketMarkdown,
     };
   }
 

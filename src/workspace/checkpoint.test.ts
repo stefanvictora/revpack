@@ -10,7 +10,8 @@ import {
   CHECKPOINT_MARKER_START,
   CHECKPOINT_MARKER_END,
   CHECKPOINT_STATE_BLOCK_REGEX,
-  REVIEW_NOTE_MARKER,
+  CHECKPOINT_MARKDOWN_LINK_TEXT,
+  CHECKPOINT_MARKDOWN_LINK_STATE_BLOCK_REGEX,
   REVIEW_NOTE_FOOTER,
 } from './checkpoint.js';
 import type { ReviewTargetRef } from '../core/types.js';
@@ -20,6 +21,13 @@ const targetRef: ReviewTargetRef = {
   repository: 'edm/zareg/edmreg',
   targetType: 'merge_request',
   targetId: '902',
+};
+
+const bitbucketTargetRef: ReviewTargetRef = {
+  provider: 'bitbucket-cloud',
+  repository: 'workspace/repo',
+  targetType: 'pull_request',
+  targetId: '21',
 };
 
 describe('checkpoint serializer', () => {
@@ -92,6 +100,28 @@ ${buildDescriptionStateBlock(state)}`;
     const description = `# My MR\n\n<!-- revpack:state\nnot-valid-data\n-->`;
     expect(parseDescriptionState(description)).toBeNull();
   });
+
+  it('parses markdown link state blocks', () => {
+    const state = buildCheckpointState(bitbucketTargetRef, 'abc123', 'def456', 'def456', 'sha256:threads');
+    const description = `# PR\n\n${buildDescriptionStateBlock(state, { markerStyle: 'markdown-link' })}`;
+
+    const parsed = parseDescriptionState(description);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.target.provider).toBe('bitbucket-cloud');
+    expect(parsed!.checkpoint.headSha).toBe('abc123');
+  });
+
+  it('throws on multiple mixed-format state blocks', () => {
+    const state = buildCheckpointState(bitbucketTargetRef, 'abc', 'def', 'def', null);
+    const description = `# PR
+
+${buildDescriptionStateBlock(state)}
+
+${buildDescriptionStateBlock(state, { markerStyle: 'markdown-link' })}`;
+
+    expect(() => parseDescriptionState(description)).toThrow('multiple revpack state blocks');
+  });
 });
 
 describe('patchDescriptionWithState', () => {
@@ -136,6 +166,27 @@ describe('patchDescriptionWithState', () => {
     const description = `# My MR\n\n${block}\n\nText\n\n${block}`;
 
     expect(() => patchDescriptionWithState(description, state)).toThrow('multiple revpack state blocks');
+  });
+
+  it('uses markdown link state blocks for Bitbucket Cloud', () => {
+    const state = buildCheckpointState(bitbucketTargetRef, 'head1', 'base1', 'start1', null);
+    const result = patchDescriptionWithState('# PR\n\nDescription text.', state);
+
+    expect(result).toContain(`[${CHECKPOINT_MARKDOWN_LINK_TEXT}](#revpack-state=`);
+    expect(result).not.toContain(CHECKPOINT_MARKER_START);
+    expect(parseDescriptionState(result)!.checkpoint.headSha).toBe('head1');
+  });
+
+  it('replaces existing html state with markdown link state for Bitbucket Cloud', () => {
+    const oldState = buildCheckpointState(targetRef, 'old-head', 'base', 'start', null);
+    const existing = patchDescriptionWithState('# PR\n\nOriginal text.', oldState);
+    const newState = buildCheckpointState(bitbucketTargetRef, 'new-head', 'base', 'start', null);
+
+    const updated = patchDescriptionWithState(existing, newState);
+
+    expect(updated).toContain(`[${CHECKPOINT_MARKDOWN_LINK_TEXT}](#revpack-state=`);
+    expect(updated).not.toContain(CHECKPOINT_MARKER_START);
+    expect(parseDescriptionState(updated)!.checkpoint.headSha).toBe('new-head');
   });
 
   it('preserves unrelated description content', () => {
@@ -192,6 +243,22 @@ ${buildDescriptionStateBlock(state)}`;
     expect(sanitized).not.toContain('## Changed');
     expect(sanitized).not.toContain('<!-- revpack:end -->');
     expect(sanitized).not.toContain('<!-- revpack:state');
+  });
+
+  it('removes markdown heading summary and link state blocks from description', () => {
+    const state = buildCheckpointState(bitbucketTargetRef, 'abc', 'def', 'def', null);
+    const description = `# PR
+
+###### revpack:summary
+## Changed
+- Updated login flow.
+###### revpack:end
+
+${buildDescriptionStateBlock(state, { markerStyle: 'markdown-link' })}`;
+
+    const sanitized = sanitizeDescriptionForAgent(description);
+
+    expect(sanitized).toBe('# PR');
   });
 
   it('returns description unchanged when no state block', () => {
@@ -255,10 +322,6 @@ describe('checkpoint constants', () => {
     expect(CHECKPOINT_MARKER_END).toBe('-->');
   });
 
-  it('REVIEW_NOTE_MARKER has correct value', () => {
-    expect(REVIEW_NOTE_MARKER).toBe('<!-- revpack:review-note -->');
-  });
-
   it('REVIEW_NOTE_FOOTER contains the expected content', () => {
     expect(REVIEW_NOTE_FOOTER).toContain('<sub>');
     expect(REVIEW_NOTE_FOOTER).toContain('revpack');
@@ -269,6 +332,13 @@ describe('checkpoint constants', () => {
     const matches = block.match(CHECKPOINT_STATE_BLOCK_REGEX);
     expect(matches).toHaveLength(1);
     expect(matches![0]).toBe(block);
+  });
+
+  it('CHECKPOINT_MARKDOWN_LINK_STATE_BLOCK_REGEX matches link state blocks', () => {
+    const block = '[revpack-checkpoint](#revpack-state=SOME_DATA)';
+    const matches = [...block.matchAll(CHECKPOINT_MARKDOWN_LINK_STATE_BLOCK_REGEX)];
+    expect(matches).toHaveLength(1);
+    expect(matches[0][1]).toBe('SOME_DATA');
   });
 });
 

@@ -343,7 +343,9 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
     body = content!;
   } else {
     const target = await orchestrator.open(undefined, defaultRepo);
-    body = mergeWithMarkers(target.description, content!);
+    body = mergeWithMarkers(target.description, content!, {
+      markerStyle: target.provider === 'bitbucket-cloud' ? 'markdown-heading' : 'html',
+    });
   }
 
   await orchestrator.updateDescription(undefined, body, defaultRepo);

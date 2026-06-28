@@ -274,6 +274,25 @@ describe('publish command internals', () => {
     );
   });
 
+  it('uses markdown heading summary markers for Bitbucket Cloud descriptions', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), 'Generated summary', 'utf-8');
+
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ provider: 'bitbucket-cloud', description: 'Existing description' }),
+      updateDescription: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishDescription({})).resolves.toBe(1);
+
+    expect(orchestrator.updateDescription).toHaveBeenCalledWith(
+      undefined,
+      expect.stringContaining('###### revpack:summary\nGenerated summary\n###### revpack:end'),
+      'group/project',
+    );
+  });
+
   it('skips the default summary when it is already published', async () => {
     const summary = 'Generated summary';
     await writeBundleState('gitlab', { summaryHash: computeContentHash(summary) });

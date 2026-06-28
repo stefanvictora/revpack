@@ -141,6 +141,15 @@ describe('WorkspaceManager', () => {
         webUrl: '',
       };
     }
+    if (provider === 'bitbucket-cloud') {
+      return {
+        ...target,
+        provider,
+        repository: 'workspace/repo',
+        targetType: 'pull_request',
+        webUrl: 'https://bitbucket.org/workspace/repo/pull-requests/42',
+      };
+    }
     return target;
   }
 
@@ -217,6 +226,8 @@ describe('WorkspaceManager', () => {
     expect(suggestionsInstructions).not.toContain('suggestion:-0+0');
     expect(suggestionsInstructions).not.toContain('suggestion:-1+2');
     expect(suggestionsInstructions).toContain('The fence stays plain `suggestion`');
+    expect(findingsInstructions).toContain('<details>');
+    expect(findingsInstructions).toContain('<summary>🤖 Prompt for AI Agents</summary>');
   });
 
   it('renders GitLab instruction templates with range-offset suggestion fences', async () => {
@@ -258,6 +269,34 @@ describe('WorkspaceManager', () => {
     expect(suggestionsInstructions).not.toContain('suggestion:-1+2');
   });
 
+  it('renders Bitbucket handover prompts without HTML details', async () => {
+    const target = makeTargetForProvider('bitbucket-cloud');
+    const { threadIndex } = await createBundle(manager, target, [makeThread()], [makeDiff()]);
+
+    await manager.writeContext(target, [makeThread()], [makeDiff()], threadIndex);
+
+    const bundleDir = path.join(tmpDir, '.revpack');
+    const repliesInstructions = await fs.readFile(
+      path.join(bundleDir, 'instructions', '02-thread-replies.md'),
+      'utf-8',
+    );
+    const findingsInstructions = await fs.readFile(
+      path.join(bundleDir, 'instructions', '03-new-findings-and-anchors.md'),
+      'utf-8',
+    );
+    const suggestionsInstructions = await fs.readFile(
+      path.join(bundleDir, 'instructions', '04-suggestions-and-agent-handover.md'),
+      'utf-8',
+    );
+
+    expect(repliesInstructions).toContain('#### 🤖 Prompt for AI Agents');
+    expect(findingsInstructions).toContain('#### 🤖 Prompt for AI Agents');
+    expect(suggestionsInstructions).toContain('#### 🤖 Prompt for AI Agents');
+    expect(findingsInstructions).toContain('> Verify this issue against the current code');
+    expect(`${repliesInstructions}\n${findingsInstructions}\n${suggestionsInstructions}`).not.toContain('<details>');
+    expect(`${repliesInstructions}\n${findingsInstructions}\n${suggestionsInstructions}`).not.toContain('<summary>');
+  });
+
   it('keeps generated instruction names as .md and still copies static instruction files', async () => {
     const target = makeTargetForProvider('github');
     const { threadIndex } = await createBundle(manager, target, [], [makeDiff()]);
@@ -270,6 +309,7 @@ describe('WorkspaceManager', () => {
 
     expect(instrEntries).toContain('03-new-findings-and-anchors.md');
     expect(instrEntries).toContain('04-suggestions-and-agent-handover.md');
+    expect(instrEntries).not.toContain('02-thread-replies.md.hbs');
     expect(instrEntries).not.toContain('03-new-findings-and-anchors.md.hbs');
     expect(instrEntries).not.toContain('04-suggestions-and-agent-handover.md.hbs');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');

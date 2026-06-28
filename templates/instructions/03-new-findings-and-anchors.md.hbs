@@ -94,7 +94,7 @@ JSON array. Required fields: `oldPath`, `newPath`, `body`, `severity`, `category
     "oldPath": "src/app.ts",
     "newPath": "src/app.ts",
     "newLine": 42,
-    "body": "**Potential null dereference**: `user.name` is accessed without a null check.\n\nThe changed code reads `user.name` before validating that `user` exists. If the API receives a request without a resolved user, this fails with a runtime error instead of the expected validation response.\n\nSuggested fix: guard the access or return the existing validation response before reading the property.\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/app.ts` around line 42, add a guard before accessing `user.name`. Preserve the existing response behavior for missing users.\n\n</details>",
+    "body": "**Potential null dereference**: `user.name` is accessed without a null check.\n\nThe changed code reads `user.name` before validating that `user` exists. If the API receives a request without a resolved user, this fails with a runtime error instead of the expected validation response.\n\nSuggested fix: guard the access or return the existing validation response before reading the property.{{#if useBitbucketHandoverMarkdown}}\n\n#### 🤖 Prompt for AI Agents\n\n> Verify this issue against the current code and only fix it if still applicable.\n>\n> In `@src/app.ts` around line 42, guard `user.name` access for missing users.{{else}}\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/app.ts` around line 42, guard `user.name` access for missing users.\n\n</details>{{/if}}",
     "severity": "high",
     "category": "correctness"
   }
@@ -116,14 +116,30 @@ Suggested fix: [brief fix direction].
 direct local replacement, if safely applicable
 ```
 
+{{#if useBitbucketHandoverMarkdown}}
+#### 🤖 Prompt for AI Agents
+
+> Verify this issue against the current code and only fix it if still applicable.
+>
+> In `@src/path/to/File.java` around `methodName(...)`, change the current behavior so that [desired behavior].
+>
+> Preserve [important existing behavior, if relevant].
+>
+> Add or update tests covering [specific scenario].
+{{else}}
 <details>
 <summary>🤖 Prompt for AI Agents</summary>
 
 Verify this issue against the current code and only fix it if still applicable.
 
-In `@path/to/File.java` around `methodName(...)`, [describe the full fix and any tests].
+In `@src/path/to/File.java` around `methodName(...)`, change the current behavior so that [desired behavior].
+
+Preserve [important existing behavior, if relevant].
+
+Add or update tests covering [specific scenario].
 
 </details>
+{{/if}}
 ````
 
 Omit the suggestion block when the replacement is not safe or complete.
