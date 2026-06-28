@@ -95,7 +95,7 @@ describe('description summary markers', () => {
     const description = `Before\n\n---\n\n${MARKDOWN_HEADING_MARKER_START}\n## Changed\n- Updated.\n${MARKDOWN_HEADING_MARKER_END}\nAfter`;
 
     expect(extractMarkedSummary(description)).toBe('## Changed\n- Updated.');
-    expect(stripMarkedSummary(description)).toBe('Before\nAfter');
+    expect(stripMarkedSummary(description)).toBe('Before\n\nAfter');
   });
 
   it('replaces existing html markers with the requested marker style', () => {

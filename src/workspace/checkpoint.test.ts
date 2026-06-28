@@ -302,6 +302,14 @@ ${buildDescriptionStateBlock(state, { markerStyle: 'markdown-link' })}`;
     expect(sanitized).not.toContain('<!-- revpack:start -->');
   });
 
+  it('preserves the paragraph break between human sections around stripped summary', () => {
+    const description = `Before paragraph.\n\n###### revpack:summary\nGenerated summary\n###### revpack:end\nAfter paragraph.`;
+
+    const sanitized = sanitizeDescriptionForAgent(description);
+
+    expect(sanitized).toBe('Before paragraph.\n\nAfter paragraph.');
+  });
+
   it('handles MARKER_START present but no MARKER_END', () => {
     const description = `# My MR\n\n<!-- revpack:start -->\nUnclosed section`;
     const sanitized = sanitizeDescriptionForAgent(description);

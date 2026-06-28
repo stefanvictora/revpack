@@ -81,5 +81,11 @@ export function stripMarkedSummary(description: string): string {
 
   const before = description.slice(0, section.startIdx);
   const after = description.slice(section.endIdx + section.markerEnd.length);
-  return before.replace(/\n\n---\n\n$/, '') + after;
+  const beforeWithoutSeparator = before.replace(/\n\n---\n\n$/, '');
+
+  if (beforeWithoutSeparator.trim() && after.trim()) {
+    return `${beforeWithoutSeparator.trimEnd()}\n\n${after.trimStart()}`;
+  }
+
+  return beforeWithoutSeparator + after;
 }
