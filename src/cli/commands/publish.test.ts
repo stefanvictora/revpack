@@ -339,4 +339,64 @@ describe('publish command internals', () => {
       preservePendingOutputs: true,
     });
   });
+
+  it('publishes all Bitbucket outputs through individual non-GitHub operations', async () => {
+    await writeBundleState('bitbucket-cloud');
+    await writeValidFindingBundle();
+    await fs.writeFile(
+      path.join(tmpDir, '.revpack', 'outputs', 'replies.json'),
+      JSON.stringify([{ threadId: '100', body: 'Reply body' }]),
+      'utf-8',
+    );
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), 'Generated summary', 'utf-8');
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), 'Review note', 'utf-8');
+
+    const orchestrator = {
+      publishReply: vi.fn().mockResolvedValue(undefined),
+      publishFinding: vi.fn().mockResolvedValue('finding-1'),
+      publishReviewBatch: vi.fn().mockResolvedValue({ created: true }),
+      open: vi.fn().mockResolvedValue({ description: 'Existing description' }),
+      updateDescription: vi.fn().mockResolvedValue(undefined),
+      publishReview: vi.fn().mockResolvedValue({ created: true, noteId: 'note-1' }),
+      publishCheckpoint: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishAllPending({ refresh: false })).resolves.toBeUndefined();
+
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(undefined, '100', 'Reply body', 'group/project');
+    expect(orchestrator.publishFinding).toHaveBeenCalledTimes(1);
+    expect(orchestrator.publishReviewBatch).not.toHaveBeenCalled();
+    expect(orchestrator.updateDescription).toHaveBeenCalledWith(
+      undefined,
+      expect.stringContaining('Generated summary'),
+      'group/project',
+    );
+    expect(orchestrator.publishReview).toHaveBeenCalledWith('Review note', 'group/project');
+    expect(orchestrator.publishCheckpoint).toHaveBeenCalledWith('group/project');
+  });
+
+  it('warns about partial success when publish all fails after a Bitbucket reply succeeds', async () => {
+    await writeBundleState('bitbucket-cloud');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.revpack', 'outputs', 'replies.json'),
+      JSON.stringify([{ threadId: '100', body: 'Reply body' }]),
+      'utf-8',
+    );
+
+    const orchestrator = {
+      publishReply: vi.fn().mockResolvedValue(undefined),
+      publishFinding: vi.fn(),
+      publishReviewBatch: vi.fn(),
+      publishReview: vi.fn(),
+      publishCheckpoint: vi.fn().mockRejectedValue(new Error('checkpoint failed')),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow('checkpoint failed');
+
+    expect(orchestrator.publishReply).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Publishing failed after one or more'));
+  });
 });

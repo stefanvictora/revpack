@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added Bitbucket Cloud pull request target resolution, branch auto-detection, metadata mapping, and `revpack status` display support.
 - Added Bitbucket Cloud pull request checkout and prepare support using source branch/fork checkout plus local Git diff bundle generation.
 - Added Bitbucket Cloud pull request comment mapping so prepared bundles include review threads, replies, inline positions, resolution state, and managed review note filtering.
+- Added Bitbucket Cloud publishing for replies, thread resolution, inline findings, review notes, summary updates, checkpoints, and `revpack publish all`.
 
 ### Changed
 

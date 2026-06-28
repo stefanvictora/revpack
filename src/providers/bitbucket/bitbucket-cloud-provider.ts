@@ -148,12 +148,15 @@ export class BitbucketCloudProvider implements ReviewProvider {
     ];
   }
 
-  postReply(_ref: ReviewTargetRef, _threadId: string, _body: string): Promise<void> {
-    return Promise.reject(this.unsupported('reply publishing'));
+  async postReply(ref: ReviewTargetRef, threadId: string, body: string): Promise<void> {
+    await this.createComment(ref, {
+      content: { raw: body },
+      parent: { id: Number(threadId) },
+    });
   }
 
-  resolveThread(_ref: ReviewTargetRef, _threadId: string): Promise<void> {
-    return Promise.reject(this.unsupported('thread resolution'));
+  async resolveThread(ref: ReviewTargetRef, threadId: string): Promise<void> {
+    await this.request(`${this.commentPath(ref, threadId)}/resolve`, { method: 'POST' });
   }
 
   async updateDescription(ref: ReviewTargetRef, body: string): Promise<void> {
@@ -163,16 +166,25 @@ export class BitbucketCloudProvider implements ReviewProvider {
     });
   }
 
-  createThread(_ref: ReviewTargetRef, _body: string, _position?: NewThreadPosition): Promise<string> {
-    return Promise.reject(this.unsupported('inline review comments'));
+  async createThread(ref: ReviewTargetRef, body: string, position?: NewThreadPosition): Promise<string> {
+    const payload: BitbucketCommentCreatePayload = { content: { raw: body } };
+    if (position) {
+      payload.inline = this.buildInlinePosition(position);
+    }
+    const comment = await this.createComment(ref, payload);
+    return String(comment.id);
   }
 
-  createNote(_ref: ReviewTargetRef, _body: string, _options?: { internal?: boolean }): Promise<string> {
-    return Promise.reject(this.unsupported('review notes'));
+  async createNote(ref: ReviewTargetRef, body: string, _options?: { internal?: boolean }): Promise<string> {
+    const comment = await this.createComment(ref, { content: { raw: body } });
+    return String(comment.id);
   }
 
-  updateNote(_ref: ReviewTargetRef, _noteId: string, _body: string): Promise<void> {
-    return Promise.reject(this.unsupported('review notes'));
+  async updateNote(ref: ReviewTargetRef, noteId: string, body: string): Promise<void> {
+    await this.request(this.commentPath(ref, noteId), {
+      method: 'PUT',
+      body: { content: { raw: body } },
+    });
   }
 
   getCloneUrl(repo: string): string {
@@ -196,7 +208,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
         ? ` (${String((cause as NodeJS.ErrnoException).cause)})`
         : '';
       throw new ProviderError(
-        `Network error reaching ${new URL(url).hostname}${detail}: ${cause.message}`,
+        `Network error reaching ${new URL(url).hostname}${detail}: ${this.redact(cause.message)}`,
         'bitbucket-cloud',
       );
     }
@@ -223,7 +235,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
           ? ` (${String((cause as NodeJS.ErrnoException).cause)})`
           : '';
         throw new ProviderError(
-          `Network error reaching ${new URL(nextUrl).hostname}${detail}: ${cause.message}`,
+          `Network error reaching ${new URL(nextUrl).hostname}${detail}: ${this.redact(cause.message)}`,
           'bitbucket-cloud',
         );
       }
@@ -260,8 +272,22 @@ export class BitbucketCloudProvider implements ReviewProvider {
 
     if (res.status === 404) {
       const text = await res.text().catch(() => '');
+      throw new ProviderError(this.notFoundMessage(text), 'bitbucket-cloud', res.status);
+    }
+
+    if (res.status === 400) {
+      const text = await res.text().catch(() => '');
       throw new ProviderError(
-        `Bitbucket Cloud resource not found or inaccessible (404). Check repository access and pull request id. ${text}`.trim(),
+        `Bitbucket Cloud rejected the request (400). Check pull request comment fields and inline anchors. ${this.redact(text)}`.trim(),
+        'bitbucket-cloud',
+        res.status,
+      );
+    }
+
+    if (res.status === 409) {
+      const text = await res.text().catch(() => '');
+      throw new ProviderError(
+        `Bitbucket Cloud could not apply the requested state change (409). The comment thread may already be resolved or otherwise conflict with the current pull request state. ${this.redact(text)}`.trim(),
         'bitbucket-cloud',
         res.status,
       );
@@ -270,7 +296,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new ProviderError(
-        `Bitbucket Cloud API error: ${res.status} ${res.statusText} — ${text}`,
+        `Bitbucket Cloud API error: ${res.status} ${res.statusText} — ${this.redact(text)}`,
         'bitbucket-cloud',
         res.status,
       );
@@ -288,6 +314,39 @@ export class BitbucketCloudProvider implements ReviewProvider {
   private repoPath(repo: string): string {
     const { workspace, slug } = splitRepository(repo);
     return `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}`;
+  }
+
+  private commentsPath(ref: ReviewTargetRef): string {
+    return `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}/comments`;
+  }
+
+  private commentPath(ref: ReviewTargetRef, commentId: string): string {
+    return `${this.commentsPath(ref)}/${encodeURIComponent(commentId)}`;
+  }
+
+  private async createComment(ref: ReviewTargetRef, payload: BitbucketCommentCreatePayload): Promise<BitbucketComment> {
+    return this.request<BitbucketComment>(this.commentsPath(ref), {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  private buildInlinePosition(position: NewThreadPosition): BitbucketInlinePosition {
+    const isOldSide = position.oldLine != null && position.newLine == null;
+    return isOldSide
+      ? { path: position.oldPath, from: position.oldLine }
+      : { path: position.newPath, to: position.newLine };
+  }
+
+  private notFoundMessage(text: string): string {
+    return (
+      'Bitbucket Cloud resource not found or inaccessible (404). Check repository access, pull request id, comment id, and inline anchor paths. ' +
+      this.redact(text)
+    ).trim();
+  }
+
+  private redact(value: string): string {
+    return value.split(this.email).join('[REDACTED_EMAIL]').split(this.token).join('[REDACTED_TOKEN]');
   }
 
   private mapPullRequest(repo: string, pr: BitbucketPullRequest, diffRefs = this.mapDiffRefs(pr)): ReviewTarget {
@@ -417,10 +476,6 @@ export class BitbucketCloudProvider implements ReviewProvider {
     if (normalized.includes('[bot]') || normalized.includes('bot')) return 'bot';
     return 'human';
   }
-
-  private unsupported(feature: string): ProviderError {
-    return new ProviderError(`Bitbucket Cloud ${feature} is not supported yet.`, 'bitbucket-cloud');
-  }
 }
 
 function splitRepository(repository: string): { workspace: string; slug: string } {
@@ -499,6 +554,18 @@ interface BitbucketComment {
     to?: number | null;
   } | null;
   resolution?: unknown;
+}
+
+interface BitbucketCommentCreatePayload {
+  content: { raw: string };
+  parent?: { id: number };
+  inline?: BitbucketInlinePosition;
+}
+
+interface BitbucketInlinePosition {
+  path: string;
+  from?: number;
+  to?: number;
 }
 
 interface BitbucketUser {
