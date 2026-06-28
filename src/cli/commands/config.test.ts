@@ -2,11 +2,13 @@ import { Command } from 'commander';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   deriveProfileNameFromProviderUrl,
+  getSetupProviderDefault,
   inferProviderFromUrl,
   isManagedCloudProvider,
   isTokenEnvResolved,
   normalizeProviderInput,
   normalizeProviderUrlInput,
+  shouldPromptForSetupProvider,
   validateProviderUrlForProvider,
 } from '../../config/index.js';
 import { ConfigError } from '../../core/errors.js';
@@ -75,6 +77,20 @@ describe('config setup provider prompts', () => {
     expect(inferProviderFromUrl('https://github.example.com')).toBe('github');
     expect(inferProviderFromUrl('https://bitbucket.org')).toBe('bitbucket-cloud');
     expect(inferProviderFromUrl('https://bitbucket.example.com')).toBeNull();
+  });
+
+  it('only prompts for provider selection when the provider URL is ambiguous', () => {
+    expect(shouldPromptForSetupProvider('https://gitlab.com')).toBe(false);
+    expect(shouldPromptForSetupProvider('https://github.example.com')).toBe(false);
+    expect(shouldPromptForSetupProvider('https://bitbucket.org')).toBe(false);
+    expect(shouldPromptForSetupProvider('https://review.example.com')).toBe(true);
+    expect(shouldPromptForSetupProvider('')).toBe(true);
+  });
+
+  it('keeps detected provider and gitlab fallback defaults for ambiguous setup URLs', () => {
+    expect(getSetupProviderDefault('https://github.com', null)).toBe('github');
+    expect(getSetupProviderDefault('https://review.example.com', 'github')).toBe('github');
+    expect(getSetupProviderDefault('https://review.example.com', null)).toBe('gitlab');
   });
 
   it('does not treat an entered URL as a provider choice', () => {

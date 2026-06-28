@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed Bitbucket Cloud prepare so pending draft review comments and replies are excluded from review bundles.
 - Fixed Bitbucket Cloud published findings, replies, summaries, review notes, checkpoints, and generated agent handover prompts so revpack uses provider-specific Markdown, including link-based checkpoint state, instead of unsupported HTML elements.
 - Improved `revpack config setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.
+- Changed `revpack config setup` so inferred provider URLs skip the provider selection prompt while ambiguous URLs still ask for the provider.
 - Fixed GitLab fallback checkout for deleted MR source branches, including follow-up bundle commands run from the fallback branch and fork fallback fetches.
 - Fixed review summary instructions so incremental MR/PR updates keep newly introduced capabilities under `Added` instead of `Changed`.
 - Fixed `revpack status` showing stale target metadata, such as an open state with merged/closed coloring, when a prepared PR/MR bundle still exists after the target changed remotely.

@@ -291,11 +291,13 @@ export async function runDoctor(remoteUrls: string[], explicitProfile?: string):
 export { ProfileResolver, getProfileRemotePatterns } from './profile-resolver.js';
 export {
   deriveProfileNameFromProviderUrl,
+  getSetupProviderDefault,
   inferProviderFromUrl,
   isManagedCloudProvider,
   isTokenEnvResolved,
   normalizeProviderInput,
   normalizeProviderUrlInput,
+  shouldPromptForSetupProvider,
   validateProviderUrlForProvider,
 } from './provider-input.js';
 export type {

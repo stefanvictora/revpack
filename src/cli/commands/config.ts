@@ -8,11 +8,12 @@ import {
   resolveProfile,
   CONFIG_FILE,
   deriveProfileNameFromProviderUrl,
-  inferProviderFromUrl,
+  getSetupProviderDefault,
   isManagedCloudProvider,
   isTokenEnvResolved,
   normalizeProviderInput,
   normalizeProviderUrlInput,
+  shouldPromptForSetupProvider,
   validateProviderUrlForProvider,
 } from '../../config/index.js';
 import type { ProviderType, RevpackConfig, RevpackProfile } from '../../config/types.js';
@@ -101,9 +102,10 @@ export function registerConfigCommand(program: Command): void {
           rl.close();
           throw err;
         }
-        const defaultProvider = inferProviderFromUrl(url) ?? detectedProvider ?? 'gitlab';
-        const providerInput =
-          (await ask(`Provider (gitlab/github/bitbucket-cloud) [${defaultProvider}]: `)) || defaultProvider;
+        const defaultProvider = getSetupProviderDefault(url, detectedProvider);
+        const providerInput = shouldPromptForSetupProvider(url)
+          ? (await ask(`Provider (gitlab/github/bitbucket-cloud) [${defaultProvider}]: `)) || defaultProvider
+          : defaultProvider;
         let provider: ProviderType;
         try {
           provider = normalizeProviderInput(providerInput);

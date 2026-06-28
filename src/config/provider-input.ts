@@ -45,6 +45,14 @@ export function inferProviderFromUrl(value: string): ProviderType | null {
   return null;
 }
 
+export function getSetupProviderDefault(url: string, detectedProvider: ProviderType | null): ProviderType {
+  return inferProviderFromUrl(url) ?? detectedProvider ?? 'gitlab';
+}
+
+export function shouldPromptForSetupProvider(url: string): boolean {
+  return inferProviderFromUrl(url) === null;
+}
+
 export function deriveProfileNameFromProviderUrl(value: string): string {
   const host = parseProviderUrlHost(value);
   return host ? host.split('.')[0] : '';
