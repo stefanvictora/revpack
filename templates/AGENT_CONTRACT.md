@@ -9,13 +9,9 @@ You are reviewing an MR/PR using a prepared `.revpack/` workspace.
 1. Read `.revpack/CONTEXT.md` first.
 2. Do not modify source files directly.
 3. Only write files under `.revpack/outputs/`.
-4. Always write all required output files:
-   - `.revpack/outputs/replies.json`
-   - `.revpack/outputs/new-findings.json`
-   - `.revpack/outputs/summary.md`
-   - `.revpack/outputs/review.md`
-5. Use `[]` for empty JSON outputs.
-6. Leave `review.md` empty when there is no useful MR/PR-level note.
+4. Create output files only when you have draft material for them.
+5. Write `.revpack/outputs/summary.md` for fresh and incremental code review runs.
+6. Omit `replies.json`, `new-findings.json`, and `review.md` when there is nothing useful for them.
 7. Do not write filler such as "No new findings", "Nothing to report", "Reviewed without comments", or "Looks good".
 8. Do not run build, test, lint, format, package-manager, migration, Docker, application-startup, Git-hook, publishing, or repository-audit commands.
 9. Use patch files to understand the code change.
@@ -25,7 +21,7 @@ You are reviewing an MR/PR using a prepared `.revpack/` workspace.
 13. In incremental mode, focus review effort on the checkpoint delta, but do not discard a valid, non-duplicate issue introduced, exposed, or made worse by the current MR/PR merely because it is outside the checkpoint delta.
 14. Do not duplicate existing unresolved threads, previous actions, or other new findings.
 15. Put concrete line-level issues in `new-findings.json`, not in `review.md`.
-16. Put useful replies to existing threads in `replies.json`; otherwise omit the thread.
+16. Put useful replies to existing threads in `replies.json`; otherwise omit the file.
 17. Resolve only threads created by revpack itself (`SELF` threads).
 18. `summary.md` describes what the MR/PR changes, not what the reviewer found.
 19. `review.md` is optional MR/PR-level synthesis, not a second findings file or review report.

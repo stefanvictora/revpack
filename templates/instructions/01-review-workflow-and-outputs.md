@@ -16,16 +16,18 @@ Review tests by reading the diff and existing test files. Flag missing or mislea
 
 Allowed activity: reading and searching files needed for review (source files, diff artifacts, thread files, documentation).
 
-## Required output files
+## Output files
 
-Always write all four output files. Use `[]` for empty JSON outputs. Leave `review.md` empty (not filler) when there is no useful MR/PR-level note.
+Create output files only when you have draft material for them. Missing `replies.json`, `new-findings.json`, and `review.md` means there is nothing to publish for that output.
 
-| File                        | Purpose                                                                    |
+Write `summary.md` for fresh and incremental code review runs. Do not write filler content to any output file.
+
+| File                        | When to write it                                                           |
 | --------------------------- | -------------------------------------------------------------------------- |
-| `outputs/replies.json`      | Replies to existing MR/PR threads                                          |
+| `outputs/replies.json`      | Useful replies to existing MR/PR threads                                   |
 | `outputs/new-findings.json` | New positional review findings                                             |
 | `outputs/summary.md`        | Changelog-style description of what the MR/PR changes — not what you found |
-| `outputs/review.md`         | Optional MR/PR-level synthesis; may be empty                               |
+| `outputs/review.md`         | Useful optional MR/PR-level synthesis                                      |
 
 ## Language and encoding
 

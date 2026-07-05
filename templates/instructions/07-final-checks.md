@@ -7,8 +7,9 @@ Do not run additional shell commands solely for final verification unless you ha
 Check from your current work that:
 
 - the task mode from `CONTEXT.md` was followed
-- all required output files were written
-- JSON output files are valid JSON arrays
+- `summary.md` was written for fresh or incremental code review runs
+- conditional output files were omitted when they have no useful draft material
+- any JSON output files you wrote are valid JSON arrays
 - every finding has `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one line field
 - every finding is anchored to a line in `.revpack/diffs/line-map.ndjson`
 - there are no duplicate findings from existing threads or Previous Actions

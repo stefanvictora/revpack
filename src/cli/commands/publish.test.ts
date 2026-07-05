@@ -127,6 +127,17 @@ describe('publish command internals', () => {
     expect(orchestrator.resolveThread).not.toHaveBeenCalled();
   });
 
+  it('treats a missing default replies queue as empty', async () => {
+    await expect(__testing.publishReplies({})).resolves.toBe(0);
+    expect(createOrchestrator).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a missing custom replies queue path', async () => {
+    const repliesPath = path.join(tmpDir, 'missing-replies.json');
+
+    await expect(__testing.publishReplies({ from: repliesPath })).rejects.toThrow('No replies file found');
+  });
+
   it('skips empty summaries instead of publishing an empty description section', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), ' \n\t', 'utf-8');
@@ -138,6 +149,17 @@ describe('publish command internals', () => {
   it('rejects when the default summary is missing', async () => {
     await expect(__testing.publishDescription({})).rejects.toThrow('No summary found');
     expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing default findings queue as empty', async () => {
+    await expect(__testing.publishFindings({})).resolves.toBe(0);
+    expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing custom findings queue path', async () => {
+    const findingsPath = path.join(tmpDir, 'missing-findings.json');
+
+    await expect(__testing.publishFindings({ from: findingsPath })).rejects.toThrow('No findings file found');
   });
 
   it('treats empty review notes from any source path as no review note to publish', () => {
@@ -163,7 +185,7 @@ describe('publish command internals', () => {
     expect(createOrchestrator).not.toHaveBeenCalled();
   });
 
-  it('clears the default review note after publishing it', async () => {
+  it('removes the default review note after publishing it', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await writeBundleState();
     const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
@@ -176,12 +198,12 @@ describe('publish command internals', () => {
 
     await expect(__testing.publishReviewCmd({})).resolves.toBe(1);
 
-    await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('');
+    await expect(fs.access(reviewPath)).rejects.toThrow();
     const bundleState = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'bundle.json'), 'utf-8'));
     expect(bundleState.outputs.review.lastPublishedHash).toBeUndefined();
   });
 
-  it('clears the default review note even when bundle state is unavailable', async () => {
+  it('removes the default review note even when bundle state is unavailable', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
     await fs.writeFile(reviewPath, 'Review body', 'utf-8');
@@ -193,7 +215,7 @@ describe('publish command internals', () => {
 
     await expect(__testing.publishReviewCmd({})).resolves.toBe(1);
 
-    await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('');
+    await expect(fs.access(reviewPath)).rejects.toThrow();
   });
 
   it('keeps the default review note when no review note is created', async () => {
@@ -233,7 +255,7 @@ describe('publish command internals', () => {
     await expect(fs.readFile(customPath, 'utf-8')).resolves.toBe('Custom review body');
   });
 
-  it('clears the default review note after including it in a GitHub review batch', async () => {
+  it('removes the default review note after including it in a GitHub review batch', async () => {
     await writeBundleState('github');
     await writeValidFindingBundle();
     const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
@@ -246,10 +268,8 @@ describe('publish command internals', () => {
 
     await expect(__testing.publishFindingsAndReviewBatch('Batch review body')).resolves.toBe(1);
 
-    await expect(fs.readFile(reviewPath, 'utf-8')).resolves.toBe('');
-    await expect(fs.readFile(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'), 'utf-8')).resolves.toBe(
-      '[]',
-    );
+    await expect(fs.access(reviewPath)).rejects.toThrow();
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'))).rejects.toThrow();
     const bundleState = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'bundle.json'), 'utf-8'));
     expect(bundleState.outputs.review.lastPublishedHash).toBeUndefined();
   });

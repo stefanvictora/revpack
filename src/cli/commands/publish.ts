@@ -55,12 +55,13 @@ function requirePublishableContent(content: string, label: string): string {
   return content;
 }
 
-async function loadRepliesJson(filePath: string): Promise<ReplyEntry[]> {
+async function loadRepliesJson(filePath: string, options: { allowMissing: boolean }): Promise<ReplyEntry[]> {
   let raw: string;
   try {
     raw = await fs.readFile(filePath, 'utf-8');
   } catch {
-    return [];
+    if (options.allowMissing) return [];
+    throw new Error(`No replies file found at ${filePath}.`);
   }
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -71,16 +72,25 @@ async function loadRepliesJson(filePath: string): Promise<ReplyEntry[]> {
   }
 }
 
-async function saveRepliesJson(filePath: string, entries: ReplyEntry[]): Promise<void> {
+async function saveRepliesJson(
+  filePath: string,
+  entries: ReplyEntry[],
+  options?: { deleteWhenEmpty?: boolean },
+): Promise<void> {
+  if (options?.deleteWhenEmpty && entries.length === 0) {
+    await fs.rm(filePath, { force: true });
+    return;
+  }
   await fs.writeFile(filePath, JSON.stringify(entries, null, 2), 'utf-8');
 }
 
-async function loadNewFindings(filePath: string): Promise<unknown[]> {
+async function loadNewFindings(filePath: string, options: { allowMissing: boolean }): Promise<unknown[]> {
   let raw: string;
   try {
     raw = await fs.readFile(filePath, 'utf-8');
   } catch {
-    return [];
+    if (options.allowMissing) return [];
+    throw new Error(`No findings file found at ${filePath}.`);
   }
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -91,7 +101,15 @@ async function loadNewFindings(filePath: string): Promise<unknown[]> {
   }
 }
 
-async function saveFindings(filePath: string, entries: NewFinding[]): Promise<void> {
+async function saveFindings(
+  filePath: string,
+  entries: NewFinding[],
+  options?: { deleteWhenEmpty?: boolean },
+): Promise<void> {
+  if (options?.deleteWhenEmpty && entries.length === 0) {
+    await fs.rm(filePath, { force: true });
+    return;
+  }
   await fs.writeFile(filePath, JSON.stringify(entries, null, 2), 'utf-8');
 }
 
@@ -107,6 +125,7 @@ async function publishReplies(opts: {
   const orchestrator = await createOrchestrator();
   const defaultRepo = await getRepoFromGit();
   const repliesFile = workspacePath(opts.from ?? DEFAULT_REPLIES_FILE);
+  const usingDefaultRepliesFile = !opts.from;
 
   if (opts.thread) {
     // Single thread mode
@@ -118,7 +137,7 @@ async function publishReplies(opts: {
     if (opts.body) {
       body = opts.body;
     } else {
-      entries = await loadRepliesJson(repliesFile);
+      entries = await loadRepliesJson(repliesFile, { allowMissing: usingDefaultRepliesFile });
       const resolved = await orchestrator.resolveThreadRef(opts.thread);
       matchedIdx = findReplyEntryIndex(entries, opts.thread, resolved);
       if (matchedIdx === -1) {
@@ -136,7 +155,7 @@ async function publishReplies(opts: {
     const ws = new WorkspaceManager(process.cwd());
     if (entries && matchedIdx >= 0) {
       entries.splice(matchedIdx, 1);
-      await saveRepliesJson(repliesFile, entries);
+      await saveRepliesJson(repliesFile, entries, { deleteWhenEmpty: usingDefaultRepliesFile });
     }
     await ws.appendPublishedAction({
       type: 'reply',
@@ -158,7 +177,7 @@ async function publishReplies(opts: {
   }
 
   // Batch mode
-  const entries = await loadRepliesJson(repliesFile);
+  const entries = await loadRepliesJson(repliesFile, { allowMissing: usingDefaultRepliesFile });
   if (entries.length === 0) return 0;
 
   let posted = 0;
@@ -172,7 +191,7 @@ async function publishReplies(opts: {
       const remainingIndex = remaining.indexOf(entry);
       if (remainingIndex !== -1) {
         remaining.splice(remainingIndex, 1);
-        await saveRepliesJson(repliesFile, remaining);
+        await saveRepliesJson(repliesFile, remaining, { deleteWhenEmpty: usingDefaultRepliesFile });
       }
       await ws.appendPublishedAction({
         type: 'reply',
@@ -202,14 +221,17 @@ async function publishReplies(opts: {
       console.error(chalk.red(`  ✗ ${entry.threadId}: ${err instanceof Error ? err.message : String(err)}`));
     }
   }
-  await saveRepliesJson(repliesFile, remaining);
+  await saveRepliesJson(repliesFile, remaining, { deleteWhenEmpty: usingDefaultRepliesFile });
   if (posted > 0) console.log(chalk.green(`${posted} replies published`));
   return posted;
 }
 
-async function loadAndValidateFindings(filePath: string): Promise<{ findings: NewFinding[]; resolvedPath: string }> {
+async function loadAndValidateFindings(
+  filePath: string,
+  options?: { allowMissing?: boolean },
+): Promise<{ findings: NewFinding[]; resolvedPath: string }> {
   const resolvedPath = workspacePath(filePath);
-  const rawFindings = await loadNewFindings(resolvedPath);
+  const rawFindings = await loadNewFindings(resolvedPath, { allowMissing: options?.allowMissing ?? false });
   if (rawFindings.length === 0) return { findings: [], resolvedPath };
 
   const patchPath = workspacePath(DEFAULT_LATEST_PATCH_FILE);
@@ -262,13 +284,16 @@ async function trackFindingActions(ws: WorkspaceManager, findings: NewFinding[],
 
 async function clearDefaultReviewOutput(clearDefaultOutput = true): Promise<void> {
   if (clearDefaultOutput) {
-    await fs.writeFile(workspacePath(DEFAULT_REVIEW_FILE), '', 'utf-8');
+    await fs.rm(workspacePath(DEFAULT_REVIEW_FILE), { force: true });
   }
 }
 
 async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
   const filePath = opts.from ?? DEFAULT_FINDINGS_FILE;
-  const { findings, resolvedPath } = await loadAndValidateFindings(filePath);
+  const usingDefaultFindingsFile = !opts.from;
+  const { findings, resolvedPath } = await loadAndValidateFindings(filePath, {
+    allowMissing: usingDefaultFindingsFile,
+  });
   if (findings.length === 0) return 0;
 
   if (opts.dryRun) {
@@ -305,7 +330,7 @@ async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefres
       remaining.push(finding);
     }
   }
-  await saveFindings(resolvedPath, remaining);
+  await saveFindings(resolvedPath, remaining, { deleteWhenEmpty: usingDefaultFindingsFile });
   if (published > 0) console.log(chalk.green(`${published}/${findings.length} findings published`));
   return published;
 }
@@ -370,7 +395,7 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
  * Clears successfully published outputs. Returns the number of findings published.
  */
 async function publishFindingsAndReviewBatch(reviewContent: string): Promise<number> {
-  const { findings, resolvedPath } = await loadAndValidateFindings(DEFAULT_FINDINGS_FILE);
+  const { findings, resolvedPath } = await loadAndValidateFindings(DEFAULT_FINDINGS_FILE, { allowMissing: true });
   if (findings.length === 0) return 0;
 
   const annotated = annotateFindingBodies(findings);
@@ -384,7 +409,7 @@ async function publishFindingsAndReviewBatch(reviewContent: string): Promise<num
     console.log(chalk.green('  ✓ Review body included in PR review'));
   }
 
-  await saveFindings(resolvedPath, []);
+  await saveFindings(resolvedPath, [], { deleteWhenEmpty: true });
 
   const ws = new WorkspaceManager(process.cwd());
   await trackFindingActions(ws, annotated);
@@ -557,6 +582,7 @@ export const __testing = {
   normalizeThreadRef,
   isNoReviewNoteToPublishError,
   publishReplies,
+  publishFindings,
   publishDescription,
   publishFindingsAndReviewBatch,
   publishReviewCmd,

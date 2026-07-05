@@ -561,13 +561,16 @@ describe('WorkspaceManager', () => {
     expect(content).toBe('# Test');
   });
 
-  it('creates default empty output files on bundle creation', async () => {
+  it('creates output schemas without draft output files on bundle creation', async () => {
     await createBundle(manager, makeTarget(), []);
-    // These files should exist with empty/default content without any explicit write
-    const summary = await manager.readOutput('summary.md');
-    const review = await manager.readOutput('review.md');
-    expect(summary).toBe('');
-    expect(review).toBe('');
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'))).rejects.toThrow();
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'review.md'))).rejects.toThrow();
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'replies.json'))).rejects.toThrow();
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'))).rejects.toThrow();
+    await expect(
+      fs.access(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.schema.json')),
+    ).resolves.toBeUndefined();
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'replies.schema.json'))).resolves.toBeUndefined();
     // .gitignore should be created to exclude bundle from version control
     const gitignore = await fs.readFile(path.join(tmpDir, '.revpack', '.gitignore'), 'utf-8');
     expect(gitignore).toBe('*\n');
@@ -2024,20 +2027,22 @@ describe('WorkspaceManager', () => {
   });
 
   describe('discardOutputs', () => {
-    it('resets output files to empty defaults', async () => {
+    it('removes text draft output files', async () => {
       await createBundle(manager, makeTarget(), []);
       await manager.writeOutput('summary.md', '# Written content');
       await manager.writeOutput('review.md', '# Review content');
       await manager.discardOutputs();
-      expect(await manager.readOutput('summary.md')).toBe('');
-      expect(await manager.readOutput('review.md')).toBe('');
+      await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'))).rejects.toThrow();
+      await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'review.md'))).rejects.toThrow();
     });
 
-    it('resets replies.json and new-findings.json to empty arrays', async () => {
+    it('removes queue draft output files', async () => {
       await createBundle(manager, makeTarget(), []);
       await manager.writeOutput('replies.json', '[{"threadId":"T-001","body":"hi","resolve":true}]');
+      await manager.writeOutput('new-findings.json', '[]');
       await manager.discardOutputs();
-      expect(await manager.readOutput('replies.json')).toBe('[]');
+      await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'replies.json'))).rejects.toThrow();
+      await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'))).rejects.toThrow();
     });
   });
 

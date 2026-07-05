@@ -1,6 +1,6 @@
 # MR/PR-level review note
 
-`outputs/review.md` is for MR/PR-level synthesis. Default to leaving it empty.
+`outputs/review.md` is for MR/PR-level synthesis. Default to omitting it.
 
 ## When to write it
 
@@ -19,9 +19,9 @@ Good uses:
 
 For lower-confidence concerns, phrase as a question: "Please confirm whether existing projects need a backfill for this counter."
 
-## When to leave it empty
+## When to omit it
 
-Leave it empty when all useful feedback is already in findings or thread replies, or when the only possible note would be filler ("looks good", "see inline comments"), a diff summary, a file list, or a speculative/theoretical concern.
+Do not create `review.md` when all useful feedback is already in findings or thread replies, or when the only possible note would be filler ("looks good", "see inline comments"), a diff summary, a file list, or a speculative/theoretical concern.
 
 ## What it is not
 
