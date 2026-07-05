@@ -22,7 +22,7 @@ import { ConfigError } from '../../core/errors.js';
 import { GitHelper } from '../../workspace/git-helper.js';
 import { handleError, outputJson } from '../helpers.js';
 
-type SetupRemoteSuggestion = {
+export type SetupRemoteSuggestion = {
   suggestedUrl: string;
   suggestedName: string;
   detectedProvider: ProviderType | null;
@@ -318,14 +318,7 @@ export function registerPrimaryConfigCommands(program: Command): void {
       await setupAuthAction();
     });
 
-  authCmd
-    .command('doctor')
-    .description('Check provider authentication')
-    .option('--profile <name>', 'Check a specific profile')
-    .option('--json', 'Output as JSON')
-    .action(async (opts: { profile?: string; json?: boolean }) => {
-      await doctorAction(opts);
-    });
+  registerDoctorCommand(authCmd);
 
   authCmd
     .command('show')
@@ -337,7 +330,11 @@ export function registerPrimaryConfigCommands(program: Command): void {
       await showAction(opts);
     });
 
-  program
+  registerDoctorCommand(program);
+}
+
+function registerDoctorCommand(command: Command): void {
+  command
     .command('doctor')
     .description('Check provider authentication')
     .option('--profile <name>', 'Check a specific profile')

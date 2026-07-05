@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   deriveProfileNameFromProviderUrl,
   getSetupProviderDefault,
@@ -11,13 +11,62 @@ import {
   shouldPromptForSetupProvider,
   validateProviderUrlForProvider,
 } from '../../config/index.js';
+import type * as ConfigModule from '../../config/index.js';
 import { ConfigError } from '../../core/errors.js';
+import type { RevpackConfig } from '../../config/types.js';
 import {
   defaultSetupUrlForProvider,
   registerConfigCommand,
   registerPrimaryConfigCommands,
   suggestSetupProfileFromRemotes,
 } from './config.js';
+
+const setupMocks = vi.hoisted(() => {
+  const state = {
+    promptResponses: [] as string[],
+    prompts: [] as string[],
+    remoteUrls: [] as string[],
+    savedConfig: undefined as unknown,
+  };
+
+  return {
+    state,
+    loadFileConfig: vi.fn(() => Promise.resolve({})),
+    saveFileConfig: vi.fn((config: unknown) => {
+      state.savedConfig = config;
+      return Promise.resolve();
+    }),
+    listRemoteUrls: vi.fn(() => Promise.resolve(state.remoteUrls)),
+    question: vi.fn((prompt: string, resolve: (value: string) => void) => {
+      state.prompts.push(prompt);
+      resolve(state.promptResponses.shift() ?? '');
+    }),
+    close: vi.fn(),
+  };
+});
+
+vi.mock('../../config/index.js', async () => {
+  const actual = await vi.importActual<typeof ConfigModule>('../../config/index.js');
+
+  return {
+    ...actual,
+    loadFileConfig: setupMocks.loadFileConfig,
+    saveFileConfig: setupMocks.saveFileConfig,
+  };
+});
+
+vi.mock('../../workspace/git-helper.js', () => ({
+  GitHelper: class {
+    listRemoteUrls = setupMocks.listRemoteUrls;
+  },
+}));
+
+vi.mock('node:readline', () => ({
+  createInterface: vi.fn(() => ({
+    question: setupMocks.question,
+    close: setupMocks.close,
+  })),
+}));
 
 describe('config command', () => {
   it('prints help for the parent command instead of showing resolved config', async () => {
@@ -146,6 +195,21 @@ describe('config command', () => {
 });
 
 describe('auth setup provider prompts', () => {
+  beforeEach(() => {
+    setupMocks.state.promptResponses = [];
+    setupMocks.state.prompts = [];
+    setupMocks.state.remoteUrls = [];
+    setupMocks.state.savedConfig = undefined;
+    setupMocks.loadFileConfig.mockResolvedValue({});
+    setupMocks.saveFileConfig.mockImplementation((config: unknown) => {
+      setupMocks.state.savedConfig = config;
+      return Promise.resolve();
+    });
+    setupMocks.listRemoteUrls.mockImplementation(() => Promise.resolve(setupMocks.state.remoteUrls));
+    setupMocks.question.mockClear();
+    setupMocks.close.mockClear();
+  });
+
   afterEach(() => {
     delete process.env.REVPACK_TEST_TOKEN;
     delete process.env.REVPACK_MISSING_TEST_TOKEN;
@@ -191,6 +255,38 @@ describe('auth setup provider prompts', () => {
     expect(defaultSetupUrlForProvider('', 'bitbucket-cloud')).toBe('https://bitbucket.org');
     expect(defaultSetupUrlForProvider('', 'gitlab')).toBe('');
     expect(defaultSetupUrlForProvider('https://example.com', 'bitbucket-cloud')).toBe('https://example.com');
+  });
+
+  it('uses the Bitbucket Cloud origin when setup gets a blank URL and Bitbucket provider', async () => {
+    const outputSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    setupMocks.state.promptResponses = ['', 'bitbucket-cloud', '', '', '', ''];
+
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerPrimaryConfigCommands(program);
+
+      await program.parseAsync(['node', 'revpack', 'auth', 'setup']);
+    } finally {
+      outputSpy.mockRestore();
+    }
+
+    const expectedUrl = defaultSetupUrlForProvider('', 'bitbucket-cloud');
+    expect(setupMocks.state.prompts.slice(0, 2)).toEqual([
+      'Provider URL: ',
+      'Provider (gitlab/github/bitbucket-cloud) [gitlab]: ',
+    ]);
+    expect(setupMocks.state.savedConfig as RevpackConfig).toEqual({
+      profiles: {
+        bitbucket: {
+          provider: 'bitbucket-cloud',
+          url: expectedUrl,
+          tokenEnv: 'REVPACK_BITBUCKET_TOKEN',
+          emailEnv: 'REVPACK_BITBUCKET_EMAIL',
+        },
+      },
+    });
+    expect(inferProviderFromUrl(expectedUrl)).toBe('bitbucket-cloud');
   });
 
   it('does not treat an entered URL as a provider choice', () => {
