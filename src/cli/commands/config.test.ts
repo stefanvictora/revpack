@@ -289,6 +289,84 @@ describe('auth setup provider prompts', () => {
     expect(inferProviderFromUrl(expectedUrl)).toBe('bitbucket-cloud');
   });
 
+  it('uses a detected GitHub remote without prompting for provider selection', async () => {
+    const outputSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    setupMocks.state.remoteUrls = ['git@github.com:org/repo.git'];
+    setupMocks.state.promptResponses = ['', '', '', ''];
+
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerPrimaryConfigCommands(program);
+
+      await program.parseAsync(['node', 'revpack', 'auth', 'setup']);
+    } finally {
+      outputSpy.mockRestore();
+    }
+
+    expect(setupMocks.state.prompts).toEqual([
+      'Provider URL [https://github.com]: ',
+      'Profile name [github]: ',
+      'Token environment variable [REVPACK_GITHUB_TOKEN]: ',
+      'Additional remote match pattern (optional): ',
+    ]);
+    expect(setupMocks.state.savedConfig as RevpackConfig).toEqual({
+      profiles: {
+        github: {
+          provider: 'github',
+          url: 'https://github.com',
+          tokenEnv: 'REVPACK_GITHUB_TOKEN',
+        },
+      },
+    });
+  });
+
+  it('prompts for self-hosted provider transport settings and saves them', async () => {
+    const outputSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    setupMocks.state.promptResponses = [
+      'https://gitlab.example.com',
+      'corp',
+      'REVPACK_CORP_TOKEN',
+      'gitlab.example.com:org/*, ssh://git@gitlab.example.com/org/*',
+      'C:\\certs\\corp.pem',
+      'no',
+      'yes',
+    ];
+
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerPrimaryConfigCommands(program);
+
+      await program.parseAsync(['node', 'revpack', 'auth', 'setup']);
+    } finally {
+      outputSpy.mockRestore();
+    }
+
+    expect(setupMocks.state.prompts).toEqual([
+      'Provider URL: ',
+      'Profile name [gitlab]: ',
+      'Token environment variable [REVPACK_GITLAB_TOKEN]: ',
+      'Additional remote match pattern (optional): ',
+      'Custom CA file (optional): ',
+      'Verify TLS certificates [yes]: ',
+      'Use SSH for git clone (revpack checkout) [no]: ',
+    ]);
+    expect(setupMocks.state.savedConfig as RevpackConfig).toEqual({
+      profiles: {
+        corp: {
+          provider: 'gitlab',
+          url: 'https://gitlab.example.com',
+          tokenEnv: 'REVPACK_CORP_TOKEN',
+          remotePatterns: ['gitlab.example.com:org/*', 'ssh://git@gitlab.example.com/org/*'],
+          caFile: 'C:\\certs\\corp.pem',
+          tlsVerify: false,
+          sshClone: true,
+        },
+      },
+    });
+  });
+
   it('does not treat an entered URL as a provider choice', () => {
     expect(() => normalizeProviderInput('https://gitlab.com')).toThrow(ConfigError);
     expect(() => normalizeProviderInput('https://gitlab.com')).toThrow(
