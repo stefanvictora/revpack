@@ -104,11 +104,12 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
 
   printResults(results, opts.dryRun);
 
-  if (opts.agent) {
+  const changed = results.some((result) => result.status === 'created' || result.status === 'updated');
+  if (!opts.dryRun && opts.agent && changed) {
     printAgentUsage(opts.agent);
   }
 
-  if (!opts.dryRun && results.some((result) => result.status === 'created' || result.status === 'updated')) {
+  if (!opts.dryRun && changed) {
     console.log('');
     console.log(formatGuidanceLine('Next steps:'));
     if (results.some((result) => result.target === 'REVIEW.md' && result.status === 'created')) {
@@ -121,11 +122,12 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
       console.log(formatGuidanceLine('  revpack setup agent codex'));
       console.log(formatGuidanceLine('  Or create both files at once:'));
       console.log(formatGuidanceLine('  revpack setup --agent codex'));
+      console.log(formatGuidanceLine('  revpack prepare'));
     } else {
       console.log(formatGuidanceLine('  Tip: `revpack setup --prompts` is deprecated; use:'));
       console.log(formatGuidanceLine('  revpack setup agent copilot'));
+      console.log(formatGuidanceLine('  revpack prepare'));
     }
-    console.log(formatGuidanceLine('  revpack prepare'));
   }
 }
 

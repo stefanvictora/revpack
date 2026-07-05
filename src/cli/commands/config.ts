@@ -22,6 +22,12 @@ import { ConfigError } from '../../core/errors.js';
 import { GitHelper } from '../../workspace/git-helper.js';
 import { handleError, outputJson } from '../helpers.js';
 
+type SetupRemoteSuggestion = {
+  suggestedUrl: string;
+  suggestedName: string;
+  detectedProvider: ProviderType | null;
+};
+
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
     .command('config')
@@ -348,35 +354,7 @@ async function setupAuthAction(): Promise<void> {
     const remoteUrls = await getRemoteUrlsSafe();
 
     // Derive suggested values from git remotes
-    let suggestedUrl = '';
-    let suggestedName = '';
-    let detectedProvider: ProviderType | null = null;
-    for (const remoteUrl of remoteUrls) {
-      try {
-        // Handle SSH URLs like git@host:group/project.git
-        const sshMatch = remoteUrl.match(/@([^:]+):/);
-        if (sshMatch) {
-          suggestedUrl = `https://${sshMatch[1]}`;
-          suggestedName = sshMatch[1].split('.')[0];
-        } else {
-          const parsed = new URL(remoteUrl);
-          suggestedUrl = `${parsed.protocol}//${parsed.host}`;
-          suggestedName = parsed.hostname.split('.')[0];
-        }
-      } catch {
-        continue;
-      }
-      // Detect provider from URL
-      if (remoteUrl.includes('github.com')) {
-        detectedProvider = 'github';
-      } else if (remoteUrl.includes('bitbucket.org')) {
-        detectedProvider = 'bitbucket-cloud';
-      } else if (remoteUrl.includes('gitlab.')) {
-        detectedProvider = 'gitlab';
-      }
-
-      if (detectedProvider) break;
-    }
+    const { suggestedUrl, suggestedName, detectedProvider } = suggestSetupProfileFromRemotes(remoteUrls);
 
     // Use readline for interactive prompts
     const { createInterface } = await import('node:readline');
@@ -405,6 +383,7 @@ async function setupAuthAction(): Promise<void> {
     let provider: ProviderType;
     try {
       provider = normalizeProviderInput(providerInput);
+      url = defaultSetupUrlForProvider(url, provider);
       validateProviderUrlForProvider(url, provider);
     } catch (err) {
       rl.close();
@@ -698,6 +677,48 @@ function printProfileDetails(profile: RevpackProfile, sources?: boolean): void {
 function src(showSources: boolean | undefined, source: string | undefined): string {
   if (!showSources || !source) return '';
   return chalk.dim(`  [${source}]`);
+}
+
+export function suggestSetupProfileFromRemotes(remoteUrls: string[]): SetupRemoteSuggestion {
+  let suggestedUrl = '';
+  let suggestedName = '';
+  let detectedProvider: ProviderType | null = null;
+
+  for (const remoteUrl of remoteUrls) {
+    try {
+      // Handle SSH URLs like git@host:group/project.git and ssh://git@host/group/project.git.
+      const sshMatch = remoteUrl.match(/^(?:ssh:\/\/)?[^@]+@([^:/]+)(?::|\/)/);
+      if (sshMatch) {
+        suggestedUrl = `https://${sshMatch[1]}`;
+        suggestedName = sshMatch[1].split('.')[0];
+      } else {
+        const parsed = new URL(remoteUrl);
+        suggestedUrl = `${parsed.protocol}//${parsed.host}`;
+        suggestedName = parsed.hostname.split('.')[0];
+      }
+    } catch {
+      continue;
+    }
+
+    if (remoteUrl.includes('github.com')) {
+      detectedProvider = 'github';
+    } else if (remoteUrl.includes('bitbucket.org')) {
+      detectedProvider = 'bitbucket-cloud';
+    } else if (remoteUrl.includes('gitlab.')) {
+      detectedProvider = 'gitlab';
+    }
+
+    if (detectedProvider) break;
+  }
+
+  return { suggestedUrl, suggestedName, detectedProvider };
+}
+
+export function defaultSetupUrlForProvider(url: string, provider: ProviderType): string {
+  if (provider === 'bitbucket-cloud' && !url) {
+    return 'https://bitbucket.org';
+  }
+  return url;
 }
 
 function validateKey(key: string): void {

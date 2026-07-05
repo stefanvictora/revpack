@@ -51,6 +51,7 @@ describe('runSetup', () => {
     await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(true);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Use it in Codex with:'));
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('  $revpack-review'));
+    expect(countLogLinesContaining('revpack prepare')).toBe(1);
   });
 
   it('installs the Cursor adapter at the canonical revpack-review path', async () => {
@@ -96,6 +97,14 @@ describe('runSetup', () => {
     await expect(fileExists(path.join('.claude', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(false);
   });
 
+  it('does not print combined adapter usage during dry runs', async () => {
+    await runSetup({ cwd, agent: 'codex', dryRun: true });
+
+    await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(false);
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Use it in Codex with:'));
+    expect(countLogLinesContaining('revpack prepare')).toBe(0);
+  });
+
   it('honors --dry-run on the parsed setup agent command', async () => {
     process.chdir(cwd);
     const program = new Command();
@@ -128,5 +137,9 @@ describe('runSetup', () => {
     } catch {
       return false;
     }
+  }
+
+  function countLogLinesContaining(value: string): number {
+    return vi.mocked(console.log).mock.calls.filter(([line]) => String(line).includes(value)).length;
   }
 });

@@ -12,7 +12,12 @@ import {
   validateProviderUrlForProvider,
 } from '../../config/index.js';
 import { ConfigError } from '../../core/errors.js';
-import { registerConfigCommand, registerPrimaryConfigCommands } from './config.js';
+import {
+  defaultSetupUrlForProvider,
+  registerConfigCommand,
+  registerPrimaryConfigCommands,
+  suggestSetupProfileFromRemotes,
+} from './config.js';
 
 describe('config command', () => {
   it('prints help for the parent command instead of showing resolved config', async () => {
@@ -167,6 +172,25 @@ describe('auth setup provider prompts', () => {
     expect(getSetupProviderDefault('https://github.com', null)).toBe('github');
     expect(getSetupProviderDefault('https://review.example.com', 'github')).toBe('github');
     expect(getSetupProviderDefault('https://review.example.com', null)).toBe('gitlab');
+  });
+
+  it('suggests HTTPS provider URLs from scp-like and ssh remotes', () => {
+    expect(suggestSetupProfileFromRemotes(['git@github.com:org/repo.git'])).toEqual({
+      suggestedUrl: 'https://github.com',
+      suggestedName: 'github',
+      detectedProvider: 'github',
+    });
+    expect(suggestSetupProfileFromRemotes(['ssh://git@bitbucket.org/org/repo.git'])).toEqual({
+      suggestedUrl: 'https://bitbucket.org',
+      suggestedName: 'bitbucket',
+      detectedProvider: 'bitbucket-cloud',
+    });
+  });
+
+  it('defaults blank Bitbucket Cloud setup URLs to the cloud origin', () => {
+    expect(defaultSetupUrlForProvider('', 'bitbucket-cloud')).toBe('https://bitbucket.org');
+    expect(defaultSetupUrlForProvider('', 'gitlab')).toBe('');
+    expect(defaultSetupUrlForProvider('https://example.com', 'bitbucket-cloud')).toBe('https://example.com');
   });
 
   it('does not treat an entered URL as a provider choice', () => {
