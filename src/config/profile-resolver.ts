@@ -101,7 +101,7 @@ export class ProfileResolver {
 
     // 3. Fail
     throw new ConfigError(
-      'No profile matched the current repository.\n\nRun `revpack config setup` to create a profile, or use `--profile <name>` to select one explicitly.',
+      'No profile matched the current repository.\n\nRun `revpack auth setup` to create a profile, or use `--profile <name>` to select one explicitly.',
     );
   }
 }

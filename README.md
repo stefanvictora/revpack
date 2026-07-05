@@ -26,38 +26,32 @@ Install the CLI:
 npm install -g @stefanvictora/revpack
 ```
 
-Open the repository you want to review, then configure a provider profile:
+Open the repository you want to review, then set up provider authentication:
 
 ```bash
-revpack config setup
+revpack auth setup
 export REVPACK_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 # or
 export REVPACK_GITLAB_TOKEN=glpat-xxxxxxxxxxxx
 # or
 export REVPACK_BITBUCKET_EMAIL=you@example.com
 export REVPACK_BITBUCKET_TOKEN=ATBBTxxxxxxxxxxxx
-revpack config doctor
+revpack auth doctor
 ```
 
-Optionally, add review guidance:
+`auth setup` stores provider settings such as the provider type, host URL, and token environment variable name. It does not store your provider token directly.
 
-```bash
-revpack setup
-```
-
-Customize `REVIEW.md` when you want agents to follow project-specific review priorities.
-
-Then add instructions for your agent:
+Add review guidance and instructions for your agent:
 
 ```bash
 # Pick one:
-revpack setup agent claude
-revpack setup agent codex
-revpack setup agent cursor
-revpack setup agent copilot
+revpack setup --agent claude
+revpack setup --agent codex
+revpack setup --agent cursor
+revpack setup --agent copilot
 ```
 
-This writes project-level instruction files, such as an agent command, skill, or prompt. It does not install or run the agent.
+This creates `REVIEW.md` when missing and writes project-level instruction files, such as an agent command, skill, or prompt. It does not install or run the agent.
 
 Use `--dry-run` to preview generated files before writing them.
 

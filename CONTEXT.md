@@ -86,6 +86,10 @@ _Avoid_: Account, configuration, credential set
 A profile field that names where revpack can read a credential at runtime without storing the credential value.
 _Avoid_: Credential, secret, token value
 
+**Provider Authentication**:
+The provider access setup represented by a profile and its credential references. Revpack stores the references, not provider credential values.
+_Avoid_: Login, token storage, connection
+
 **Review Guidance**:
 Project-specific review priorities that agents should follow when reviewing a review bundle.
 _Avoid_: Instructions, contract, prompt

@@ -44,6 +44,16 @@ describe('runSetup', () => {
     await expect(fileExists(path.join('.claude', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(true);
   });
 
+  it('installs REVIEW.md and the selected adapter with setup --agent', async () => {
+    await runSetup({ cwd, agent: 'codex' });
+
+    await expect(fileExists('REVIEW.md')).resolves.toBe(true);
+    await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(true);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Use it in Codex with:'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('  $revpack-review'));
+    expect(countLogLinesContaining('revpack prepare')).toBe(1);
+  });
+
   it('installs the Cursor adapter at the canonical revpack-review path', async () => {
     await runSetupAgent({ cwd, target: 'cursor' });
 
@@ -87,6 +97,14 @@ describe('runSetup', () => {
     await expect(fileExists(path.join('.claude', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(false);
   });
 
+  it('does not print combined adapter usage during dry runs', async () => {
+    await runSetup({ cwd, agent: 'codex', dryRun: true });
+
+    await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(false);
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Use it in Codex with:'));
+    expect(countLogLinesContaining('revpack prepare')).toBe(0);
+  });
+
   it('honors --dry-run on the parsed setup agent command', async () => {
     process.chdir(cwd);
     const program = new Command();
@@ -100,6 +118,18 @@ describe('runSetup', () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Dry run - no files written.'));
   });
 
+  it('parses setup --agent as combined review guidance and adapter setup', async () => {
+    process.chdir(cwd);
+    const program = new Command();
+    program.exitOverride();
+    registerSetupCommand(program);
+
+    await program.parseAsync(['node', 'revpack', 'setup', '--agent', 'codex']);
+
+    await expect(fileExists('REVIEW.md')).resolves.toBe(true);
+    await expect(fileExists(path.join('.agents', 'skills', 'revpack-review', 'SKILL.md'))).resolves.toBe(true);
+  });
+
   async function fileExists(relativePath: string): Promise<boolean> {
     try {
       await fs.access(path.join(cwd, relativePath));
@@ -107,5 +137,9 @@ describe('runSetup', () => {
     } catch {
       return false;
     }
+  }
+
+  function countLogLinesContaining(value: string): number {
+    return vi.mocked(console.log).mock.calls.filter(([line]) => String(line).includes(value)).length;
   }
 });

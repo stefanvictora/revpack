@@ -26,6 +26,7 @@ interface SetupResult {
 interface SetupOptions {
   cwd: string;
   prompts?: boolean;
+  agent?: AgentTarget;
   dryRun?: boolean;
 }
 
@@ -71,10 +72,15 @@ export function registerSetupCommand(program: Command): void {
   const setupCmd = program
     .command('setup')
     .description('Create REVIEW.md and optional agent harness files')
+    .option(
+      '--agent <target>',
+      `Also install an agent harness adapter (${SUPPORTED_AGENT_TARGETS.join(', ')})`,
+      parseAgentTarget,
+    )
     .option('--prompts', 'Deprecated alias for `setup agent copilot`')
     .option('--dry-run', 'Show what would be created or updated without writing files')
-    .action(async (opts: { prompts?: boolean; dryRun?: boolean }) => {
-      await runSetup({ cwd: process.cwd(), prompts: opts.prompts, dryRun: opts.dryRun });
+    .action(async (opts: { agent?: AgentTarget; prompts?: boolean; dryRun?: boolean }) => {
+      await runSetup({ cwd: process.cwd(), agent: opts.agent, prompts: opts.prompts, dryRun: opts.dryRun });
     });
 
   setupCmd
@@ -89,25 +95,39 @@ export function registerSetupCommand(program: Command): void {
 
 export async function runSetup(opts: SetupOptions): Promise<void> {
   const templatesDir = resolveTemplatesDir();
-  const files = opts.prompts ? [REVIEW_CONFIG_FILE, AGENT_FILES.copilot] : [REVIEW_CONFIG_FILE];
+  const files = uniqueSetupFiles([
+    REVIEW_CONFIG_FILE,
+    ...(opts.agent ? [AGENT_FILES[opts.agent]] : []),
+    ...(opts.prompts ? [AGENT_FILES.copilot] : []),
+  ]);
   const results = await installCopiedFiles(opts.cwd, templatesDir, files, opts.dryRun);
 
   printResults(results, opts.dryRun);
 
-  if (!opts.dryRun && results.some((result) => result.status === 'created' || result.status === 'updated')) {
+  const changed = results.some((result) => result.status === 'created' || result.status === 'updated');
+  if (!opts.dryRun && opts.agent && changed) {
+    printAgentUsage(opts.agent);
+  }
+
+  if (!opts.dryRun && changed) {
     console.log('');
     console.log(formatGuidanceLine('Next steps:'));
     if (results.some((result) => result.target === 'REVIEW.md' && result.status === 'created')) {
       console.log(formatGuidanceLine('  1. Edit REVIEW.md - tailor review priorities to your project'));
     }
-    if (!opts.prompts) {
+    if (opts.agent) {
+      console.log(formatGuidanceLine('  revpack prepare'));
+    } else if (!opts.prompts) {
       console.log(formatGuidanceLine('  Tip: install an agent adapter, for example:'));
       console.log(formatGuidanceLine('  revpack setup agent codex'));
+      console.log(formatGuidanceLine('  Or create both files at once:'));
+      console.log(formatGuidanceLine('  revpack setup --agent codex'));
+      console.log(formatGuidanceLine('  revpack prepare'));
     } else {
       console.log(formatGuidanceLine('  Tip: `revpack setup --prompts` is deprecated; use:'));
       console.log(formatGuidanceLine('  revpack setup agent copilot'));
+      console.log(formatGuidanceLine('  revpack prepare'));
     }
-    console.log(formatGuidanceLine('  revpack prepare'));
   }
 }
 
@@ -232,6 +252,15 @@ function parseAgentTarget(value: string): AgentTarget {
   throw new InvalidArgumentError(
     `Unsupported agent target: ${value}. Supported targets: ${SUPPORTED_AGENT_TARGETS.join(', ')}`,
   );
+}
+
+function uniqueSetupFiles(files: SetupFile[]): SetupFile[] {
+  const seen = new Set<string>();
+  return files.filter((file) => {
+    if (seen.has(file.target)) return false;
+    seen.add(file.target);
+    return true;
+  });
 }
 
 function normalizeLineEndings(content: string): string {

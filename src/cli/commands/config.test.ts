@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   deriveProfileNameFromProviderUrl,
   getSetupProviderDefault,
@@ -11,8 +11,62 @@ import {
   shouldPromptForSetupProvider,
   validateProviderUrlForProvider,
 } from '../../config/index.js';
+import type * as ConfigModule from '../../config/index.js';
 import { ConfigError } from '../../core/errors.js';
-import { registerConfigCommand } from './config.js';
+import type { RevpackConfig } from '../../config/types.js';
+import {
+  defaultSetupUrlForProvider,
+  registerConfigCommand,
+  registerPrimaryConfigCommands,
+  suggestSetupProfileFromRemotes,
+} from './config.js';
+
+const setupMocks = vi.hoisted(() => {
+  const state = {
+    promptResponses: [] as string[],
+    prompts: [] as string[],
+    remoteUrls: [] as string[],
+    savedConfig: undefined as unknown,
+  };
+
+  return {
+    state,
+    loadFileConfig: vi.fn(() => Promise.resolve({})),
+    saveFileConfig: vi.fn((config: unknown) => {
+      state.savedConfig = config;
+      return Promise.resolve();
+    }),
+    listRemoteUrls: vi.fn(() => Promise.resolve(state.remoteUrls)),
+    question: vi.fn((prompt: string, resolve: (value: string) => void) => {
+      state.prompts.push(prompt);
+      resolve(state.promptResponses.shift() ?? '');
+    }),
+    close: vi.fn(),
+  };
+});
+
+vi.mock('../../config/index.js', async () => {
+  const actual = await vi.importActual<typeof ConfigModule>('../../config/index.js');
+
+  return {
+    ...actual,
+    loadFileConfig: setupMocks.loadFileConfig,
+    saveFileConfig: setupMocks.saveFileConfig,
+  };
+});
+
+vi.mock('../../workspace/git-helper.js', () => ({
+  GitHelper: class {
+    listRemoteUrls = setupMocks.listRemoteUrls;
+  },
+}));
+
+vi.mock('node:readline', () => ({
+  createInterface: vi.fn(() => ({
+    question: setupMocks.question,
+    close: setupMocks.close,
+  })),
+}));
 
 describe('config command', () => {
   it('prints help for the parent command instead of showing resolved config', async () => {
@@ -32,14 +86,90 @@ describe('config command', () => {
     expect(help).toContain('show');
     expect(help).toContain('profile');
     expect(help).toContain('List, show, create, or delete saved profiles');
-    expect(help).toContain('Create:');
-    expect(help).toContain('revpack config setup');
     expect(help).toContain('Current project:');
-    expect(help).toContain('revpack config doctor');
+    expect(help).toContain('revpack config show');
     expect(help).toContain('Saved profiles:');
     expect(help).toContain('revpack config profile list');
     expect(help).toContain('revpack config profile delete <name>');
+    expect(help).not.toContain('setup');
+    expect(help).not.toContain('doctor');
     expect(help).not.toContain('No active profile');
+  });
+
+  it('registers top-level auth and doctor commands', async () => {
+    const output: string[] = [];
+    const program = new Command();
+    program.exitOverride();
+    program.configureOutput({
+      writeOut: (value) => output.push(value),
+      writeErr: (value) => output.push(value),
+    });
+    registerPrimaryConfigCommands(program);
+
+    try {
+      await program.parseAsync(['node', 'revpack', 'auth', '--help']);
+    } catch {
+      // Commander exits after printing --help when exitOverride is enabled.
+    }
+
+    const help = output.join('');
+    expect(help).toContain('Usage: revpack auth [options] [command]');
+    expect(help).toContain('setup');
+    expect(help).toContain('Set up provider authentication');
+    expect(help).toContain('doctor');
+    expect(help).toContain('Check provider authentication');
+    expect(help).toContain('show');
+    expect(help).toContain('Show resolved provider authentication settings');
+    expect(program.commands.map((command) => command.name())).toEqual(['auth', 'doctor']);
+  });
+
+  it('registers auth doctor and top-level doctor with matching options', async () => {
+    for (const args of [
+      ['node', 'revpack', 'auth', 'doctor', '--help'],
+      ['node', 'revpack', 'doctor', '--help'],
+    ]) {
+      const output: string[] = [];
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({
+        writeOut: (value) => output.push(value),
+        writeErr: (value) => output.push(value),
+      });
+      registerPrimaryConfigCommands(program);
+
+      try {
+        await program.parseAsync(args);
+      } catch {
+        // Commander exits after printing --help when exitOverride is enabled.
+      }
+
+      const help = output.join('');
+      expect(help).toContain('--profile <name>');
+      expect(help).toContain('--json');
+    }
+  });
+
+  it('registers auth show with resolved-profile options', async () => {
+    const output: string[] = [];
+    const program = new Command();
+    program.exitOverride();
+    program.configureOutput({
+      writeOut: (value) => output.push(value),
+      writeErr: (value) => output.push(value),
+    });
+    registerPrimaryConfigCommands(program);
+
+    try {
+      await program.parseAsync(['node', 'revpack', 'auth', 'show', '--help']);
+    } catch {
+      // Commander exits after printing --help when exitOverride is enabled.
+    }
+
+    const help = output.join('');
+    expect(help).toContain('Usage: revpack auth show [options]');
+    expect(help).toContain('--profile <name>');
+    expect(help).toContain('--json');
+    expect(help).toContain('--sources');
   });
 
   it('describes profile create as the non-interactive creation path', async () => {
@@ -64,7 +194,22 @@ describe('config command', () => {
   });
 });
 
-describe('config setup provider prompts', () => {
+describe('auth setup provider prompts', () => {
+  beforeEach(() => {
+    setupMocks.state.promptResponses = [];
+    setupMocks.state.prompts = [];
+    setupMocks.state.remoteUrls = [];
+    setupMocks.state.savedConfig = undefined;
+    setupMocks.loadFileConfig.mockResolvedValue({});
+    setupMocks.saveFileConfig.mockImplementation((config: unknown) => {
+      setupMocks.state.savedConfig = config;
+      return Promise.resolve();
+    });
+    setupMocks.listRemoteUrls.mockImplementation(() => Promise.resolve(setupMocks.state.remoteUrls));
+    setupMocks.question.mockClear();
+    setupMocks.close.mockClear();
+  });
+
   afterEach(() => {
     delete process.env.REVPACK_TEST_TOKEN;
     delete process.env.REVPACK_MISSING_TEST_TOKEN;
@@ -91,6 +236,135 @@ describe('config setup provider prompts', () => {
     expect(getSetupProviderDefault('https://github.com', null)).toBe('github');
     expect(getSetupProviderDefault('https://review.example.com', 'github')).toBe('github');
     expect(getSetupProviderDefault('https://review.example.com', null)).toBe('gitlab');
+  });
+
+  it('suggests HTTPS provider URLs from scp-like and ssh remotes', () => {
+    expect(suggestSetupProfileFromRemotes(['git@github.com:org/repo.git'])).toEqual({
+      suggestedUrl: 'https://github.com',
+      suggestedName: 'github',
+      detectedProvider: 'github',
+    });
+    expect(suggestSetupProfileFromRemotes(['ssh://git@bitbucket.org/org/repo.git'])).toEqual({
+      suggestedUrl: 'https://bitbucket.org',
+      suggestedName: 'bitbucket',
+      detectedProvider: 'bitbucket-cloud',
+    });
+  });
+
+  it('defaults blank Bitbucket Cloud setup URLs to the cloud origin', () => {
+    expect(defaultSetupUrlForProvider('', 'bitbucket-cloud')).toBe('https://bitbucket.org');
+    expect(defaultSetupUrlForProvider('', 'gitlab')).toBe('');
+    expect(defaultSetupUrlForProvider('https://example.com', 'bitbucket-cloud')).toBe('https://example.com');
+  });
+
+  it('uses the Bitbucket Cloud origin when setup gets a blank URL and Bitbucket provider', async () => {
+    const outputSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    setupMocks.state.promptResponses = ['', 'bitbucket-cloud', '', '', '', ''];
+
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerPrimaryConfigCommands(program);
+
+      await program.parseAsync(['node', 'revpack', 'auth', 'setup']);
+    } finally {
+      outputSpy.mockRestore();
+    }
+
+    const expectedUrl = defaultSetupUrlForProvider('', 'bitbucket-cloud');
+    expect(setupMocks.state.prompts.slice(0, 2)).toEqual([
+      'Provider URL: ',
+      'Provider (gitlab/github/bitbucket-cloud) [gitlab]: ',
+    ]);
+    expect(setupMocks.state.savedConfig as RevpackConfig).toEqual({
+      profiles: {
+        bitbucket: {
+          provider: 'bitbucket-cloud',
+          url: expectedUrl,
+          tokenEnv: 'REVPACK_BITBUCKET_TOKEN',
+          emailEnv: 'REVPACK_BITBUCKET_EMAIL',
+        },
+      },
+    });
+    expect(inferProviderFromUrl(expectedUrl)).toBe('bitbucket-cloud');
+  });
+
+  it('uses a detected GitHub remote without prompting for provider selection', async () => {
+    const outputSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    setupMocks.state.remoteUrls = ['git@github.com:org/repo.git'];
+    setupMocks.state.promptResponses = ['', '', '', ''];
+
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerPrimaryConfigCommands(program);
+
+      await program.parseAsync(['node', 'revpack', 'auth', 'setup']);
+    } finally {
+      outputSpy.mockRestore();
+    }
+
+    expect(setupMocks.state.prompts).toEqual([
+      'Provider URL [https://github.com]: ',
+      'Profile name [github]: ',
+      'Token environment variable [REVPACK_GITHUB_TOKEN]: ',
+      'Additional remote match pattern (optional): ',
+    ]);
+    expect(setupMocks.state.savedConfig as RevpackConfig).toEqual({
+      profiles: {
+        github: {
+          provider: 'github',
+          url: 'https://github.com',
+          tokenEnv: 'REVPACK_GITHUB_TOKEN',
+        },
+      },
+    });
+  });
+
+  it('prompts for self-hosted provider transport settings and saves them', async () => {
+    const outputSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    setupMocks.state.promptResponses = [
+      'https://gitlab.example.com',
+      'corp',
+      'REVPACK_CORP_TOKEN',
+      'gitlab.example.com:org/*, ssh://git@gitlab.example.com/org/*',
+      'C:\\certs\\corp.pem',
+      'no',
+      'yes',
+    ];
+
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerPrimaryConfigCommands(program);
+
+      await program.parseAsync(['node', 'revpack', 'auth', 'setup']);
+    } finally {
+      outputSpy.mockRestore();
+    }
+
+    expect(setupMocks.state.prompts).toEqual([
+      'Provider URL: ',
+      'Profile name [gitlab]: ',
+      'Token environment variable [REVPACK_GITLAB_TOKEN]: ',
+      'Additional remote match pattern (optional): ',
+      'Custom CA file (optional): ',
+      'Verify TLS certificates [yes]: ',
+      'Use SSH for git clone (revpack checkout) [no]: ',
+    ]);
+    expect(setupMocks.state.savedConfig as RevpackConfig).toEqual({
+      profiles: {
+        corp: {
+          provider: 'gitlab',
+          url: 'https://gitlab.example.com',
+          tokenEnv: 'REVPACK_CORP_TOKEN',
+          remotePatterns: ['gitlab.example.com:org/*', 'ssh://git@gitlab.example.com/org/*'],
+          caFile: 'C:\\certs\\corp.pem',
+          tlsVerify: false,
+          sshClone: true,
+        },
+      },
+    });
   });
 
   it('does not treat an entered URL as a provider choice', () => {

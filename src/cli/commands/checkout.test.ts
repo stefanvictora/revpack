@@ -97,6 +97,30 @@ describe('checkout command', () => {
     expect(runSetupMock).toHaveBeenCalledWith({ cwd: process.cwd() });
   });
 
+  it('shows concise target examples in help', async () => {
+    const output: string[] = [];
+    const program = new Command();
+    program.exitOverride();
+    program.configureOutput({
+      writeOut: (value) => output.push(value),
+      writeErr: (value) => output.push(value),
+    });
+    registerCheckoutCommand(program);
+
+    try {
+      await program.parseAsync(['node', 'revpack', 'checkout', '--help']);
+    } catch {
+      // Commander exits after printing --help when exitOverride is enabled.
+    }
+
+    const help = output.join('');
+    expect(help).toContain('Examples:');
+    expect(help).toContain('revpack checkout !42');
+    expect(help).toContain('revpack checkout 58 --repo owner/repo');
+    expect(help).toContain('revpack checkout https://github.com/owner/repo/pull/58');
+    expect(help).toContain('revpack checkout workspace/repo#42 --profile bitbucket');
+  });
+
   async function parseCheckout(...args: string[]): Promise<void> {
     const program = new Command();
     program.exitOverride();
