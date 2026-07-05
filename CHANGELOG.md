@@ -9,14 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Added first-class Bitbucket Cloud support for configuring provider profiles, preparing and checking out pull request review bundles, reading pull request discussions, showing status, and publishing revpack outputs.
-- Added primary onboarding commands and help: `revpack connect`, top-level `revpack doctor`, `revpack setup --agent <target>`, a concise top-level workflow, and checkout target examples.
+- Added primary provider authentication commands and help: `revpack auth setup`, `revpack auth doctor`, `revpack auth show`, top-level `revpack doctor`, `revpack setup --agent <target>`, a concise top-level workflow, and checkout target examples.
 
 ### Changed
 
 - Relaxed finding category validation so `revpack publish findings` accepts any non-empty category while still recommending the standard category set.
-- Changed bare `revpack config` to print profile-oriented help instead of acting as an alias for `revpack config show`, with clearer create, inspect/edit, and manage sections for profile workflows.
-- Improved `revpack config setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.
-- Changed `revpack config setup` so inferred provider URLs skip the provider selection prompt while ambiguous URLs still ask for the provider.
+- Changed bare `revpack config` to print profile-oriented help instead of acting as an alias for `revpack config show`, with clearer inspect/edit and manage sections for profile workflows.
+- Improved `revpack auth setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.
+- Changed `revpack auth setup` so inferred provider URLs skip the provider selection prompt while ambiguous URLs still ask for the provider.
 
 ### Fixed
 

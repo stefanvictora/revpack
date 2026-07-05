@@ -23,8 +23,8 @@ program.addHelpText(
   'after',
   `
 Typical workflow:
-  revpack connect
-  revpack doctor
+  revpack auth setup
+  revpack auth doctor
   revpack setup --agent codex
   revpack prepare
   <run your agent>

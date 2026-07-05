@@ -26,18 +26,20 @@ Install the CLI:
 npm install -g @stefanvictora/revpack
 ```
 
-Open the repository you want to review, then configure a provider profile:
+Open the repository you want to review, then set up provider authentication:
 
 ```bash
-revpack connect
+revpack auth setup
 export REVPACK_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 # or
 export REVPACK_GITLAB_TOKEN=glpat-xxxxxxxxxxxx
 # or
 export REVPACK_BITBUCKET_EMAIL=you@example.com
 export REVPACK_BITBUCKET_TOKEN=ATBBTxxxxxxxxxxxx
-revpack doctor
+revpack auth doctor
 ```
+
+`auth setup` stores provider settings such as the provider type, host URL, and token environment variable name. It does not store your provider token directly.
 
 Add review guidance and instructions for your agent:
 

@@ -32,19 +32,17 @@ describe('config command', () => {
     expect(help).toContain('show');
     expect(help).toContain('profile');
     expect(help).toContain('List, show, create, or delete saved profiles');
-    expect(help).toContain('Create:');
-    expect(help).toContain('revpack connect');
     expect(help).toContain('Current project:');
-    expect(help).toContain('revpack doctor');
+    expect(help).toContain('revpack config show');
     expect(help).toContain('Saved profiles:');
     expect(help).toContain('revpack config profile list');
     expect(help).toContain('revpack config profile delete <name>');
-    expect(help).toContain('setup');
-    expect(help).toContain('doctor');
+    expect(help).not.toContain('setup');
+    expect(help).not.toContain('doctor');
     expect(help).not.toContain('No active profile');
   });
 
-  it('registers top-level connect and doctor commands', async () => {
+  it('registers top-level auth and doctor commands', async () => {
     const output: string[] = [];
     const program = new Command();
     program.exitOverride();
@@ -55,16 +53,69 @@ describe('config command', () => {
     registerPrimaryConfigCommands(program);
 
     try {
-      await program.parseAsync(['node', 'revpack', 'doctor', '--help']);
+      await program.parseAsync(['node', 'revpack', 'auth', '--help']);
     } catch {
       // Commander exits after printing --help when exitOverride is enabled.
     }
 
     const help = output.join('');
-    expect(help).toContain('Usage: revpack doctor [options]');
+    expect(help).toContain('Usage: revpack auth [options] [command]');
+    expect(help).toContain('setup');
+    expect(help).toContain('Set up provider authentication');
+    expect(help).toContain('doctor');
+    expect(help).toContain('Check provider authentication');
+    expect(help).toContain('show');
+    expect(help).toContain('Show resolved provider authentication settings');
+    expect(program.commands.map((command) => command.name())).toEqual(['auth', 'doctor']);
+  });
+
+  it('registers auth doctor and top-level doctor with matching options', async () => {
+    for (const args of [
+      ['node', 'revpack', 'auth', 'doctor', '--help'],
+      ['node', 'revpack', 'doctor', '--help'],
+    ]) {
+      const output: string[] = [];
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({
+        writeOut: (value) => output.push(value),
+        writeErr: (value) => output.push(value),
+      });
+      registerPrimaryConfigCommands(program);
+
+      try {
+        await program.parseAsync(args);
+      } catch {
+        // Commander exits after printing --help when exitOverride is enabled.
+      }
+
+      const help = output.join('');
+      expect(help).toContain('--profile <name>');
+      expect(help).toContain('--json');
+    }
+  });
+
+  it('registers auth show with resolved-profile options', async () => {
+    const output: string[] = [];
+    const program = new Command();
+    program.exitOverride();
+    program.configureOutput({
+      writeOut: (value) => output.push(value),
+      writeErr: (value) => output.push(value),
+    });
+    registerPrimaryConfigCommands(program);
+
+    try {
+      await program.parseAsync(['node', 'revpack', 'auth', 'show', '--help']);
+    } catch {
+      // Commander exits after printing --help when exitOverride is enabled.
+    }
+
+    const help = output.join('');
+    expect(help).toContain('Usage: revpack auth show [options]');
     expect(help).toContain('--profile <name>');
     expect(help).toContain('--json');
-    expect(program.commands.map((command) => command.name())).toEqual(['connect', 'doctor']);
+    expect(help).toContain('--sources');
   });
 
   it('describes profile create as the non-interactive creation path', async () => {
@@ -89,7 +140,7 @@ describe('config command', () => {
   });
 });
 
-describe('config setup provider prompts', () => {
+describe('auth setup provider prompts', () => {
   afterEach(() => {
     delete process.env.REVPACK_TEST_TOKEN;
     delete process.env.REVPACK_MISSING_TEST_TOKEN;

@@ -25,7 +25,7 @@ import { handleError, outputJson } from '../helpers.js';
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
     .command('config')
-    .description('Create, inspect, and edit provider profiles')
+    .description('Inspect and edit provider profiles')
     .action(function (this: Command) {
       this.outputHelp();
     });
@@ -40,26 +40,6 @@ export function registerConfigCommand(program: Command): void {
     .option('--sources', 'Show where each value comes from')
     .action(async (opts: { profile?: string; json?: boolean; sources?: boolean }) => {
       await showAction(opts);
-    });
-
-  // ─── config setup ────────────────────────────────────────
-
-  configCmd
-    .command('setup')
-    .description('Create a profile interactively')
-    .action(async () => {
-      await connectAction();
-    });
-
-  // ─── config doctor ───────────────────────────────────────
-
-  configCmd
-    .command('doctor')
-    .description('Check the matching or selected profile')
-    .option('--profile <name>', 'Check a specific profile')
-    .option('--json', 'Output as JSON')
-    .action(async (opts: { profile?: string; json?: boolean }) => {
-      await doctorAction(opts);
     });
 
   // ─── config get ──────────────────────────────────────────
@@ -160,7 +140,7 @@ export function registerConfigCommand(program: Command): void {
         if (names.length === 0) {
           console.log(chalk.dim('No profiles configured.'));
           console.log('');
-          console.log(`Run ${chalk.cyan('revpack connect')} to create one.`);
+          console.log(`Run ${chalk.cyan('revpack auth setup')} to create one.`);
           return;
         }
 
@@ -307,12 +287,8 @@ export function registerConfigCommand(program: Command): void {
   configCmd.addHelpText(
     'after',
     `
-Create:
-  revpack connect
-
 Current project:
   revpack config show
-  revpack doctor
 
 Saved profiles:
   revpack config profile list
@@ -322,16 +298,42 @@ Saved profiles:
 }
 
 export function registerPrimaryConfigCommands(program: Command): void {
-  program
-    .command('connect')
-    .description('Create a provider profile interactively')
+  const authCmd = program
+    .command('auth')
+    .description('Set up and check provider authentication')
+    .action(function (this: Command) {
+      this.outputHelp();
+    });
+
+  authCmd
+    .command('setup')
+    .description('Set up provider authentication')
     .action(async () => {
-      await connectAction();
+      await setupAuthAction();
+    });
+
+  authCmd
+    .command('doctor')
+    .description('Check provider authentication')
+    .option('--profile <name>', 'Check a specific profile')
+    .option('--json', 'Output as JSON')
+    .action(async (opts: { profile?: string; json?: boolean }) => {
+      await doctorAction(opts);
+    });
+
+  authCmd
+    .command('show')
+    .description('Show resolved provider authentication settings')
+    .option('--profile <name>', 'Show a specific profile')
+    .option('--json', 'Output as JSON')
+    .option('--sources', 'Show where each value comes from')
+    .action(async (opts: { profile?: string; json?: boolean; sources?: boolean }) => {
+      await showAction(opts);
     });
 
   program
     .command('doctor')
-    .description('Check the matching or selected provider profile')
+    .description('Check provider authentication')
     .option('--profile <name>', 'Check a specific profile')
     .option('--json', 'Output as JSON')
     .action(async (opts: { profile?: string; json?: boolean }) => {
@@ -341,7 +343,7 @@ export function registerPrimaryConfigCommands(program: Command): void {
 
 // ─── Helpers ─────────────────────────────────────────────
 
-async function connectAction(): Promise<void> {
+async function setupAuthAction(): Promise<void> {
   try {
     const remoteUrls = await getRemoteUrlsSafe();
 
@@ -381,7 +383,7 @@ async function connectAction(): Promise<void> {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     const ask = (prompt: string): Promise<string> => new Promise((resolve) => rl.question(prompt, resolve));
 
-    console.log(chalk.bold('revpack — Profile Setup'));
+    console.log(chalk.bold('revpack — Provider Authentication Setup'));
     console.log('');
     if (detectedProvider && suggestedUrl) {
       console.log(`Detected ${formatProviderName(detectedProvider)} remote: ${new URL(suggestedUrl).host}`);
@@ -504,7 +506,7 @@ async function connectAction(): Promise<void> {
     if (profile.emailEnv && !isTokenEnvResolved(profile.emailEnv)) {
       console.log(`  export ${profile.emailEnv}=you@example.com`);
     }
-    console.log(`  revpack doctor --profile ${name}`);
+    console.log(`  revpack auth doctor --profile ${name}`);
   } catch (err) {
     handleError(err);
   }
@@ -645,7 +647,7 @@ async function showNoMatchMessage(remoteUrls: string[]): Promise<void> {
   }
 
   console.log(chalk.bold('Next:'));
-  console.log(`  revpack connect`);
+  console.log(`  revpack auth setup`);
   if (remoteUrls.length > 0 && names.length > 0) {
     const firstName = names[0];
     console.log(`  revpack config set remotePatterns <pattern> --profile ${firstName}`);

@@ -3,8 +3,8 @@
 ## Primary workflow
 
 ```bash
-revpack connect                    # create a provider profile interactively
-revpack doctor                     # check the matching provider profile
+revpack auth setup                 # set up provider authentication
+revpack auth doctor                # check provider authentication
 revpack setup --agent codex        # create REVIEW.md and install one agent adapter
 revpack prepare                    # create or refresh the review bundle
 # run your agent
@@ -144,19 +144,37 @@ Generated harness files:
 - `agent copilot`: `.github/prompts/revpack-review.prompt.md`
 - `agent cursor`: `.cursor/commands/revpack-review.md`
 
-## `config`
+## `auth`
 
-Creates, inspects, and edits provider profiles. Revpack stores provider settings in named profiles. Commands such as `show`, `doctor`, `get`, `set`, and `unset` use the profile resolved from the current git remote unless you pass `--profile`; `config profile` commands manage saved profiles directly.
+Sets up and checks provider authentication. `auth setup` creates or updates a provider profile with settings such as the provider type, host URL, and token environment variable name. It does not store your provider token directly.
 
 ```bash
-# Primary onboarding
-revpack connect
+revpack auth setup
+revpack auth doctor
+revpack auth doctor --profile myprofile
+revpack auth doctor --json
+revpack auth show
+revpack auth show --profile myprofile
+revpack auth show --sources
+revpack auth show --json
+```
+
+`revpack doctor` is a shortcut for `revpack auth doctor`.
+
+## `config`
+
+Inspects and edits provider profiles. Revpack stores provider settings in named profiles. Commands such as `show`, `get`, `set`, and `unset` use the profile resolved from the current git remote unless you pass `--profile`; `config profile` commands manage saved profiles directly.
+
+```bash
+# Provider authentication
+revpack auth setup
+revpack auth doctor
+revpack auth doctor --profile myprofile
+revpack auth show
+
+# Shortcut for provider authentication checks
 revpack doctor
 revpack doctor --profile myprofile
-
-# Compatibility aliases
-revpack config setup
-revpack config doctor
 
 # Non-interactive profile creation
 revpack config profile create myBitbucket --provider bitbucket-cloud --url https://bitbucket.org --email-env REVPACK_BITBUCKET_EMAIL --token-env REVPACK_BITBUCKET_TOKEN
@@ -196,7 +214,9 @@ provider, url, tokenEnv, emailEnv, remotePatterns, caFile, tlsVerify, sshClone
 - `tokenEnv` names the environment variable that contains the provider token.
 - `emailEnv` names the environment variable that contains the Atlassian account email. It is required for Bitbucket Cloud Basic Auth together with the API token; it is not a Bitbucket username.
 
+`revpack auth setup` stores provider settings such as the provider type, host URL, and token environment variable name. It does not store your provider token directly.
+
 Bitbucket Cloud support covers pull request review workflows on `bitbucket.org`. It does not include Bitbucket Server/Data Center, OAuth, workspace/project/repository access tokens, Pipelines, or commit status integrations.
 
 > [!TIP]
-> The setup commands write the profiles to: `~/.config/revpack/config.json`
+> `revpack auth setup` writes profiles to: `~/.config/revpack/config.json`
