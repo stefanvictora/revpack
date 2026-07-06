@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Added first-class Bitbucket Cloud support for configuring provider profiles, preparing and checking out pull request review bundles, reading pull request discussions, showing status, and publishing revpack outputs.
 - Added primary provider authentication commands and help: `revpack auth setup`, `revpack auth doctor`, `revpack auth show`, top-level `revpack doctor`, `revpack setup --agent <target>`, a concise top-level workflow, and checkout target examples.
+- Added resolved review threads to prepared bundles under `.revpack/resolved-threads/`, keeping them available as context and reply targets without mixing them into the active thread worklist.
 
 ### Changed
 
@@ -29,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed `revpack status` for GitLab branch auto-detection so authentication failures are no longer reported as "no open MR found".
 - Fixed CLI error handling on Windows to avoid a trailing libuv assertion after provider errors.
 - Fixed `revpack publish review` leaving `review.md` populated after publishing, which could republish the same review note during later incremental reviews.
+- Fixed `revpack prepare` pruning pending replies when their target thread had been resolved but still existed on the provider.
 - Fixed `revpack publish all` updating the PR/MR description summary again when `revpack status` already reported the summary as published.
 - Fixed `revpack publish all` so real summary publishing failures stop before checkpointing and non-GitHub finding setup failures report partial-success warnings after earlier provider actions.
 - Fixed debug error logging repeating the user-facing error message before the stack frames.

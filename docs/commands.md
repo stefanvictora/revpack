@@ -37,6 +37,7 @@ Behavior:
 - If a bundle already exists, `prepare` refreshes it and detects code or thread changes since the last recorded review state.
 - If the current git branch no longer matches the bundled PR/MR source branch, `prepare` stops and asks you to switch branches or run `clean`.
 - Thread IDs such as `T-001` are derived from the provider's thread creation order. They stay stable unless existing provider threads are deleted.
+- Resolved review threads are exported to `.revpack/resolved-threads/` as context and can still receive replies by `T-NNN` ID.
 
 Local mode:
 
@@ -97,7 +98,7 @@ revpack publish summary --repo workspace/repo
 ```
 
 After publishing, revpack refreshes the bundle by default so the new provider comments are reflected locally.
-This publish-triggered refresh preserves other pending output files; run `revpack prepare` explicitly when you want stale replies pruned against the latest thread state.
+This publish-triggered refresh preserves other pending output files; run `revpack prepare` explicitly when you want stale replies pruned against the latest thread state. Replies to resolved threads are preserved as long as the provider still returns the thread.
 Missing default queue files such as `.revpack/outputs/replies.json` and `.revpack/outputs/new-findings.json` are treated as having no pending items.
 
 `revpack publish description` is kept as a compatibility alias for `revpack publish summary`.

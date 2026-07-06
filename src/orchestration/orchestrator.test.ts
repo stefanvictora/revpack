@@ -2490,6 +2490,32 @@ describe('ReviewOrchestrator', () => {
       const remaining = JSON.parse(await fs.readFile(repliesPath, 'utf-8'));
       expect(remaining).toHaveLength(0);
     });
+
+    it('preserves pending replies for resolved threads on refresh', async () => {
+      const resolvedThread: ReviewThread = {
+        ...mockThread,
+        threadId: 'thread-resolved',
+        resolved: true,
+      };
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([mockThread, resolvedThread]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+      const replies = [
+        { threadId: 'T-002', body: 'Resolved reply.', resolve: false },
+        { threadId: 'T-999', body: 'Stale reply.', resolve: false },
+      ];
+      await fs.writeFile(repliesPath, JSON.stringify(replies, null, 2), 'utf-8');
+
+      const result = await orchestrator.prepare('!42', 'group/project');
+
+      expect(result.prunedReplies).toBe(1);
+      const remaining = JSON.parse(await fs.readFile(repliesPath, 'utf-8'));
+      expect(remaining).toEqual([{ threadId: 'T-002', body: 'Resolved reply.', resolve: false }]);
+      await expect(fs.access(path.join(tmpDir, '.revpack', 'resolved-threads', 'T-002.json'))).resolves.toBeUndefined();
+    });
   });
 
   // ─── publishReviewBatch edge cases ─────────────────────

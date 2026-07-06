@@ -623,8 +623,56 @@ describe('WorkspaceManager', () => {
     expect(t2.threadId).toBe('thread-new');
   });
 
+  it('writes resolved review threads to resolved-threads with stable T-NNN IDs', async () => {
+    const activeThread = makeThread();
+    const resolvedThread = { ...makeThread(), threadId: 'thread-resolved', resolved: true };
+    const allThreads = [activeThread, resolvedThread];
+    const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
+
+    await manager.createBundle(makeTarget(), [activeThread], [], [], threadIndex, {
+      resolvedThreads: [resolvedThread],
+    });
+
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'threads', 'T-001.json'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'resolved-threads', 'T-002.json'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'threads', 'T-002.json'))).rejects.toThrow();
+
+    const resolvedJson = JSON.parse(
+      await fs.readFile(path.join(tmpDir, '.revpack', 'resolved-threads', 'T-002.json'), 'utf-8'),
+    );
+    expect(resolvedJson.threadId).toBe('thread-resolved');
+    expect(resolvedJson.resolved).toBe(true);
+  });
+
+  it('rewrites resolved-threads on each bundle creation', async () => {
+    const activeThread = makeThread();
+    const resolvedThread = { ...makeThread(), threadId: 'thread-resolved', resolved: true };
+    const firstIndex = WorkspaceManager.buildThreadIndex([activeThread, resolvedThread]);
+
+    await manager.createBundle(makeTarget(), [activeThread], [], [], firstIndex, {
+      resolvedThreads: [resolvedThread],
+    });
+
+    const secondIndex = WorkspaceManager.buildThreadIndex([activeThread]);
+    await manager.createBundle(makeTarget(), [activeThread], [], [], secondIndex);
+
+    const resolvedFiles = await fs.readdir(path.join(tmpDir, '.revpack', 'resolved-threads'));
+    expect(resolvedFiles).toEqual([]);
+  });
+
   it('resolves T-NNN from thread JSON files on disk', async () => {
     await createBundle(manager, makeTarget(), [makeThread()]);
+
+    const resolved = await manager.resolveThreadRef('T-001');
+    expect(resolved).toBe('thread-abc');
+  });
+
+  it('resolves T-NNN from resolved thread JSON files on disk', async () => {
+    const resolvedThread = { ...makeThread(), resolved: true };
+    const threadIndex = WorkspaceManager.buildThreadIndex([resolvedThread]);
+    await manager.createBundle(makeTarget(), [], [], [], threadIndex, {
+      resolvedThreads: [resolvedThread],
+    });
 
     const resolved = await manager.resolveThreadRef('T-001');
     expect(resolved).toBe('thread-abc');
@@ -669,6 +717,33 @@ describe('WorkspaceManager', () => {
     expect(remaining[0].threadId).toBe('T-001');
   });
 
+  it('preserves replies for resolved threads that are still known', async () => {
+    const activeThread = makeThread();
+    const resolvedThread = { ...makeThread(), threadId: 'thread-resolved', resolved: true };
+    const allThreads = [activeThread, resolvedThread];
+    const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
+    await manager.createBundle(makeTarget(), [activeThread], [], [], threadIndex, {
+      resolvedThreads: [resolvedThread],
+    });
+
+    const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+    await fs.writeFile(
+      repliesPath,
+      JSON.stringify([
+        { threadId: 'T-002', body: 'resolved reply', resolve: false },
+        { threadId: 'T-999', body: 'stale reply', resolve: false },
+      ]),
+      'utf-8',
+    );
+
+    const pruned = await manager.pruneStaleReplies(new Set(['thread-abc', 'thread-resolved']), threadIndex);
+    expect(pruned).toBe(1);
+
+    const remaining = JSON.parse(await fs.readFile(repliesPath, 'utf-8'));
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].threadId).toBe('T-002');
+  });
+
   it('returns 0 when pruning with no replies file', async () => {
     await createBundle(manager, makeTarget(), []);
     const pruned = await manager.pruneStaleReplies(new Set(), new Map());
@@ -689,7 +764,7 @@ describe('WorkspaceManager', () => {
     await expect(manager.removeBundle()).resolves.not.toThrow();
   });
 
-  it('only emits thread items for threads written to the bundle', () => {
+  it('emits thread items for active and resolved thread material', () => {
     const activeThread = makeThread();
     const resolvedThread = { ...makeThread(), threadId: 'thread-resolved', resolved: true };
     const allThreads = [activeThread, resolvedThread];
@@ -720,10 +795,14 @@ describe('WorkspaceManager', () => {
       },
       undefined,
       undefined,
-      [activeThread],
+      allThreads,
     );
 
-    expect(bundleState.threads.items.map((item) => item.providerThreadId)).toEqual(['thread-abc']);
+    expect(bundleState.threads.items.map((item) => item.providerThreadId)).toEqual(['thread-abc', 'thread-resolved']);
+    expect(bundleState.threads.items.map((item) => item.file)).toEqual([
+      '.revpack/threads/T-001.json',
+      '.revpack/resolved-threads/T-002.json',
+    ]);
   });
 
   it('writes incremental diff patch', async () => {
