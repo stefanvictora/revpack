@@ -83,15 +83,15 @@ The bundle gives the agent the review context it needs:
     incremental.patch     # follow-up changes, when a checkpoint exists
     line-map.ndjson       # valid line-comment locations
   outputs/
-    new-findings.json     # new line comments
-    replies.json          # replies to existing threads
-    summary.md            # PR/MR summary
-    review.md             # optional review-level note
+    new-findings.json     # agent-created new line comments, when needed
+    replies.json          # agent-created replies to existing threads, when needed
+    summary.md            # agent-created PR/MR summary
+    review.md             # agent-created optional review-level note, when needed
 ```
 
 The bundle is local and disposable. Use `revpack clean` to remove it, then run `revpack prepare` to recreate it. Published checkpoints are stored with the PR/MR, so cleaning the local bundle does not reset incremental review history.
 
-The agent reads the input files and writes only to `.revpack/outputs/`. You can inspect or edit those files before publishing.
+The agent reads the input files and writes draft material only to `.revpack/outputs/`. Missing conditional draft files mean there is nothing pending for that output. You can inspect or edit those files before publishing.
 
 ## Publishing
 

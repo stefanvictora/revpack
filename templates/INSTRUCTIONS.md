@@ -22,11 +22,11 @@ All instruction files are in `.revpack/instructions/`.
 
 ## Output routing
 
-| Output file                 | Contains                                                      |
-| --------------------------- | ------------------------------------------------------------- |
-| `outputs/new-findings.json` | Concrete, actionable positional issues                        |
-| `outputs/replies.json`      | Useful replies to existing unresolved threads                 |
-| `outputs/summary.md`        | What the MR/PR changes (changelog-style)                      |
-| `outputs/review.md`         | Optional MR/PR-level synthesis; leave empty if nothing useful |
+| Output file                 | Contains                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| `outputs/new-findings.json` | Concrete, actionable positional issues; omit when there are no findings       |
+| `outputs/replies.json`      | Useful replies to existing unresolved threads; omit when there are no replies |
+| `outputs/summary.md`        | What the MR/PR changes (changelog-style)                                      |
+| `outputs/review.md`         | Optional MR/PR-level synthesis; omit when there is no useful note             |
 
 Only write files under `.revpack/outputs/`. Do not modify source files.

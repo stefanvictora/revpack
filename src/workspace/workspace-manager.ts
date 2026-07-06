@@ -38,12 +38,7 @@ import { sanitizeDescriptionForAgent } from './checkpoint.js';
  */
 export type ThreadIndex = Map<string, string>;
 
-const OUTPUT_DEFAULTS: readonly [filename: string, content: string][] = [
-  ['replies.json', '[]'],
-  ['new-findings.json', '[]'],
-  ['summary.md', ''],
-  ['review.md', ''],
-];
+const OUTPUT_FILENAMES = ['replies.json', 'new-findings.json', 'summary.md', 'review.md'] as const;
 
 const OUTPUT_STATE_KEYS = {
   'summary.md': 'summary',
@@ -279,8 +274,6 @@ export class WorkspaceManager {
     await this.writeDiffs(diffs, options?.latestPatchContent);
     await this.writeDiffBundle();
 
-    // Ensure output placeholders exist (preserve existing outputs)
-    await this.ensureDefaultOutputFiles();
     await this.writeOutputSchemas();
 
     // Write .gitignore to exclude bundle from version control
@@ -467,14 +460,14 @@ export class WorkspaceManager {
   }
 
   /**
-   * Discard pending output files (reset to empty).
+   * Discard pending output files.
    */
   async discardOutputs(): Promise<void> {
     const outputDir = path.join(this.baseDir, 'outputs');
-    for (const [name, content] of OUTPUT_DEFAULTS) {
+    for (const name of OUTPUT_FILENAMES) {
       const filePath = path.join(outputDir, name);
       try {
-        await fs.writeFile(filePath, content, 'utf-8');
+        await fs.rm(filePath, { force: true });
       } catch {
         /* outputs dir may not exist yet */
       }
@@ -1168,23 +1161,6 @@ export class WorkspaceManager {
       const fileName = `${file.fileId}-${safeName}.patch`;
       const content = patchSections[idx] ?? '';
       await fs.writeFile(path.join(patchesByFileDir, fileName), content.trimEnd() + '\n', 'utf-8');
-    }
-  }
-
-  /**
-   * Ensure default empty output files exist so agents and automation
-   * always have a predictable set of files.
-   */
-  private async ensureDefaultOutputFiles(): Promise<void> {
-    const outputDir = path.join(this.baseDir, 'outputs');
-    for (const [name, content] of OUTPUT_DEFAULTS) {
-      const filePath = path.join(outputDir, name);
-      try {
-        await fs.access(filePath);
-        // File exists — don't overwrite
-      } catch {
-        await fs.writeFile(filePath, content, 'utf-8');
-      }
     }
   }
 

@@ -27,7 +27,7 @@ Thread files may contain system events (e.g. "changed this line in version 3 of 
 
 ## `outputs/replies.json`
 
-JSON array of replies. Write `[]` if no thread needs a useful reply. Only include threads you are actually replying to.
+JSON array of replies. Create this file only when at least one thread needs a useful reply. Only include threads you are actually replying to.
 
 Required fields: `threadId`, `body`, `resolve`
 Optional: `disposition` — one of `already_fixed`, `explain`, `suggest_fix`, `disagree`, `escalate`
