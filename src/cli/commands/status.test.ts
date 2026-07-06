@@ -148,7 +148,7 @@ describe('buildStatusNextLines', () => {
       '',
       'Or publish selected:',
       '  revpack publish findings',
-      '  revpack publish review',
+      '  revpack publish note',
       '',
       'After publishing selected outputs, record the review state:',
       '  revpack publish checkpoint',

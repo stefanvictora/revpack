@@ -18,7 +18,7 @@ Allowed activity: reading and searching files needed for review (source files, d
 
 ## Output files
 
-Create output files only when you have draft material for them. Missing `replies.json`, `new-findings.json`, and `review.md` means there is nothing to publish for that output.
+Create output files only when you have draft material for them. Missing `replies.json`, `new-findings.json`, and `note.md` means there is nothing to publish for that output.
 
 Write `summary.md` for fresh and incremental code review runs. Do not write filler content to any output file.
 
@@ -27,7 +27,7 @@ Write `summary.md` for fresh and incremental code review runs. Do not write fill
 | `outputs/replies.json`      | Useful replies to existing MR/PR threads                                   |
 | `outputs/new-findings.json` | New positional review findings                                             |
 | `outputs/summary.md`        | Changelog-style description of what the MR/PR changes — not what you found |
-| `outputs/review.md`         | Useful optional MR/PR-level synthesis                                      |
+| `outputs/note.md`           | Useful optional MR/PR-level synthesis                                      |
 
 ## Rerunning a review
 

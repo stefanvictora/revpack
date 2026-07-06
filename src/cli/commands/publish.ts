@@ -1,8 +1,10 @@
 import { Command } from 'commander';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import chalk from 'chalk';
-import type { NewFinding } from '../../core/types.js';
+import type { BundleState, NewFinding } from '../../core/types.js';
+import { sameCommitSha } from '../../core/commits.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { parsePatch } from '../../workspace/patch-parser.js';
 import { validateFindings, formatValidationErrors } from '../../workspace/finding-validator.js';
@@ -15,7 +17,8 @@ export { mergeWithMarkers, MARKER_START, MARKER_END };
 
 const DEFAULT_REPLIES_FILE = '.revpack/outputs/replies.json';
 const DEFAULT_FINDINGS_FILE = '.revpack/outputs/new-findings.json';
-const DEFAULT_REVIEW_FILE = '.revpack/outputs/review.md';
+const DEFAULT_NOTE_FILE = '.revpack/outputs/note.md';
+const LEGACY_REVIEW_FILE = '.revpack/outputs/review.md';
 const DEFAULT_SUMMARY_FILE = '.revpack/outputs/summary.md';
 const DEFAULT_LATEST_PATCH_FILE = '.revpack/diffs/latest.patch';
 
@@ -284,8 +287,55 @@ async function trackFindingActions(ws: WorkspaceManager, findings: NewFinding[],
 
 async function clearDefaultReviewOutput(clearDefaultOutput = true): Promise<void> {
   if (clearDefaultOutput) {
-    await fs.rm(workspacePath(DEFAULT_REVIEW_FILE), { force: true });
+    await fs.rm(workspacePath(DEFAULT_NOTE_FILE), { force: true });
+    await fs.rm(workspacePath(LEGACY_REVIEW_FILE), { force: true });
   }
+}
+
+async function readOptionalTextFile(filePath: string): Promise<{ exists: boolean; content: string }> {
+  try {
+    return { exists: true, content: await fs.readFile(workspacePath(filePath), 'utf-8') };
+  } catch {
+    return { exists: false, content: '' };
+  }
+}
+
+async function loadDefaultReviewNote(): Promise<{
+  filePath: string;
+  content: string;
+  primaryExists: boolean;
+  primaryEmpty: boolean;
+  source: 'primary' | 'legacy' | 'none';
+}> {
+  const primary = await readOptionalTextFile(DEFAULT_NOTE_FILE);
+  if (primary.content.trim()) {
+    return {
+      filePath: DEFAULT_NOTE_FILE,
+      content: primary.content,
+      primaryExists: primary.exists,
+      primaryEmpty: false,
+      source: 'primary',
+    };
+  }
+
+  const legacy = await readOptionalTextFile(LEGACY_REVIEW_FILE);
+  if (legacy.content.trim()) {
+    return {
+      filePath: LEGACY_REVIEW_FILE,
+      content: legacy.content,
+      primaryExists: primary.exists,
+      primaryEmpty: primary.exists,
+      source: 'legacy',
+    };
+  }
+
+  return {
+    filePath: DEFAULT_NOTE_FILE,
+    content: primary.content,
+    primaryExists: primary.exists,
+    primaryEmpty: primary.exists,
+    source: 'none',
+  };
 }
 
 async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
@@ -391,7 +441,7 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
 }
 
 /**
- * GitHub-specific: load, validate, and submit findings + review.md as a single PR review batch.
+ * GitHub-specific: load, validate, and submit findings + review note as a single PR review batch.
  * Clears successfully published outputs. Returns the number of findings published.
  */
 async function publishFindingsAndReviewBatch(reviewContent: string): Promise<number> {
@@ -422,12 +472,17 @@ async function publishFindingsAndReviewBatch(reviewContent: string): Promise<num
 }
 
 async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty?: boolean }): Promise<number> {
-  const filePath = opts.from ?? DEFAULT_REVIEW_FILE;
+  const defaultNote = opts.from ? null : await loadDefaultReviewNote();
+  const filePath = opts.from ?? defaultNote?.filePath ?? DEFAULT_NOTE_FILE;
   let content: string;
-  try {
-    content = await fs.readFile(workspacePath(filePath), 'utf-8');
-  } catch {
-    throw new Error(`No review note found at ${filePath}.`);
+  if (defaultNote) {
+    content = defaultNote.content;
+  } else {
+    try {
+      content = await fs.readFile(workspacePath(filePath), 'utf-8');
+    } catch {
+      throw new Error(`No review note found at ${filePath}.`);
+    }
   }
   if (opts.allowEmpty && !content.trim()) {
     console.log(chalk.dim('No review note published'));
@@ -445,7 +500,7 @@ async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty
     console.log(chalk.dim('No review note published'));
   }
 
-  const isDefaultReviewFile = workspacePath(filePath) === workspacePath(DEFAULT_REVIEW_FILE);
+  const isDefaultReviewFile = !opts.from;
   if (result.created && isDefaultReviewFile) {
     await clearDefaultReviewOutput();
   }
@@ -469,6 +524,198 @@ function isNoReviewNoteToPublishError(err: unknown): boolean {
 function isNoSummaryToPublishError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   return err.message.includes('No summary found') || /^\.revpack\/outputs\/summary\.md is empty/.test(err.message);
+}
+
+type GuidedPublishItemKind = 'replies' | 'findings' | 'summary' | 'note' | 'checkpoint';
+
+interface GuidedPublishItem {
+  kind: GuidedPublishItemKind;
+  label: string;
+  detail: string;
+  selectable: boolean;
+  defaultSelected: boolean;
+}
+
+function getCheckpointState(bundleState: BundleState): 'none' | 'current' | 'outdated' | 'unknown' {
+  if (!bundleState.prepare.checkpoint) return 'none';
+
+  const comparison = bundleState.prepare.comparison;
+  const values = [
+    comparison.targetCodeChangedSinceCheckpoint,
+    comparison.threadsChangedSinceCheckpoint,
+    comparison.descriptionChangedSinceCheckpoint,
+  ];
+
+  if (values.some((value) => value === true)) return 'outdated';
+  if (values.every((value) => value === false)) return 'current';
+  return 'unknown';
+}
+
+function isPublishableOutputState(state: string): boolean {
+  return state === 'pending' || state === 'modified since publish';
+}
+
+async function countJsonArray(filePath: string): Promise<number> {
+  try {
+    const raw = await fs.readFile(workspacePath(filePath), 'utf-8');
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function parseGuidedSelection(input: string, items: GuidedPublishItem[]): Set<GuidedPublishItemKind> | null {
+  const trimmed = input.trim().toLowerCase();
+  if (trimmed === 'q' || trimmed === 'quit') return null;
+
+  const selectable = items.filter((item) => item.selectable);
+  if (!trimmed) {
+    return new Set(selectable.filter((item) => item.defaultSelected).map((item) => item.kind));
+  }
+  if (trimmed === 'a' || trimmed === 'all') {
+    return new Set(selectable.map((item) => item.kind));
+  }
+
+  const selected = new Set<GuidedPublishItemKind>();
+  for (const part of trimmed.split(/[,\s]+/).filter(Boolean)) {
+    const index = Number(part);
+    if (!Number.isInteger(index) || index < 1 || index > items.length || !items[index - 1].selectable) {
+      throw new Error(`Invalid selection "${part}".`);
+    }
+    selected.add(items[index - 1].kind);
+  }
+  return selected;
+}
+
+function formatGuidedItemLine(index: number, item: GuidedPublishItem): string {
+  const marker = item.selectable ? `[${index}]` : ' - ';
+  const suffix = item.selectable && item.defaultSelected ? chalk.dim(' (selected)') : '';
+  const label = item.selectable ? item.label : chalk.dim(item.label);
+  return `  ${marker} ${label} ${chalk.dim(item.detail)}${suffix}`;
+}
+
+async function buildGuidedPublishItems(options?: {
+  bundleState?: BundleState | null;
+  bundleIsStale?: boolean;
+}): Promise<{ items: GuidedPublishItem[]; stale: boolean; checkpointState: string }> {
+  const ws = new WorkspaceManager(process.cwd());
+  const bundleState = options?.bundleState === undefined ? await ws.loadBundleState() : options.bundleState;
+  if (!bundleState) {
+    throw new Error('No active revpack bundle. Run `revpack prepare` first.');
+  }
+
+  const stale = options?.bundleIsStale ?? false;
+  const replies = await countJsonArray(DEFAULT_REPLIES_FILE);
+  const findings = await countJsonArray(DEFAULT_FINDINGS_FILE);
+  const summaryState = await ws.getOutputState('summary');
+  const note = await loadDefaultReviewNote();
+  const checkpointState = getCheckpointState(bundleState);
+  const checkpointDue = checkpointState !== 'current';
+
+  const items: GuidedPublishItem[] = [
+    {
+      kind: 'replies',
+      label: 'Replies',
+      detail: replies > 0 ? `${replies} pending` : 'none',
+      selectable: replies > 0,
+      defaultSelected: replies > 0,
+    },
+    {
+      kind: 'findings',
+      label: 'Findings',
+      detail: findings > 0 ? `${findings} pending` : 'none',
+      selectable: findings > 0,
+      defaultSelected: findings > 0,
+    },
+    {
+      kind: 'summary',
+      label: 'Summary',
+      detail: isPublishableOutputState(summaryState) ? summaryState : 'empty/skipped',
+      selectable: isPublishableOutputState(summaryState),
+      defaultSelected: isPublishableOutputState(summaryState),
+    },
+    {
+      kind: 'note',
+      label: 'Review note',
+      detail:
+        note.source === 'primary'
+          ? `${DEFAULT_NOTE_FILE} pending`
+          : note.source === 'legacy'
+            ? `${LEGACY_REVIEW_FILE} pending (legacy)`
+            : note.primaryEmpty
+              ? `${DEFAULT_NOTE_FILE} empty/skipped`
+              : 'empty/skipped',
+      selectable: note.source !== 'none',
+      defaultSelected: note.source !== 'none',
+    },
+    {
+      kind: 'checkpoint',
+      label: 'Checkpoint',
+      detail:
+        checkpointState === 'none' ? 'not recorded' : checkpointState === 'outdated' ? 'needs update' : checkpointState,
+      selectable: checkpointDue,
+      defaultSelected: checkpointDue && !stale,
+    },
+  ];
+
+  return { items, stale, checkpointState };
+}
+
+async function guidedPublish(opts: { refresh?: boolean } = {}): Promise<void> {
+  const ws = new WorkspaceManager(process.cwd());
+  const bundleState = await ws.loadBundleState();
+  if (!bundleState) {
+    throw new Error('No active revpack bundle. Run `revpack prepare` first.');
+  }
+
+  const orchestrator = await createOrchestrator();
+  const defaultRepo = await getRepoFromGit();
+  const latestTarget = await orchestrator.open(undefined, defaultRepo).catch(() => null);
+  const bundleIsStale = latestTarget
+    ? !sameCommitSha(latestTarget.diffRefs.headSha, bundleState.target.diffRefs.headSha)
+    : false;
+  const { items } = await buildGuidedPublishItems({ bundleState, bundleIsStale });
+
+  console.log(chalk.bold('Publish review material'));
+  items.slice(0, 4).forEach((item, index) => console.log(formatGuidedItemLine(index + 1, item)));
+  console.log('');
+  console.log(chalk.bold('Review state'));
+  console.log(formatGuidedItemLine(5, items[4]));
+  if (bundleIsStale) {
+    console.log('');
+    console.log(
+      chalk.yellow(
+        'Active bundle is stale; pending outputs may describe older code. Checkpoint is not selected by default.',
+      ),
+    );
+  }
+
+  const defaults = items
+    .map((item, index) => (item.selectable && item.defaultSelected ? String(index + 1) : null))
+    .filter((value): value is string => value !== null);
+  const promptSuffix = defaults.length > 0 ? defaults.join(',') : 'none';
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question(`Select items to publish (Enter=${promptSuffix}, numbers, a=all, q=cancel): `);
+  rl.close();
+
+  const selected = parseGuidedSelection(answer, items);
+  if (!selected || selected.size === 0) {
+    console.log(chalk.dim('No items selected.'));
+    return;
+  }
+
+  let total = 0;
+  if (selected.has('replies')) total += await publishReplies({ noRefresh: true });
+  if (selected.has('findings')) total += await publishFindings({ noRefresh: true });
+  if (selected.has('summary')) total += await publishDescription({});
+  if (selected.has('note')) total += await publishReviewCmd({ allowEmpty: true });
+  if (selected.has('checkpoint')) await publishCheckpointCmd({});
+
+  console.log(total > 0 ? chalk.green(`✓ ${total} item(s) published`) : chalk.dim('No review material published.'));
+  if (opts.refresh !== false) {
+    await autoRefresh();
+  }
 }
 
 function warnPartialSuccess(occurred: boolean): void {
@@ -500,12 +747,7 @@ async function publishAllPending(opts: { refresh?: boolean } = {}): Promise<void
   console.log('');
   console.log(chalk.bold('─── Findings ───'));
   if (isGitHub) {
-    let reviewContent = '';
-    try {
-      reviewContent = await fs.readFile(workspacePath(DEFAULT_REVIEW_FILE), 'utf-8');
-    } catch {
-      /* review.md absent is fine */
-    }
+    const reviewContent = (await loadDefaultReviewNote()).content;
     try {
       const batchCount = await publishFindingsAndReviewBatch(reviewContent);
       reviewPublishedInBatch = batchCount > 0 && !!reviewContent.trim();
@@ -581,6 +823,8 @@ export const __testing = {
   findReplyEntryIndex,
   normalizeThreadRef,
   isNoReviewNoteToPublishError,
+  parseGuidedSelection,
+  buildGuidedPublishItems,
   publishReplies,
   publishFindings,
   publishDescription,
@@ -588,6 +832,7 @@ export const __testing = {
   publishReviewCmd,
   requirePublishableContent,
   publishAllPending,
+  guidedPublish,
   autoRefresh,
 };
 
@@ -611,17 +856,14 @@ export function registerPublishCommand(program: Command): void {
     .description('Publish pending outputs to the PR/MR')
     .option('--no-refresh', 'Skip auto-refresh after publishing');
 
-  // ── publish (no subcommand) → tell user to be explicit ───
-  publish.action(() => {
-    console.log(chalk.yellow('Please specify what to publish:'));
-    console.log('');
-    console.log('  revpack publish all           Publish everything pending');
-    console.log('  revpack publish findings      Publish findings only');
-    console.log('  revpack publish replies       Publish replies only');
-    console.log('  revpack publish summary       Update PR/MR summary in the description');
-    console.log('  revpack publish review        Publish review.md as a review note');
-    console.log('  revpack publish checkpoint    Record checkpoint only');
-    process.exit(1);
+  // ── publish (no subcommand) → guided human publish flow ───
+  publish.action(async (_opts: Record<string, never>, cmd: Command) => {
+    try {
+      const parentOpts = cmd.opts<{ refresh?: boolean }>();
+      await guidedPublish({ refresh: parentOpts?.refresh });
+    } catch (err) {
+      handleError(err);
+    }
   });
 
   // ── publish all ───────────────────────────────────────────
@@ -704,8 +946,8 @@ export function registerPublishCommand(program: Command): void {
   function addReviewPublishCommand(commandName: string, opts?: { hidden?: boolean }): void {
     publish
       .command(commandName, opts)
-      .description('Publish review.md as a review note')
-      .option('--from <file>', `Review file (default: ${DEFAULT_REVIEW_FILE})`)
+      .description('Publish note.md as a review note')
+      .option('--from <file>', `Review note file (default: ${DEFAULT_NOTE_FILE}, falls back to ${LEGACY_REVIEW_FILE})`)
       .option('--repo <repo>', 'Repository slug')
       .action(async (opts: { from?: string; repo?: string }, cmd: Command) => {
         try {
@@ -720,7 +962,8 @@ export function registerPublishCommand(program: Command): void {
       });
   }
 
-  addReviewPublishCommand('review');
+  addReviewPublishCommand('note');
+  addReviewPublishCommand('review', { hidden: true });
 
   publish
     .command('checkpoint')

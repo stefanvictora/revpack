@@ -44,7 +44,7 @@ Local mode:
 - `revpack prepare --local` reviews committed branch changes against an inferred base branch (`origin/main`, `main`, `origin/master`, `master`, `origin/develop`, `develop`, `origin/trunk`, or `trunk`).
 - Uncommitted working tree changes are ignored and are not included in the agent context.
 - Local findings are stored as local review threads under `.revpack/local/` and appear in the normal `.revpack/threads/T-NNN.*` files after refresh.
-- `revpack publish findings`, `revpack publish replies`, `revpack publish review`, and `revpack publish checkpoint` work against the active local bundle. Publishing the checkpoint records the local review state.
+- `revpack publish findings`, `revpack publish replies`, `revpack publish note`, and `revpack publish checkpoint` work against the active local bundle. Publishing the checkpoint records the local review state.
 
 ## `checkout <ref>`
 
@@ -92,7 +92,7 @@ revpack publish all
 revpack publish replies
 revpack publish findings
 revpack publish summary
-revpack publish review
+revpack publish note
 revpack publish checkpoint
 revpack publish summary --repo workspace/repo
 ```
@@ -101,8 +101,9 @@ After publishing, revpack refreshes the bundle by default so the new provider co
 This publish-triggered refresh preserves other pending output files; run `revpack prepare` explicitly when you want stale replies pruned against the latest thread state. Replies to resolved threads are preserved as long as the provider still returns the thread.
 Missing default queue files such as `.revpack/outputs/replies.json` and `.revpack/outputs/new-findings.json` are treated as having no pending items.
 
+Bare `revpack publish` starts the guided publish flow for choosing review material and checkpoint state.
 `revpack publish description` is kept as a compatibility alias for `revpack publish summary`.
-`revpack publish review` publishes `.revpack/outputs/review.md` as a visible review note.
+`revpack publish note` publishes `.revpack/outputs/note.md` as a visible review note. Legacy `.revpack/outputs/review.md` is still accepted when `note.md` is absent or empty, and `revpack publish review` remains a compatibility alias.
 `revpack publish checkpoint` records review state for future incremental runs.
 
 ## `clean`

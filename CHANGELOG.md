@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added distinct active and resolved review-thread context to prepared bundles: active threads include replyable target-level discussions regardless of their pre-reply provider resolvability, while resolved threads remain available on demand for duplicate checks and draft reply reconciliation.
 - Added `.revpack/commits.md` to prepared review bundles when non-merge commit messages are available, making commit intent visible as review context.
 - Added Bundle Context Use through generated `revpack-context` agent adapters and a neutral `.revpack/CONTEXT.md` task router, allowing agents to inspect, discuss, challenge, or fix active review threads without activating the formal Review Contract; fixing threads also drafts useful publishable replies.
+- Added guided `revpack publish` for selecting pending review material and checkpoint state interactively, plus primary `revpack publish note` and `.revpack/outputs/note.md` review-note output with legacy `publish review` / `review.md` compatibility.
 
 ### Changed
 
@@ -38,7 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed `revpack status` next-step guidance when the local checkout is ahead of the latest PR/MR head.
 - Fixed `revpack status` for GitLab branch auto-detection so authentication failures are no longer reported as "no open MR found".
 - Fixed CLI error handling on Windows to avoid a trailing libuv assertion after provider errors.
-- Fixed `revpack publish review` leaving `review.md` populated after publishing, which could republish the same review note during later incremental reviews.
+- Fixed review-note publishing leaving the default note output populated after publishing, which could republish the same review note during later incremental reviews.
 - Fixed `revpack prepare` pruning pending replies when their target thread had been resolved but still existed on the provider.
 - Fixed `revpack publish all` updating the PR/MR description summary again when `revpack status` already reported the summary as published.
 - Fixed `revpack publish all` so real summary publishing failures stop before checkpointing and non-GitHub finding setup failures report partial-success warnings after earlier provider actions.
