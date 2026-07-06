@@ -91,7 +91,7 @@ The bundle gives the agent the review context it needs:
     new-findings.json     # agent-created new line comments, when needed
     replies.json          # agent-created replies to existing threads, when needed
     summary.md            # agent-created PR/MR summary
-    review.md             # agent-created optional review-level note, when needed
+    note.md               # agent-created optional review note, when needed
 ```
 
 The bundle is local and disposable. Use `revpack clean` to remove it, then run `revpack prepare` to recreate it. Published checkpoints are stored with the PR/MR, so cleaning the local bundle does not reset incremental review history.
@@ -108,7 +108,7 @@ You decide what goes back to the provider.
 | New line comments           | `revpack publish findings`   |
 | Replies to existing threads | `revpack publish replies`    |
 | PR/MR summary               | `revpack publish summary`    |
-| Review note                 | `revpack publish review`     |
+| Review note                 | `revpack publish note`       |
 | Review checkpoint           | `revpack publish checkpoint` |
 
 Useful variants:

@@ -473,6 +473,7 @@ describe('WorkspaceManager', () => {
   it('creates schema references without draft output files on bundle creation', async () => {
     await createBundle(manager, makeTarget(), []);
     await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'))).rejects.toThrow();
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'note.md'))).rejects.toThrow();
     await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'review.md'))).rejects.toThrow();
     await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'replies.json'))).rejects.toThrow();
     await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'))).rejects.toThrow();
@@ -2061,7 +2062,7 @@ describe('WorkspaceManager', () => {
 
     it('returns empty when output file is whitespace only', async () => {
       await createBundleWithState(manager);
-      await manager.writeOutput('review.md', '   \n  ');
+      await manager.writeOutput('note.md', '   \n  ');
       const state = await manager.getPendingOutputState('review');
       expect(state).toBe('empty');
     });
@@ -2073,7 +2074,7 @@ describe('WorkspaceManager', () => {
         computeContentHash('## Notes\nReview notes');
       await manager.saveBundleState(state!);
 
-      await manager.writeOutput('review.md', '## Notes\nReview notes');
+      await manager.writeOutput('note.md', '## Notes\nReview notes');
 
       await expect(manager.getPendingOutputState('review')).resolves.toBe('pending');
     });
@@ -2154,10 +2155,10 @@ describe('WorkspaceManager', () => {
     it('removes text draft output files', async () => {
       await createBundle(manager, makeTarget(), []);
       await manager.writeOutput('summary.md', '# Written content');
-      await manager.writeOutput('review.md', '# Review content');
+      await manager.writeOutput('note.md', '# Review content');
       await manager.discardOutputs();
       await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'))).rejects.toThrow();
-      await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'review.md'))).rejects.toThrow();
+      await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'note.md'))).rejects.toThrow();
     });
 
     it('removes queue draft output files', async () => {
@@ -2283,7 +2284,7 @@ describe('WorkspaceManager', () => {
       ];
       const outputs = {
         summary: { path: 'custom/summary.md', lastPublishedHash: 'abc' },
-        review: { path: 'custom/review.md' },
+        review: { path: 'custom/note.md' },
       };
       const state = manager.buildBundleState(
         makeTarget(),

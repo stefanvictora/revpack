@@ -37,8 +37,16 @@ describe('publish command internals', () => {
       JSON.stringify(
         {
           target: { provider, diffRefs: { headSha: 'head-sha' } },
+          prepare: {
+            checkpoint: null,
+            comparison: {
+              targetCodeChangedSinceCheckpoint: null,
+              threadsChangedSinceCheckpoint: null,
+              descriptionChangedSinceCheckpoint: null,
+            },
+          },
           outputs: {
-            review: { path: '.revpack/outputs/review.md' },
+            review: { path: '.revpack/outputs/note.md' },
             summary: {
               path: '.revpack/outputs/summary.md',
               ...(options?.summaryHash ? { lastPublishedHash: options.summaryHash } : {}),
@@ -163,7 +171,7 @@ describe('publish command internals', () => {
   });
 
   it('treats empty review notes from any source path as no review note to publish', () => {
-    expect(__testing.isNoReviewNoteToPublishError(new Error('review.md is empty'))).toBe(true);
+    expect(__testing.isNoReviewNoteToPublishError(new Error('note.md is empty'))).toBe(true);
     expect(__testing.isNoReviewNoteToPublishError(new Error('custom-note.md is empty; nothing to publish'))).toBe(true);
     expect(__testing.isNoReviewNoteToPublishError(new Error('custom-note.md is empty'))).toBe(true);
     expect(__testing.isNoReviewNoteToPublishError(new Error('custom-note.md is missing'))).toBe(false);
@@ -171,7 +179,7 @@ describe('publish command internals', () => {
 
   it('allows publish all to skip an empty default review note', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), ' \n\t', 'utf-8');
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), ' \n\t', 'utf-8');
 
     await expect(__testing.publishReviewCmd({ allowEmpty: true })).resolves.toBe(0);
     expect(createOrchestrator).not.toHaveBeenCalled();
@@ -179,16 +187,16 @@ describe('publish command internals', () => {
 
   it('keeps explicit review publishing strict for empty review notes', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), ' \n\t', 'utf-8');
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), ' \n\t', 'utf-8');
 
-    await expect(__testing.publishReviewCmd({})).rejects.toThrow('review.md is empty');
+    await expect(__testing.publishReviewCmd({})).rejects.toThrow('note.md is empty');
     expect(createOrchestrator).not.toHaveBeenCalled();
   });
 
   it('removes the default review note after publishing it', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await writeBundleState();
-    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'note.md');
     await fs.writeFile(reviewPath, 'Review body', 'utf-8');
 
     const orchestrator = {
@@ -205,7 +213,7 @@ describe('publish command internals', () => {
 
   it('removes the default review note even when bundle state is unavailable', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
-    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'note.md');
     await fs.writeFile(reviewPath, 'Review body', 'utf-8');
 
     const orchestrator = {
@@ -221,7 +229,7 @@ describe('publish command internals', () => {
   it('keeps the default review note when no review note is created', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await writeBundleState();
-    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'note.md');
     await fs.writeFile(reviewPath, 'Review body', 'utf-8');
 
     const orchestrator = {
@@ -239,7 +247,7 @@ describe('publish command internals', () => {
   it('does not clear the default review note when publishing from a custom file', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await writeBundleState();
-    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'note.md');
     const customPath = path.join(tmpDir, 'custom-review.md');
     await fs.writeFile(reviewPath, 'Pending default review', 'utf-8');
     await fs.writeFile(customPath, 'Custom review body', 'utf-8');
@@ -255,10 +263,88 @@ describe('publish command internals', () => {
     await expect(fs.readFile(customPath, 'utf-8')).resolves.toBe('Custom review body');
   });
 
+  it('publishes legacy review.md when note.md is absent', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await writeBundleState();
+    const legacyPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    await fs.writeFile(legacyPath, 'Legacy review body', 'utf-8');
+
+    const orchestrator = {
+      publishReview: vi.fn().mockResolvedValue({ created: true, noteId: 'note-1' }),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishReviewCmd({})).resolves.toBe(1);
+
+    expect(orchestrator.publishReview).toHaveBeenCalledWith('Legacy review body', 'group/project');
+    await expect(fs.access(legacyPath)).rejects.toThrow();
+  });
+
+  it('falls back to legacy review.md when note.md is empty', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await writeBundleState();
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), ' \n', 'utf-8');
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), 'Legacy review body', 'utf-8');
+
+    const orchestrator = {
+      publishReview: vi.fn().mockResolvedValue({ created: true, noteId: 'note-1' }),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishReviewCmd({})).resolves.toBe(1);
+
+    expect(orchestrator.publishReview).toHaveBeenCalledWith('Legacy review body', 'group/project');
+  });
+
+  it('builds guided publish items with review material separate from checkpoint state', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), ' \n', 'utf-8');
+
+    const { items } = await __testing.buildGuidedPublishItems();
+
+    expect(items.map((item) => item.kind)).toEqual(['replies', 'findings', 'summary', 'note', 'checkpoint']);
+    expect(items[3]).toMatchObject({
+      kind: 'note',
+      selectable: false,
+      defaultSelected: false,
+    });
+    expect(items[4]).toMatchObject({
+      kind: 'checkpoint',
+      selectable: true,
+      defaultSelected: true,
+    });
+  });
+
+  it('does not select checkpoint by default for stale guided publish', async () => {
+    await writeBundleState('gitlab');
+
+    const { items } = await __testing.buildGuidedPublishItems({ bundleIsStale: true });
+
+    expect(items.find((item) => item.kind === 'checkpoint')).toMatchObject({
+      selectable: true,
+      defaultSelected: false,
+    });
+  });
+
+  it('parses guided publish selections from defaults, all, and explicit numbers', () => {
+    const items = [
+      { kind: 'replies', label: 'Replies', detail: '1 pending', selectable: true, defaultSelected: true },
+      { kind: 'note', label: 'Review note', detail: 'empty/skipped', selectable: false, defaultSelected: false },
+      { kind: 'checkpoint', label: 'Checkpoint', detail: 'not recorded', selectable: true, defaultSelected: false },
+    ] as const;
+
+    expect([...__testing.parseGuidedSelection('', [...items])!]).toEqual(['replies']);
+    expect([...__testing.parseGuidedSelection('a', [...items])!]).toEqual(['replies', 'checkpoint']);
+    expect([...__testing.parseGuidedSelection('3', [...items])!]).toEqual(['checkpoint']);
+    expect(__testing.parseGuidedSelection('q', [...items])).toBeNull();
+    expect(() => __testing.parseGuidedSelection('2', [...items])).toThrow('Invalid selection');
+  });
+
   it('removes the default review note after including it in a GitHub review batch', async () => {
     await writeBundleState('github');
     await writeValidFindingBundle();
-    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+    const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'note.md');
     await fs.writeFile(reviewPath, 'Batch review body', 'utf-8');
 
     const orchestrator = {
@@ -388,7 +474,7 @@ describe('publish command internals', () => {
       'utf-8',
     );
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), 'Generated summary', 'utf-8');
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), 'Review note', 'utf-8');
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), 'Review note', 'utf-8');
 
     const orchestrator = {
       publishReply: vi.fn().mockResolvedValue(undefined),

@@ -39,7 +39,7 @@ import { sanitizeDescriptionForAgent } from './checkpoint.js';
  */
 export type ThreadIndex = Map<string, string>;
 
-const OUTPUT_FILENAMES = ['replies.json', 'new-findings.json', 'summary.md', 'review.md'] as const;
+const OUTPUT_FILENAMES = ['replies.json', 'new-findings.json', 'summary.md', 'note.md', 'review.md'] as const;
 
 const OUTPUT_STATE_KEYS = {
   'summary.md': 'summary',
@@ -383,7 +383,7 @@ export class WorkspaceManager {
       },
       outputs: {
         summary: previousOutputs?.summary ?? { path: '.revpack/outputs/summary.md' },
-        review: { path: previousOutputs?.review.path ?? '.revpack/outputs/review.md' },
+        review: { path: previousOutputs?.review.path ?? '.revpack/outputs/note.md' },
       },
       publishedActions: previousActions ?? [],
       paths: {
@@ -455,14 +455,17 @@ export class WorkspaceManager {
   async getPendingOutputState(outputKey: 'review'): Promise<Extract<OutputState, 'empty' | 'pending'>> {
     const state = await this.loadBundleState();
     if (!state) return 'empty';
-    const entry = state.outputs[outputKey];
-    const filePath = path.resolve(this.workingDir, entry.path);
-    try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      return content.trim() ? 'pending' : 'empty';
-    } catch {
-      return 'empty';
+    const candidatePaths = [state.outputs[outputKey].path, '.revpack/outputs/review.md'];
+    for (const candidatePath of candidatePaths) {
+      const filePath = path.resolve(this.workingDir, candidatePath);
+      try {
+        const content = await fs.readFile(filePath, 'utf-8');
+        if (content.trim()) return 'pending';
+      } catch {
+        /* try the next compatible path */
+      }
     }
+    return 'empty';
   }
 
   /**

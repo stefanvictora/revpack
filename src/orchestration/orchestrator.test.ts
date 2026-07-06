@@ -883,7 +883,7 @@ describe('ReviewOrchestrator', () => {
         'thread-1',
       );
       expect(bundleState.outputs.summary.path).toBe('.revpack/outputs/summary.md');
-      expect(bundleState.outputs.review.path).toBe('.revpack/outputs/review.md');
+      expect(bundleState.outputs.review.path).toBe('.revpack/outputs/note.md');
       expect(bundleState.prepare.mode).toBe('fresh');
 
       const contextMd = await fs.readFile(path.join(tmpDir, '.revpack', 'CONTEXT.md'), 'utf-8');
@@ -1906,7 +1906,7 @@ describe('ReviewOrchestrator', () => {
       const ws = new WorkspaceManager(tmpDir);
 
       const summaryPath = path.join(tmpDir, '.revpack', 'outputs', 'summary.md');
-      const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
+      const reviewPath = path.join(tmpDir, '.revpack', 'outputs', 'note.md');
 
       expect(await ws.getOutputState('summary')).toBe('empty');
       expect(await ws.getPendingOutputState('review')).toBe('empty');
@@ -2170,7 +2170,7 @@ describe('ReviewOrchestrator', () => {
       expect(body).not.toContain('<sub>');
     });
 
-    it('with empty review.md publishes no visible comment and does not advance checkpoint', async () => {
+    it('with an empty review note publishes no visible comment and does not advance checkpoint', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       await orchestrator.prepare('!42', 'group/project');
 

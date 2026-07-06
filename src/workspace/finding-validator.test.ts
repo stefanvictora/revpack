@@ -162,10 +162,10 @@ describe('validateFindings', () => {
       expect(result.errors[0].message).toContain('No valid added-line anchor');
       expect(result.errors[0].message).toContain('newLine 99');
       expect(result.errors[0].message).toContain(
-        'If this line is outside the visible diff, move the issue to review.md or anchor it to the closest visible changed/context line.',
+        'If this line is outside the visible diff, move the issue to note.md or anchor it to the closest visible changed/context line.',
       );
       expect(result.errors[0].message).toBe(
-        'No valid added-line anchor found for src/App.java newLine 99. If this is an unchanged context line, provide both oldLine and newLine. If this line is outside the visible diff, move the issue to review.md or anchor it to the closest visible changed/context line.',
+        'No valid added-line anchor found for src/App.java newLine 99. If this is an unchanged context line, provide both oldLine and newLine. If this line is outside the visible diff, move the issue to note.md or anchor it to the closest visible changed/context line.',
       );
     });
 
@@ -352,7 +352,7 @@ describe('validateFindings', () => {
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toContain('No valid removed-line anchor');
       expect(result.errors[0].message).toContain(
-        'If this line is outside the visible diff, move the issue to review.md or anchor it to the closest visible changed/context line.',
+        'If this line is outside the visible diff, move the issue to note.md or anchor it to the closest visible changed/context line.',
       );
     });
 
