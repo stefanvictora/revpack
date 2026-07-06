@@ -243,13 +243,14 @@ export class WorkspaceManager {
     diffs: ReviewDiff[],
     versions: ReviewVersion[],
     threadIndex: ThreadIndex,
-    options?: { latestPatchContent?: string },
+    options?: { latestPatchContent?: string; resolvedThreads?: ReviewThread[] },
   ): Promise<WorkspaceBundle> {
     const preparedAt = new Date().toISOString();
 
     // Create directory structure
     await this.ensureDir(this.baseDir);
     await this.ensureDir(path.join(this.baseDir, 'threads'));
+    await this.ensureDir(path.join(this.baseDir, 'resolved-threads'));
     await this.ensureDir(path.join(this.baseDir, 'diffs'));
     await this.ensureDir(path.join(this.baseDir, 'outputs'));
 
@@ -267,8 +268,17 @@ export class WorkspaceManager {
     await this.writeDescription(target.description);
 
     // Write thread files
-    await this.clearThreadFiles();
+    await this.clearThreadFiles('threads');
+    await this.clearThreadFiles('resolved-threads');
     await this.writeThreads(threads, threadIndex, diffs, target.diffRefs.headSha, options?.latestPatchContent);
+    await this.writeThreads(
+      options?.resolvedThreads ?? [],
+      threadIndex,
+      diffs,
+      target.diffRefs.headSha,
+      options?.latestPatchContent,
+      'resolved-threads',
+    );
 
     // Write diffs and diff bundle artifacts
     await this.writeDiffs(diffs, options?.latestPatchContent);
@@ -321,11 +331,12 @@ export class WorkspaceManager {
       .map((t) => {
         const shortId = threadIndex.get(t.threadId) ?? '?';
         const latestComment = latestNonSystemComment(t);
+        const threadDir = t.resolvable && t.resolved ? 'resolved-threads' : 'threads';
         return {
           shortId,
           providerThreadId: t.threadId,
-          file: `.revpack/threads/${shortId}.json`,
-          markdownFile: `.revpack/threads/${shortId}.md`,
+          file: `.revpack/${threadDir}/${shortId}.json`,
+          markdownFile: `.revpack/${threadDir}/${shortId}.md`,
           resolved: t.resolved,
           resolvable: t.resolvable,
           ...(t.outdated !== undefined ? { outdated: t.outdated } : {}),
@@ -514,10 +525,10 @@ export class WorkspaceManager {
 
   /**
    * Remove entries from replies.json whose T-NNN no longer maps to
-   * an active (unresolved) thread. Called on incremental runs to prevent
+   * a known provider thread. Called on incremental runs to prevent
    * stale replies from being published to the wrong thread.
    */
-  async pruneStaleReplies(activeThreadIds: Set<string>, threadIndex: ThreadIndex): Promise<number> {
+  async pruneStaleReplies(knownThreadIds: Set<string>, threadIndex: ThreadIndex): Promise<number> {
     const repliesPath = path.join(this.baseDir, 'outputs', 'replies.json');
     let raw: string;
     try {
@@ -544,7 +555,7 @@ export class WorkspaceManager {
       const normalized = e.threadId.trim().toUpperCase();
       // Resolve T-NNN → SHA using the reverse index, fall back to raw ID
       const sha = reverseIndex.get(normalized) ?? e.threadId.trim();
-      return activeThreadIds.has(sha);
+      return knownThreadIds.has(sha);
     });
 
     if (kept.length < before) {
@@ -585,19 +596,24 @@ export class WorkspaceManager {
     }
 
     // Fallback: read the thread JSON file from disk
-    const jsonPath = path.join(this.baseDir, 'threads', `${normalised}.json`);
     let threadId: string | undefined;
-    try {
-      const data = await fs.readFile(jsonPath, 'utf-8');
-      const thread = JSON.parse(data) as { threadId?: string };
-      if (typeof thread.threadId === 'string') {
-        threadId = thread.threadId;
+    for (const threadDir of ['threads', 'resolved-threads']) {
+      try {
+        const jsonPath = path.join(this.baseDir, threadDir, `${normalised}.json`);
+        const data = await fs.readFile(jsonPath, 'utf-8');
+        const thread = JSON.parse(data) as { threadId?: string };
+        if (typeof thread.threadId === 'string') {
+          threadId = thread.threadId;
+          break;
+        }
+      } catch {
+        // File not found or invalid JSON
       }
-    } catch {
-      // File not found or invalid JSON
     }
     if (!threadId) {
-      throw new Error(`Cannot resolve thread reference "${ref}" — not found in thread index or threads/ folder`);
+      throw new Error(
+        `Cannot resolve thread reference "${ref}" — not found in thread index, threads/, or resolved-threads/ folder`,
+      );
     }
     return threadId;
   }
@@ -1184,10 +1200,10 @@ export class WorkspaceManager {
   // ─── Internal helpers ───────────────────────────────────
 
   /**
-   * Remove all files from the threads/ directory before rewriting.
+   * Remove all files from a prepared thread directory before rewriting.
    */
-  private async clearThreadFiles(): Promise<void> {
-    const threadsDir = path.join(this.baseDir, 'threads');
+  private async clearThreadFiles(threadDir: 'threads' | 'resolved-threads'): Promise<void> {
+    const threadsDir = path.join(this.baseDir, threadDir);
     try {
       const files = await fs.readdir(threadsDir);
       await Promise.all(files.map((f) => fs.rm(path.join(threadsDir, f), { recursive: true, force: true })));
@@ -1277,6 +1293,7 @@ export class WorkspaceManager {
     diffs: ReviewDiff[],
     currentHeadSha: string,
     latestPatchContent?: string,
+    threadDir: 'threads' | 'resolved-threads' = 'threads',
   ): Promise<void> {
     // Build line map from diffs for embedding diff context in thread files
     const patchContent = latestPatchContent ?? diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
@@ -1299,11 +1316,11 @@ export class WorkspaceManager {
           targetId: thread.targetRef.targetId,
         },
       };
-      await this.writeJson(path.join(this.baseDir, 'threads', `${prefix}.json`), threadToWrite);
+      await this.writeJson(path.join(this.baseDir, threadDir, `${prefix}.json`), threadToWrite);
 
       // Markdown version for human/agent reading
       const md = this.threadToMarkdown(thread, prefix, lineMap, currentHeadSha);
-      await fs.writeFile(path.join(this.baseDir, 'threads', `${prefix}.md`), md, 'utf-8');
+      await fs.writeFile(path.join(this.baseDir, threadDir, `${prefix}.md`), md, 'utf-8');
     }
   }
 

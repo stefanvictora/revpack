@@ -220,14 +220,16 @@ export class ReviewOrchestrator {
     // Build position-based thread index
     const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
 
-    // Only non-resolved threads go into the bundle
+    // Keep active threads in the normal worklist and resolved review threads as addressable context.
     const activeThreads = activeReviewThreads(allThreads);
+    const resolvedThreads = allThreads.filter((thread) => thread.resolvable && thread.resolved);
 
     const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
     const bundleDiffs = this.reviewDiffsFromPatch(latestPatchContent);
 
     const bundle = await this.workspace.createBundle(target, activeThreads, bundleDiffs, versions, threadIndex, {
       latestPatchContent,
+      resolvedThreads,
     });
 
     // Compute prepare summary — compare against remote checkpoint
@@ -297,8 +299,8 @@ export class ReviewOrchestrator {
     // Prune stale replies
     let prunedReplies = 0;
     if (previousBundle && !options?.preservePendingOutputs) {
-      const activeIds = new Set(activeThreads.map((t) => t.threadId));
-      prunedReplies = await this.workspace.pruneStaleReplies(activeIds, threadIndex);
+      const knownThreadIds = new Set(allThreads.map((t) => t.threadId));
+      prunedReplies = await this.workspace.pruneStaleReplies(knownThreadIds, threadIndex);
     }
 
     // Carry over published actions and output state from previous bundle
@@ -344,7 +346,7 @@ export class ReviewOrchestrator {
       localMetadata,
       previousActions,
       previousOutputs,
-      activeThreads,
+      allThreads,
     );
     await this.workspace.saveBundleState(bundleState);
 

@@ -19,7 +19,7 @@ The action of making a review target available in the local repository and prepa
 _Avoid_: Clone, switch, fetch
 
 **Review Bundle**:
-A disposable local package of review context created for a review target so an agent can review with the relevant diff, discussion, and instructions.
+A disposable local package of review context created for a review target so an agent can review with the relevant diff, review threads, and instructions.
 _Avoid_: Context folder, workspace, review package
 
 **Publish**:
@@ -63,6 +63,10 @@ _Avoid_: Response, answer, follow-up comment
 **Review Thread**:
 A provider discussion attached to the review target, usually anchored to a changed line but sometimes general. Some providers represent a review thread as a top-level comment with replies.
 _Avoid_: Discussion, conversation, comment thread
+
+**Resolved Review Thread**:
+A review thread whose provider state says the discussion has been resolved, while still remaining valid context and a possible target for later replies.
+_Avoid_: Closed thread, archived thread
 
 **Review Note**:
 A visible target-level review comment that is not anchored to a specific line or existing thread.
