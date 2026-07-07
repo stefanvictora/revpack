@@ -182,7 +182,7 @@ describe('WorkspaceManager', () => {
     expect(repliesSchema).not.toContain('not published to GitLab');
   });
 
-  it('writeContext writes AGENT_CONTRACT.md, INSTRUCTIONS.md and instructions/', async () => {
+  it('writeContext writes CONTEXT.md, INSTRUCTIONS.md and instructions/', async () => {
     const threads = [makeThread()];
     const { threadIndex } = await createBundle(manager, makeTarget(), threads, [makeDiff()]);
 
@@ -190,7 +190,8 @@ describe('WorkspaceManager', () => {
 
     const bundleDir = path.join(tmpDir, '.revpack');
     const entries = await fs.readdir(bundleDir);
-    expect(entries).toContain('AGENT_CONTRACT.md');
+    expect(entries).toContain('CONTEXT.md');
+    expect(entries).not.toContain('AGENT_CONTRACT.md');
     expect(entries).toContain('INSTRUCTIONS.md');
     expect(entries).toContain('instructions');
 
@@ -200,14 +201,16 @@ describe('WorkspaceManager', () => {
     expect(instrEntries).toContain('02-thread-replies.md');
     expect(instrEntries).toContain('07-final-checks.md');
 
-    const contract = await fs.readFile(path.join(bundleDir, 'AGENT_CONTRACT.md'), 'utf-8');
+    const context = await fs.readFile(path.join(bundleDir, 'CONTEXT.md'), 'utf-8');
     const findingsInstructions = await fs.readFile(
       path.join(bundleDir, 'instructions', '03-new-findings-and-anchors.md'),
       'utf-8',
     );
     const finalChecks = await fs.readFile(path.join(bundleDir, 'instructions', '07-final-checks.md'), 'utf-8');
-    expect(contract).toContain('do not discard a valid, non-duplicate issue');
+    expect(context).toContain('## Review Contract');
+    expect(context).toContain('do not discard a valid, non-duplicate issue');
     expect(findingsInstructions).toContain('## Incremental review scope');
+    expect(findingsInstructions).toContain('Looking up that entry is a required input step');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
   });
 
@@ -1080,8 +1083,8 @@ describe('WorkspaceManager', () => {
         'Do not treat the absence of a previous action as proof that no issue exists. If a concrete MR/PR issue was missed by an earlier review pass, it may still be reported now.',
       );
 
-      const incrementalIndex = content.indexOf('5. Read `.revpack/diffs/incremental.patch`');
-      const filesJsonIndex = content.indexOf('8. Use `.revpack/diffs/files.json`');
+      const incrementalIndex = content.indexOf('Read `.revpack/diffs/incremental.patch`');
+      const filesJsonIndex = content.indexOf('Use `.revpack/diffs/files.json`');
       const byFileIndex = content.indexOf('`.revpack/diffs/patches/by-file/`', incrementalIndex);
       expect(incrementalIndex).toBeGreaterThan(-1);
       expect(filesJsonIndex).toBeGreaterThan(incrementalIndex);
@@ -1150,9 +1153,11 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Current Run Mode');
       expect(content).toContain('| Mode | Fresh review |');
+      expect(content).toContain('## Review Contract');
       expect(content).toContain('## Suggested Reading Order');
       expect(content).toContain('REVIEW.md');
       expect(content).toContain('Use `.revpack/INSTRUCTIONS.md` only as a catalog');
+      expect(content).not.toContain('Read `.revpack/AGENT_CONTRACT.md`');
     });
 
     it('includes Required Instructions section skipping thread-replies when no unresolved threads', async () => {
@@ -1222,7 +1227,7 @@ describe('WorkspaceManager', () => {
       // Non-proactive → no latest.patch reading order step either
       expect(content).not.toContain('for the overall change and cross-file context');
       // Non-proactive → no line-map/change-blocks steps
-      expect(content).not.toContain('validate review anchors before creating findings');
+      expect(content).not.toContain('choose valid review anchors before creating findings');
       // Checkpoint-specific guidance for thread-only refresh
       expect(content).toContain('threads or replies have been updated');
       expect(content).toContain('Focus on updated unresolved threads');
@@ -1505,9 +1510,10 @@ describe('WorkspaceManager', () => {
       const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toMatch(/\| T-001 \| {2}\| @coderabbitai \|/);
-      expect(content).not.toContain('SELF');
-      expect(content).not.toContain('REPLIED');
+      const row = content.match(/\| T-001 \|.*\| @coderabbitai \|/)?.[0] ?? '';
+      expect(row).toMatch(/\| T-001 \| {2}\| @coderabbitai \|/);
+      expect(row).not.toContain('SELF');
+      expect(row).not.toContain('REPLIED');
     });
 
     it('tags REPLIED on threads that have a bot reply', async () => {
@@ -1636,8 +1642,9 @@ describe('WorkspaceManager', () => {
       const { threadIndex } = await createBundle(manager, makeTarget(), [humanOnly]);
       const ctx = await manager.writeContext(makeTarget(), [humanOnly], [], threadIndex);
       const content = await fs.readFile(ctx, 'utf-8');
-      expect(content).not.toContain('SELF');
-      expect(content).not.toContain('REPLIED');
+      const row = content.match(/\| T-001 \|.*\| @reviewer \|/)?.[0] ?? '';
+      expect(row).not.toContain('SELF');
+      expect(row).not.toContain('REPLIED');
     });
 
     it('omits Unresolved Threads section when all threads are resolved', async () => {
@@ -2799,7 +2806,7 @@ describe('WorkspaceManager', () => {
       // URL row present (makeTarget has webUrl)
       expect(content).toContain('| URL |');
       // Proactive review reading order includes line-map step
-      expect(content).toContain('validate review anchors before creating findings');
+      expect(content).toContain('choose valid review anchors before creating findings');
     });
   });
 

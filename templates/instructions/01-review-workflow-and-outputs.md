@@ -37,7 +37,7 @@ Write `summary.md` for fresh and incremental code review runs. Do not write fill
 
 ## Output validation
 
-revpack validates output files, JSON syntax, schemas, and positional anchors before publishing. Do not spend extra tool calls re-checking what revpack can verify mechanically.
+revpack validates output files, JSON syntax, schemas, and positional anchors before publishing. Use the required lookup steps in the finding instructions to choose anchors, but do not spend extra tool calls re-checking what revpack can verify mechanically.
 
 ## Input files
 

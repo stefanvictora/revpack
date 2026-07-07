@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Changed prepared review bundles so `.revpack/outputs/` contains schemas but no empty draft output placeholders; agents create output files only when they have draft material, and missing default queue outputs are treated as empty.
+- Changed prepared review bundle instructions so `.revpack/CONTEXT.md` is the single entry point and contains the short review contract, while `.revpack/INSTRUCTIONS.md` is only a catalog.
 - Relaxed finding category validation so `revpack publish findings` accepts any non-empty category while still recommending the standard category set.
 - Changed bare `revpack config` to print profile-oriented help instead of acting as an alias for `revpack config show`, with clearer inspect/edit and manage sections for profile workflows.
 - Improved `revpack auth setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.

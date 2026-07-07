@@ -891,7 +891,7 @@ describe('LocalGitProvider orchestrator boundary', () => {
       ],
       paths: {
         context: '.revpack/CONTEXT.md',
-        contract: '.revpack/AGENT_CONTRACT.md',
+        contract: '.revpack/CONTEXT.md',
         instructions: '.revpack/INSTRUCTIONS.md',
         instructionsDir: '.revpack/instructions/',
         description: '.revpack/description.md',
