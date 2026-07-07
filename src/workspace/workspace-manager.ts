@@ -382,7 +382,7 @@ export class WorkspaceManager {
       publishedActions: previousActions ?? [],
       paths: {
         context: '.revpack/CONTEXT.md',
-        contract: '.revpack/AGENT_CONTRACT.md',
+        contract: '.revpack/CONTEXT.md',
         instructions: '.revpack/INSTRUCTIONS.md',
         instructionsDir: '.revpack/instructions/',
         description: '.revpack/description.md',
@@ -620,7 +620,7 @@ export class WorkspaceManager {
 
   /**
    * Write CONTEXT.md - the agent-readable context file.
-   * Contains MR/PR summary, prepare state, bundle contents, threads, and actions.
+   * Contains MR/PR summary, prepare state, the review contract, bundle contents, threads, and actions.
    * Does NOT contain output schemas, severity definitions, or positional tutorials.
    */
   async writeContext(
@@ -640,7 +640,7 @@ export class WorkspaceManager {
     const contextPath = path.join(this.baseDir, 'CONTEXT.md');
     await fs.writeFile(contextPath, content, 'utf-8');
 
-    // Also write instruction files (INSTRUCTIONS.md, AGENT_CONTRACT.md, instructions/*.md)
+    // Also write instruction files (INSTRUCTIONS.md and instructions/*.md)
     await this.writeInstructions(target);
     return contextPath;
   }
@@ -872,14 +872,13 @@ export class WorkspaceManager {
     if (isIncrementalCodeReview) {
       return [
         'Read this context file.',
-        'Read `.revpack/AGENT_CONTRACT.md`.',
         'Read the files listed in **Required Instructions for This Run**.',
         'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
         'Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.',
         'Read relevant changed or unresolved thread files in `.revpack/threads/`.',
         'Use `.revpack/diffs/latest.patch` only for full MR/PR context when needed.',
         'Use `.revpack/diffs/files.json` to locate relevant per-file patch paths for the incremental change, thread updates, or a concrete concern you are verifying.',
-        'Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
+        'Use `.revpack/diffs/line-map.ndjson` to choose valid review anchors before creating findings.',
         'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
         'Inspect checked-out source files when needed to understand the new branch state.',
         'Read existing `.revpack/outputs/summary.md`, if present, before updating it.',
@@ -888,7 +887,6 @@ export class WorkspaceManager {
 
     const order = [
       'Read this context file.',
-      'Read `.revpack/AGENT_CONTRACT.md`.',
       'Read the files listed in **Required Instructions for This Run**.',
       'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
       'Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
@@ -899,7 +897,7 @@ export class WorkspaceManager {
       order.push(
         'Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.',
         'Use the patch paths listed in `.revpack/diffs/files.json` for focused review of individual changed files.',
-        'Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
+        'Use `.revpack/diffs/line-map.ndjson` to choose valid review anchors before creating findings.',
         'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
         'Inspect checked-out source files when needed to understand the new branch state.',
         'Read existing `.revpack/outputs/summary.md`, if present, before updating it.',
@@ -1217,7 +1215,7 @@ export class WorkspaceManager {
   // ─── Write helpers ──────────────────────────────────────
 
   /**
-   * Write INSTRUCTIONS.md, AGENT_CONTRACT.md, and instructions/*.md from the package templates directory.
+   * Write INSTRUCTIONS.md and instructions/*.md from the package templates directory.
    */
   async writeInstructions(target: ReviewTarget): Promise<void> {
     const thisFile = fileURLToPath(import.meta.url);
@@ -1229,11 +1227,6 @@ export class WorkspaceManager {
     const instructionsSource = path.join(templatesDir, 'INSTRUCTIONS.md');
     const instructionsDest = path.join(this.baseDir, 'INSTRUCTIONS.md');
     await fs.copyFile(instructionsSource, instructionsDest);
-
-    // Copy AGENT_CONTRACT.md
-    const contractSource = path.join(templatesDir, 'AGENT_CONTRACT.md');
-    const contractDest = path.join(this.baseDir, 'AGENT_CONTRACT.md');
-    await fs.copyFile(contractSource, contractDest);
 
     // Copy instructions/*.md and render opt-in instructions/*.md.hbs templates to .md.
     const instructionsSrcDir = path.join(templatesDir, 'instructions');

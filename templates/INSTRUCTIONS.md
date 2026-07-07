@@ -2,7 +2,7 @@
 
 This file is the catalog for detailed task-specific instruction files. It does not define the run-specific reading order.
 
-Start from `.revpack/CONTEXT.md`. It is the run-specific entry point and its **Required Instructions for This Run** section is authoritative.
+Start from `.revpack/CONTEXT.md`. It is the run-specific entry point, contains the review contract, and its **Required Instructions for This Run** section is authoritative.
 
 Use this index only when you need to understand what an instruction file covers or inspect the wider instruction set.
 
@@ -19,14 +19,3 @@ Use this index only when you need to understand what an instruction file covers 
 | `07-final-checks.md`                   | Yes          | Yes                     | Yes              | Yes                    | Lightweight final self-check                                                 |
 
 All instruction files are in `.revpack/instructions/`.
-
-## Output routing
-
-| Output file                 | Contains                                                                      |
-| --------------------------- | ----------------------------------------------------------------------------- |
-| `outputs/new-findings.json` | Concrete, actionable positional issues; omit when there are no findings       |
-| `outputs/replies.json`      | Useful replies to existing unresolved threads; omit when there are no replies |
-| `outputs/summary.md`        | What the MR/PR changes (changelog-style)                                      |
-| `outputs/review.md`         | Optional MR/PR-level synthesis; omit when there is no useful note             |
-
-Only write files under `.revpack/outputs/`. Do not modify source files.

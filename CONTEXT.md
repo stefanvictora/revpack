@@ -98,6 +98,10 @@ _Avoid_: Login, token storage, connection
 Project-specific review priorities that agents should follow when reviewing a review bundle.
 _Avoid_: Instructions, contract, prompt
 
+**Review Contract**:
+The mandatory review rules an agent must follow while producing agent output for a review bundle.
+_Avoid_: Guidance, checklist, prompt
+
 **Agent Instruction**:
 A project-level artifact that tells a specific agent how to start and perform a revpack review.
 _Avoid_: Harness, adapter, integration, prompt

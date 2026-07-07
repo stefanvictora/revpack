@@ -49,7 +49,7 @@ The workspace contains only the new branch state. Deleted lines do not exist in 
 
 ## Positional anchors
 
-Each finding must anchor to exactly one `line-map.ndjson` entry.
+Each finding must anchor to exactly one `line-map.ndjson` entry. Looking up that entry is a required input step for writing a finding; revpack's later validation is the mechanical safety check, not a substitute for choosing the anchor.
 
 | `kind`    | Required line fields         |
 | --------- | ---------------------------- |
