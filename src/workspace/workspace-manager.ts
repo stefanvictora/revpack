@@ -878,7 +878,7 @@ export class WorkspaceManager {
         'Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.',
         'Read relevant changed or unresolved thread files in `.revpack/threads/`.',
         'Use `.revpack/diffs/latest.patch` only for full MR/PR context when needed.',
-        'Use `.revpack/diffs/files.json` and `.revpack/diffs/patches/by-file/` only to inspect files relevant to the incremental change, thread updates, or a concrete concern you are verifying.',
+        'Use `.revpack/diffs/files.json` to locate relevant per-file patch paths for the incremental change, thread updates, or a concrete concern you are verifying.',
         'Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
         'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
         'Inspect checked-out source files when needed to understand the new branch state.',
@@ -898,7 +898,7 @@ export class WorkspaceManager {
     if (proactiveReview) {
       order.push(
         'Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.',
-        'Use `.revpack/diffs/patches/by-file/` for focused review of individual changed files.',
+        'Use the patch paths listed in `.revpack/diffs/files.json` for focused review of individual changed files.',
         'Use `.revpack/diffs/line-map.ndjson` to choose and validate review anchors before creating findings.',
         'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
         'Inspect checked-out source files when needed to understand the new branch state.',
@@ -980,8 +980,10 @@ export class WorkspaceManager {
       fileId: `F${String(idx + 1).padStart(3, '0')}`,
     }));
 
-    // Create patches/by-file directory
+    // Recreate derived per-file patches so previous prepare runs cannot leave
+    // stale FNNN-prefixed files next to the current files.json index.
     const patchesByFileDir = path.join(this.baseDir, 'diffs', 'patches', 'by-file');
+    await fs.rm(patchesByFileDir, { recursive: true, force: true });
     await this.ensureDir(patchesByFileDir);
 
     // 1. Write files.json

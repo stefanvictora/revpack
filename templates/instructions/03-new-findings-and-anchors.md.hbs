@@ -39,9 +39,9 @@ The workspace contains only the new branch state. Deleted lines do not exist in 
 
 | Artifact                   | Use for                                                                                                    |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `diffs/files.json`         | Navigation, file selection, locating per-file patches. Not for review anchors.                             |
+| `diffs/files.json`         | Navigation, file selection, and authoritative per-file patch paths. Not for review anchors.                |
 | `diffs/latest.patch`       | Overall MR/PR understanding, cross-file relationships, change intent.                                      |
-| `diffs/patches/by-file/`   | Detailed review of individual files (preferred over full patch).                                           |
+| `diffs/patches/by-file/`   | Detailed review of individual files selected through `diffs/files.json` (preferred over full patch).       |
 | `diffs/line-map.ndjson`    | **Source of truth** for valid positional anchors. Every finding must reference a line here.                |
 | `diffs/change-blocks.json` | Understanding larger edits and replacement relationships. `preferredCommentTarget` gives a default anchor. |
 

@@ -73,7 +73,7 @@ This is an incremental run.
 
 Use `.revpack/diffs/incremental.patch` as the primary review surface. It shows what changed since the last review checkpoint.
 
-Use `.revpack/diffs/latest.patch`, `.revpack/diffs/patches/by-file/`, checked-out source files, and repository context only when needed to understand, verify, or anchor issues found while reviewing the incremental change.
+Use `.revpack/diffs/latest.patch`, per-file patch paths listed in `.revpack/diffs/files.json`, checked-out source files, and repository context only when needed to understand, verify, or anchor issues found while reviewing the incremental change.
 
 Incremental mode limits required review effort. It does not limit valid reporting.
 
@@ -130,8 +130,8 @@ Treat it as context only. Verify behavior against the diff and source code.
 | `.revpack/threads/` | {{threadFileCount}} thread(s) — read the `.md` files |
 {{/if}}
 | `.revpack/diffs/latest.patch` | Canonical full unified diff for the whole MR/PR |
-| `.revpack/diffs/patches/by-file/` | Canonical per-file unified diffs in standard patch format |
-| `.revpack/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and diff artifact paths |
+| `.revpack/diffs/files.json` | Changed-file index with file status, hunk boundaries, counts, binary flag, and authoritative per-file patch paths |
+| `.revpack/diffs/patches/by-file/` | Derived per-file unified diffs in standard patch format; resolve file paths through `files.json` |
 | `.revpack/diffs/line-map.ndjson` | Canonical per-line map for valid positional review anchors in the current MR/PR diff |
 | `.revpack/diffs/change-blocks.json` | Grouped insert/delete/replace blocks for understanding larger edits |
 {{#if incremental}}

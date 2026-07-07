@@ -45,13 +45,13 @@ Follow the reading order from `.revpack/CONTEXT.md`.
 
 Key diff artifacts:
 
-| Artifact                   | Purpose                                                             |
-| -------------------------- | ------------------------------------------------------------------- |
-| `diffs/files.json`         | Changed-file index — use for navigation and file selection          |
-| `diffs/latest.patch`       | Full unified diff — use for overall MR/PR understanding             |
-| `diffs/patches/by-file/`   | Per-file diffs — use for focused review of individual files         |
-| `diffs/line-map.ndjson`    | Valid positional anchors — every finding must reference a line here |
-| `diffs/change-blocks.json` | Grouped insert/delete/replace blocks                                |
+| Artifact                   | Purpose                                                                           |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| `diffs/files.json`         | Changed-file index — use for navigation, file selection, and per-file patch paths |
+| `diffs/latest.patch`       | Full unified diff — use for overall MR/PR understanding                           |
+| `diffs/patches/by-file/`   | Per-file diffs — read paths selected from `diffs/files.json`                      |
+| `diffs/line-map.ndjson`    | Valid positional anchors — every finding must reference a line here               |
+| `diffs/change-blocks.json` | Grouped insert/delete/replace blocks                                              |
 
 Use checked-out source files when the diff alone is not enough.
 

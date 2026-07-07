@@ -2750,8 +2750,10 @@ describe('WorkspaceManager', () => {
       expect(content).not.toContain('Skipped this run');
       // Instructions numbered starting from 1
       expect(content).toMatch(/^1\. `\.revpack\/instructions\/01-review-workflow/m);
-      // Proactive review reading order includes per-file patches
-      expect(content).toContain('Use `.revpack/diffs/latest.patch`, `.revpack/diffs/patches/by-file/`');
+      // Proactive review guidance includes per-file patches resolved through files.json
+      expect(content).toContain(
+        'Use `.revpack/diffs/latest.patch`, per-file patch paths listed in `.revpack/diffs/files.json`',
+      );
       // Bundle Contents table includes incremental.patch entry
       expect(content).toContain('| `.revpack/diffs/incremental.patch` |');
     });
@@ -3097,6 +3099,26 @@ describe('WorkspaceManager', () => {
       const files = await fs.readdir(patchDir);
       // Special chars replaced, only alphanumeric, _, - remain
       expect(files[0]).toMatch(/^F001-[a-zA-Z0-9_-]+\.patch$/);
+    });
+
+    it('removes stale per-file patches when bundle is recreated', async () => {
+      const makeFileDiff = (fileName: string): ReviewDiff => ({
+        oldPath: `src/${fileName}.ts`,
+        newPath: `src/${fileName}.ts`,
+        diff: '@@ -1 +1,2 @@\n line\n+added\n',
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      });
+
+      await createBundle(manager, makeTarget(), [], [makeFileDiff('first'), makeFileDiff('second')]);
+
+      const patchDir = path.join(tmpDir, '.revpack', 'diffs', 'patches', 'by-file');
+      expect((await fs.readdir(patchDir)).sort()).toEqual(['F001-first.patch', 'F002-second.patch']);
+
+      await createBundle(manager, makeTarget(), [], [makeFileDiff('second')]);
+
+      expect((await fs.readdir(patchDir)).sort()).toEqual(['F001-second.patch']);
     });
   });
 
