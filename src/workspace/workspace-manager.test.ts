@@ -956,10 +956,12 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('| renamed |');
     });
 
-    it('includes commit messages as context when commits.md exists', async () => {
+    it('includes commit messages as context when commit-list state is present', async () => {
       const { threadIndex } = await createBundle(manager, makeTarget(), [], [makeDiff()], [], [makeCommit()]);
 
-      const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff()], threadIndex);
+      const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff()], threadIndex, {
+        hasCommitList: true,
+      });
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Commit Messages');
@@ -1107,6 +1109,7 @@ describe('WorkspaceManager', () => {
             descriptionChangedSinceCheckpoint: false,
           },
         },
+        hasCommitList: true,
       });
 
       const content = await fs.readFile(contextPath, 'utf-8');
@@ -1210,6 +1213,7 @@ describe('WorkspaceManager', () => {
             descriptionChangedSinceCheckpoint: false,
           },
         },
+        hasCommitList: true,
       });
 
       const content = await fs.readFile(contextPath, 'utf-8');

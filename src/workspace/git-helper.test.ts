@@ -270,6 +270,30 @@ describe('GitHelper', () => {
       const git = new GitHelper('repo');
       await expect(git.listReviewCommits('aaa', 'bbb')).resolves.toEqual([]);
     });
+
+    it('keeps commits with empty commit messages', async () => {
+      childProcessMock.execFile.mockImplementationOnce(
+        (_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
+          cb(
+            null,
+            ['3333333333333333333333333333333333333333', '3333333', 'Carol', '2026-07-09', '', ''].join('\x00') +
+              '\x1e\n',
+            '',
+          );
+        },
+      );
+
+      const git = new GitHelper('repo');
+      await expect(git.listReviewCommits('aaa', 'bbb')).resolves.toEqual([
+        {
+          sha: '3333333333333333333333333333333333333333',
+          shortSha: '3333333',
+          authorName: 'Carol',
+          authorDate: '2026-07-09',
+          message: '',
+        },
+      ]);
+    });
   });
 
   describe('progress-mode fetch error capture', () => {

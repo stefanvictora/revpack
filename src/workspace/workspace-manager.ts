@@ -664,6 +664,7 @@ export class WorkspaceManager {
       publishedActions?: BundlePublishedAction[];
       changedThreadIds?: Set<string>;
       allThreads?: ReviewThread[];
+      hasCommitList?: boolean;
     },
   ): Promise<string> {
     const view = await this.buildContextTemplateView(target, threads, diffs, threadIndex, options);
@@ -686,12 +687,13 @@ export class WorkspaceManager {
       publishedActions?: BundlePublishedAction[];
       changedThreadIds?: Set<string>;
       allThreads?: ReviewThread[];
+      hasCommitList?: boolean;
     },
   ): Promise<ContextTemplateView> {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
     const generalComments = threads.filter((t) => !t.resolvable && !isSystemOnlyThread(t));
     const isIncrementalCodeReview = options?.prepareSummary?.comparison.targetCodeChangedSinceCheckpoint === true;
-    const hasCommitList = await this.fileHasContent(path.join(this.baseDir, 'commits.md'));
+    const hasCommitList = options?.hasCommitList ?? false;
 
     const tableCell = (value: string): string => value.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
 
@@ -980,15 +982,6 @@ export class WorkspaceManager {
         : 'These threads have been updated since the last review checkpoint. Prioritize reviewing them.',
       rows,
     };
-  }
-
-  private async fileHasContent(filePath: string): Promise<boolean> {
-    try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      return content.trim().length > 0;
-    } catch {
-      return false;
-    }
   }
 
   private async renderContextTemplate(view: ContextTemplateView): Promise<string> {

@@ -374,7 +374,7 @@ export class GitHelper {
           message,
         };
       })
-      .filter((commit) => commit.sha && commit.shortSha && commit.message);
+      .filter((commit) => commit.sha && commit.shortSha);
   }
 
   /** List changed files between two refs. */

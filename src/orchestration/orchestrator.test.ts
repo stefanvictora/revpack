@@ -524,6 +524,16 @@ describe('ReviewOrchestrator', () => {
       expect(bundleState.paths.commits).toBe('.revpack/commits.md');
     });
 
+    it('wraps git log failures while listing review commits', async () => {
+      listReviewCommitsSpy.mockRejectedValueOnce(new Error('fatal: bad revision aaa..bbb'));
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const prepare = orchestrator.prepare('!42', 'group/project');
+
+      await expect(prepare).rejects.toThrow(
+        /revpack could not generate the review patch from local Git.[\s\S]*fatal: bad revision aaa\.\.bbb/,
+      );
+    });
+
     it('prepares Bitbucket Cloud pull requests from local git diff artifacts', async () => {
       currentBranchSpy.mockResolvedValue('feature/bitbucket');
       const bitbucketProvider = createBitbucketMockProvider();

@@ -11,6 +11,7 @@ import type {
   PrepareSummary,
   RemoteCheckpoint,
   BundleComparison,
+  ReviewCommit,
 } from '../core/types.js';
 import { formatTargetKind } from '../core/display.js';
 import { formatTargetDisplayId } from '../providers/display.js';
@@ -225,7 +226,13 @@ export class ReviewOrchestrator {
     const resolvedThreads = allThreads.filter((thread) => thread.resolvable && thread.resolved);
 
     const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
-    const commits = await this.git.listReviewCommits(target.diffRefs.baseSha, target.diffRefs.headSha);
+    let commits: ReviewCommit[];
+    try {
+      commits = await this.git.listReviewCommits(target.diffRefs.baseSha, target.diffRefs.headSha);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw this.localPatchFailure(target.diffRefs.baseSha, target.diffRefs.headSha, message);
+    }
     const bundleDiffs = this.reviewDiffsFromPatch(latestPatchContent);
 
     const bundle = await this.workspace.createBundle(target, activeThreads, bundleDiffs, versions, threadIndex, {
@@ -336,6 +343,7 @@ export class ReviewOrchestrator {
       publishedActions: previousActions,
       changedThreadIds,
       allThreads,
+      hasCommitList: commits.length > 0,
     });
 
     // Build and save bundle.json
