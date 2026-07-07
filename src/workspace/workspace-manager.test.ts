@@ -7,6 +7,7 @@ import type {
   ReviewTarget,
   ReviewThread,
   ReviewDiff,
+  ReviewCommit,
   ReviewVersion,
   PrepareSummary,
   BundleLocal,
@@ -80,6 +81,15 @@ const makeVersion = (versionId: string, createdAt: string): ReviewVersion => ({
   createdAt,
 });
 
+const makeCommit = (overrides: Partial<ReviewCommit> = {}): ReviewCommit => ({
+  sha: '1111111111111111111111111111111111111111',
+  shortSha: '1111111',
+  authorName: 'Alice',
+  authorDate: '2026-07-07',
+  message: 'Add commit context\n\nExplain why this change exists.',
+  ...overrides,
+});
+
 const makeStructuredDiff = (): ReviewDiff => ({
   oldPath: 'src/service.ts',
   newPath: 'src/service.ts',
@@ -116,9 +126,10 @@ describe('WorkspaceManager', () => {
     threads: ReviewThread[],
     diffs: ReviewDiff[] = [],
     versions: ReviewVersion[] = [],
+    commits: ReviewCommit[] = [],
   ) {
     const threadIndex = WorkspaceManager.buildThreadIndex(threads);
-    return { bundle: await m.createBundle(target, threads, diffs, versions, threadIndex), threadIndex };
+    return { bundle: await m.createBundle(target, threads, diffs, versions, threadIndex, { commits }), threadIndex };
   }
 
   function makeTargetForProvider(provider: ReviewTarget['provider']): ReviewTarget {
@@ -338,6 +349,24 @@ describe('WorkspaceManager', () => {
     const content = await fs.readFile(descPath, 'utf-8');
 
     expect(content).toContain('A test merge request');
+  });
+
+  it('writes commits.md with full commit messages when commits are available', async () => {
+    await createBundle(manager, makeTarget(), [], [], [], [makeCommit()]);
+
+    const content = await fs.readFile(path.join(tmpDir, '.revpack', 'commits.md'), 'utf-8');
+
+    expect(content).toContain('# Commit List');
+    expect(content).toContain('## 1111111 - Alice - 2026-07-07');
+    expect(content).toContain('Add commit context\n\nExplain why this change exists.');
+    expect(content).toContain('intent context only');
+  });
+
+  it('removes stale commits.md when the current bundle has no commits', async () => {
+    await createBundle(manager, makeTarget(), [], [], [], [makeCommit()]);
+    await createBundle(manager, makeTarget(), []);
+
+    await expect(fs.readFile(path.join(tmpDir, '.revpack', 'commits.md'), 'utf-8')).rejects.toThrow();
   });
 
   it('writes thread JSON and markdown files', async () => {
@@ -808,6 +837,45 @@ describe('WorkspaceManager', () => {
     ]);
   });
 
+  it('adds paths.commits only when commit list exists', () => {
+    const threadIndex = WorkspaceManager.buildThreadIndex([]);
+    const prepareSummary: PrepareSummary = {
+      mode: 'fresh',
+      checkpoint: null,
+      current: { targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+      comparison: {
+        targetCodeChangedSinceCheckpoint: null,
+        threadsChangedSinceCheckpoint: null,
+        descriptionChangedSinceCheckpoint: null,
+      },
+    };
+    const localMetadata: BundleLocal = {
+      repositoryRoot: tmpDir,
+      branch: 'feature/test',
+      headSha: 'bbb',
+      matchesTargetSourceBranch: true,
+      matchesTargetHead: true,
+      checkedAt: '2026-01-01T00:00:00Z',
+    };
+
+    const withoutCommits = manager.buildBundleState(makeTarget(), [], [], threadIndex, prepareSummary, localMetadata);
+    const withCommits = manager.buildBundleState(
+      makeTarget(),
+      [],
+      [],
+      threadIndex,
+      prepareSummary,
+      localMetadata,
+      undefined,
+      undefined,
+      [],
+      { hasCommitList: true },
+    );
+
+    expect(withoutCommits.paths.commits).toBeUndefined();
+    expect(withCommits.paths.commits).toBe('.revpack/commits.md');
+  });
+
   it('writes incremental diff patch', async () => {
     await createBundle(manager, makeTarget(), []);
 
@@ -886,6 +954,34 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('| added |');
       expect(content).toContain('| deleted |');
       expect(content).toContain('| renamed |');
+    });
+
+    it('includes commit messages as context when commit-list state is present', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), [], [makeDiff()], [], [makeCommit()]);
+
+      const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff()], threadIndex, {
+        hasCommitList: true,
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('## Commit Messages');
+      expect(content).toContain('The commit list is available at `.revpack/commits.md`.');
+      expect(content).toContain('Treat commit messages as intent context only.');
+      expect(content).toContain(
+        '| `.revpack/commits.md` | Commit messages for the reviewed non-merge commits; intent context only |',
+      );
+      expect(content).toContain('Read `.revpack/commits.md` for commit-message intent context.');
+      expect(content).not.toContain('`.revpack/commits.md` —');
+    });
+
+    it('omits commit message context when commits.md is missing or empty', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), [], [makeDiff()]);
+
+      const contextPath = await manager.writeContext(makeTarget(), [], [makeDiff()], threadIndex);
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).not.toContain('## Commit Messages');
+      expect(content).not.toContain('`.revpack/commits.md`');
     });
 
     it('excludes resolved changed threads from the full checkpoint comparison set', async () => {
@@ -1013,6 +1109,7 @@ describe('WorkspaceManager', () => {
             descriptionChangedSinceCheckpoint: false,
           },
         },
+        hasCommitList: true,
       });
 
       const content = await fs.readFile(contextPath, 'utf-8');
@@ -1089,6 +1186,41 @@ describe('WorkspaceManager', () => {
       expect(incrementalIndex).toBeGreaterThan(-1);
       expect(filesJsonIndex).toBeGreaterThan(incrementalIndex);
       expect(byFileIndex).toBeGreaterThan(incrementalIndex);
+    });
+
+    it('places commit messages before incremental diff context in incremental reading order', async () => {
+      const threads = [makeThread()];
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads, [makeDiff()], [], [makeCommit()]);
+      await manager.writeIncrementalDiff([makeDiff()]);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, [makeDiff()], threadIndex, {
+        prepareSummary: {
+          mode: 'refresh',
+          checkpoint: {
+            source: 'description_body',
+            headSha: 'aaa',
+            baseSha: 'xxx',
+            startSha: 'xxx',
+            threadsDigest: null,
+            descriptionDigest: null,
+            threadDigests: {},
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          current: { providerVersionId: 'v1', targetHeadSha: 'bbb', localHeadSha: 'bbb', threadsDigest: null },
+          comparison: {
+            targetCodeChangedSinceCheckpoint: true,
+            threadsChangedSinceCheckpoint: false,
+            descriptionChangedSinceCheckpoint: false,
+          },
+        },
+        hasCommitList: true,
+      });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      const commitsIndex = content.indexOf('Read `.revpack/commits.md` for commit-message intent context.');
+      const incrementalIndex = content.indexOf('Read `.revpack/diffs/incremental.patch`');
+      expect(commitsIndex).toBeGreaterThan(-1);
+      expect(incrementalIndex).toBeGreaterThan(commitsIndex);
     });
 
     it('distinguishes incremental thread updates from unresolved threads requiring attention', async () => {

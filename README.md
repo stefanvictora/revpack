@@ -8,7 +8,7 @@
 
 **Local AI review bundles for GitHub, GitLab, Bitbucket Cloud, and local branches — with humans in control of what gets published.**
 
-`revpack` turns a GitHub PR, GitLab MR, Bitbucket Cloud PR, or local branch range into a local review bundle for coding agents. The bundle contains the diff, unresolved review discussions, previous review state, and valid line-comment positions.
+`revpack` turns a GitHub PR, GitLab MR, Bitbucket Cloud PR, or local branch range into a local review bundle for coding agents. The bundle contains the diff, commit messages, unresolved review discussions, previous review state, and valid line-comment positions.
 
 Your agent reviews that local bundle and writes proposed outputs: findings, thread replies, summaries, and review notes. Nothing is posted to the provider until you publish it.
 
@@ -77,6 +77,7 @@ The bundle gives the agent the review context it needs:
 .revpack/
   CONTEXT.md              # agent entry point
   description.md          # PR/MR description
+  commits.md              # commit messages as intent context, when available
   threads/                # active review discussions
   resolved-threads/       # resolved review discussions kept as context
   diffs/

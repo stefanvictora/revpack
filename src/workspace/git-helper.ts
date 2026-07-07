@@ -1,5 +1,6 @@
 import { execFile, spawn as nodeSpawn } from 'node:child_process';
 import { resolve as resolvePath } from 'node:path';
+import type { ReviewCommit } from '../core/types.js';
 
 const GIT_LONG_PATHS_CONFIG = ['-c', 'core.longpaths=true'];
 
@@ -339,6 +340,41 @@ export class GitHelper {
       this.cwd,
     );
     return stdout;
+  }
+
+  /** List non-merge commits in the review range, oldest first, preserving full messages. */
+  async listReviewCommits(baseSha: string, headSha: string): Promise<ReviewCommit[]> {
+    const fieldSep = '\x00';
+    const recordSep = '\x1e';
+    const { stdout } = await execGit(
+      [
+        'log',
+        '--no-merges',
+        '--reverse',
+        '--date=short',
+        `--format=%H%x00%h%x00%an%x00%ad%x00%B%x00%x1e`,
+        `${baseSha}..${headSha}`,
+      ],
+      this.cwd,
+    );
+
+    return stdout
+      .split(recordSep)
+      .map((record) => record.replace(/^\r?\n|\r?\n$/g, ''))
+      .filter(Boolean)
+      .map((record) => {
+        const [sha = '', shortSha = '', authorName = '', authorDate = '', ...messageParts] = record.split(fieldSep);
+        const rawMessage = messageParts.join(fieldSep);
+        const message = (rawMessage.endsWith(fieldSep) ? rawMessage.slice(0, -fieldSep.length) : rawMessage).trim();
+        return {
+          sha,
+          shortSha,
+          authorName,
+          authorDate,
+          message,
+        };
+      })
+      .filter((commit) => commit.sha && commit.shortSha);
   }
 
   /** List changed files between two refs. */

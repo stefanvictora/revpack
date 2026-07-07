@@ -909,6 +909,15 @@ describe('LocalGitProvider orchestrator boundary', () => {
     vi.spyOn(GitHelper.prototype, 'repositoryRoot').mockResolvedValue(tmpDir);
     vi.spyOn(GitHelper.prototype, 'hasCommit').mockResolvedValue(true);
     vi.spyOn(GitHelper.prototype, 'diffForReview').mockResolvedValue(localPatch());
+    vi.spyOn(GitHelper.prototype, 'listReviewCommits').mockResolvedValue([
+      {
+        sha: '1111111111111111111111111111111111111111',
+        shortSha: '1111111',
+        authorName: 'Local Tester',
+        authorDate: '2026-07-07',
+        message: 'Local review change',
+      },
+    ]);
 
     await fs.mkdir(path.join(tmpDir, '.revpack'), { recursive: true });
     await fs.writeFile(path.join(tmpDir, '.revpack', 'bundle.json'), JSON.stringify(staleBundle, null, 2), 'utf-8');
@@ -924,5 +933,6 @@ describe('LocalGitProvider orchestrator boundary', () => {
     expect(result.bundleState.publishedActions).toEqual([]);
     expect(result.bundleState.outputs.summary.lastPublishedHash).toBeUndefined();
     expect(result.bundleState.outputs.review).toEqual({ path: '.revpack/outputs/review.md' });
+    expect(result.bundleState.paths.commits).toBe('.revpack/commits.md');
   });
 });

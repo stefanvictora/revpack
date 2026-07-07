@@ -83,6 +83,14 @@ export interface ReviewDiff {
   deletedFile: boolean;
 }
 
+export interface ReviewCommit {
+  sha: string;
+  shortSha: string;
+  authorName: string;
+  authorDate: string;
+  message: string;
+}
+
 // ─── Review Thread & Comment ─────────────────────────────
 
 export interface DiffPosition {
@@ -320,6 +328,7 @@ export interface BundlePaths {
   instructions: string;
   instructionsDir: string;
   description: string;
+  commits?: string;
   latestPatch: string;
   incrementalPatch: string | null;
   filesJson: string;

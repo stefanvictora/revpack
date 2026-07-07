@@ -204,6 +204,7 @@ describe('ReviewOrchestrator', () => {
   let isGitRepoSpy: MockInstance<(...args: any[]) => any>;
   let switchBranchSpy: MockInstance<(...args: any[]) => any>;
   let diffForReviewSpy: MockInstance<(...args: any[]) => any>;
+  let listReviewCommitsSpy: MockInstance<(...args: any[]) => any>;
   let diffSpy: MockInstance<(...args: any[]) => any>;
 
   beforeEach(async () => {
@@ -223,6 +224,15 @@ describe('ReviewOrchestrator', () => {
     isGitRepoSpy = vi.spyOn(GitHelper.prototype, 'isGitRepo').mockResolvedValue(true);
     switchBranchSpy = vi.spyOn(GitHelper.prototype, 'switchBranch').mockResolvedValue(undefined);
     diffForReviewSpy = vi.spyOn(GitHelper.prototype, 'diffForReview').mockResolvedValue(localPatch());
+    listReviewCommitsSpy = vi.spyOn(GitHelper.prototype, 'listReviewCommits').mockResolvedValue([
+      {
+        sha: '1111111111111111111111111111111111111111',
+        shortSha: '1111111',
+        authorName: 'Alice',
+        authorDate: '2026-07-07',
+        message: 'Add review context\n\nExplain intent.',
+      },
+    ]);
     diffSpy = vi.spyOn(GitHelper.prototype, 'diff').mockResolvedValue(localPatch());
   });
 
@@ -240,6 +250,7 @@ describe('ReviewOrchestrator', () => {
     isGitRepoSpy.mockRestore();
     switchBranchSpy.mockRestore();
     diffForReviewSpy.mockRestore();
+    listReviewCommitsSpy.mockRestore();
     diffSpy.mockRestore();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
@@ -501,9 +512,26 @@ describe('ReviewOrchestrator', () => {
       expect(hasCommitSpy).toHaveBeenCalledWith('aaa');
       expect(hasCommitSpy).toHaveBeenCalledWith('bbb');
       expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
+      expect(listReviewCommitsSpy).toHaveBeenCalledWith('aaa', 'bbb');
       expect(onProgress).not.toHaveBeenCalled();
       const latestPatch = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', 'latest.patch'), 'utf-8');
+      const commits = await fs.readFile(path.join(tmpDir, '.revpack', 'commits.md'), 'utf-8');
+      const bundleState = JSON.parse(await fs.readFile(path.join(tmpDir, '.revpack', 'bundle.json'), 'utf-8')) as {
+        paths: { commits?: string };
+      };
       expect(latestPatch).toBe(localPatch());
+      expect(commits).toContain('Add review context\n\nExplain intent.');
+      expect(bundleState.paths.commits).toBe('.revpack/commits.md');
+    });
+
+    it('wraps git log failures while listing review commits', async () => {
+      listReviewCommitsSpy.mockRejectedValueOnce(new Error('fatal: bad revision aaa..bbb'));
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      const prepare = orchestrator.prepare('!42', 'group/project');
+
+      await expect(prepare).rejects.toThrow(
+        /revpack could not generate the review patch from local Git.[\s\S]*fatal: bad revision aaa\.\.bbb/,
+      );
     });
 
     it('prepares Bitbucket Cloud pull requests from local git diff artifacts', async () => {

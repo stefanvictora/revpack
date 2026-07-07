@@ -140,6 +140,15 @@ The raw MR/PR description is available at `.revpack/description.md`.
 
 Treat it as context only. Verify behavior against the diff and source code.
 
+{{#if hasCommitList}}
+## Commit Messages
+
+The commit list is available at `.revpack/commits.md`.
+
+Treat commit messages as intent context only. They may explain why the change was made, but they are not proof that the implementation matches that intent. Verify behavior against the diff and source code.
+
+{{/if}}
+
 ## Bundle Contents
 
 | Path | Description |
@@ -148,6 +157,9 @@ Treat it as context only. Verify behavior against the diff and source code.
 | `.revpack/instructions/` | Detailed task-specific instruction files |
 | `.revpack/bundle.json` | Machine-readable bundle metadata and local state |
 | `.revpack/description.md` | Raw MR/PR description |
+{{#if hasCommitList}}
+| `.revpack/commits.md` | Commit messages for the reviewed non-merge commits; intent context only |
+{{/if}}
 {{#if hasThreadFiles}}
 | `.revpack/threads/` | {{threadFileCount}} thread(s) — read the `.md` files |
 {{/if}}

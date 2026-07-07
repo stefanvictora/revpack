@@ -201,6 +201,101 @@ describe('GitHelper', () => {
     });
   });
 
+  describe('listReviewCommits', () => {
+    it('lists non-merge commits oldest first with full messages', async () => {
+      childProcessMock.execFile.mockImplementationOnce(
+        (_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
+          cb(
+            null,
+            [
+              '1111111111111111111111111111111111111111',
+              '1111111',
+              'Alice',
+              '2026-07-07',
+              'Add parser\n\nExplain intent.\nTrailer: yes',
+              '',
+            ].join('\x00') +
+              '\x1e\n' +
+              ['2222222222222222222222222222222222222222', '2222222', 'Bob', '2026-07-08', 'Tighten tests', ''].join(
+                '\x00',
+              ) +
+              '\x1e\n',
+            '',
+          );
+        },
+      );
+
+      const git = new GitHelper('repo');
+      await expect(git.listReviewCommits('aaa', 'bbb')).resolves.toEqual([
+        {
+          sha: '1111111111111111111111111111111111111111',
+          shortSha: '1111111',
+          authorName: 'Alice',
+          authorDate: '2026-07-07',
+          message: 'Add parser\n\nExplain intent.\nTrailer: yes',
+        },
+        {
+          sha: '2222222222222222222222222222222222222222',
+          shortSha: '2222222',
+          authorName: 'Bob',
+          authorDate: '2026-07-08',
+          message: 'Tighten tests',
+        },
+      ]);
+
+      expect(childProcessMock.execFile).toHaveBeenCalledWith(
+        'git',
+        [
+          '-c',
+          'core.longpaths=true',
+          'log',
+          '--no-merges',
+          '--reverse',
+          '--date=short',
+          '--format=%H%x00%h%x00%an%x00%ad%x00%B%x00%x1e',
+          'aaa..bbb',
+        ],
+        { cwd: 'repo' },
+        expect.any(Function),
+      );
+    });
+
+    it('returns an empty list when the range has no non-merge commits', async () => {
+      childProcessMock.execFile.mockImplementationOnce(
+        (_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
+          cb(null, '', '');
+        },
+      );
+
+      const git = new GitHelper('repo');
+      await expect(git.listReviewCommits('aaa', 'bbb')).resolves.toEqual([]);
+    });
+
+    it('keeps commits with empty commit messages', async () => {
+      childProcessMock.execFile.mockImplementationOnce(
+        (_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
+          cb(
+            null,
+            ['3333333333333333333333333333333333333333', '3333333', 'Carol', '2026-07-09', '', ''].join('\x00') +
+              '\x1e\n',
+            '',
+          );
+        },
+      );
+
+      const git = new GitHelper('repo');
+      await expect(git.listReviewCommits('aaa', 'bbb')).resolves.toEqual([
+        {
+          sha: '3333333333333333333333333333333333333333',
+          shortSha: '3333333',
+          authorName: 'Carol',
+          authorDate: '2026-07-09',
+          message: '',
+        },
+      ]);
+    });
+  });
+
   describe('progress-mode fetch error capture', () => {
     it('includes stderr in error when progress-mode fetch fails', async () => {
       childProcessMock.spawn.mockImplementation(() => {
