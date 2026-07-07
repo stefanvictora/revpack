@@ -72,6 +72,10 @@ _Avoid_: Closed thread, archived thread
 A visible target-level review comment that is not anchored to a specific line or existing thread.
 _Avoid_: General comment, review body
 
+**Commit List**:
+A review bundle artifact that lists the commits included in the review target and preserves their messages as intent context.
+_Avoid_: Changelog, history dump
+
 **Summary**:
 A target description section maintained by revpack to summarize the reviewed changes.
 _Avoid_: Description, overview

@@ -10,6 +10,7 @@ import type {
   BundleThreadItem,
   OutputState,
   PrepareSummary,
+  ReviewCommit,
   ReviewDiff,
   ReviewTarget,
   ReviewThread,
@@ -89,6 +90,7 @@ interface ContextTemplateView {
   changedFilesTitle: string;
   changedFilesIntro?: string;
   changedFiles: Array<{ path: string; status: string }>;
+  hasCommitList: boolean;
   incrementalChangedFiles: Array<{ path: string; status: string }>;
   changedThreads?: {
     title: string;
@@ -243,7 +245,7 @@ export class WorkspaceManager {
     diffs: ReviewDiff[],
     versions: ReviewVersion[],
     threadIndex: ThreadIndex,
-    options?: { latestPatchContent?: string; resolvedThreads?: ReviewThread[] },
+    options?: { latestPatchContent?: string; resolvedThreads?: ReviewThread[]; commits?: ReviewCommit[] },
   ): Promise<WorkspaceBundle> {
     const preparedAt = new Date().toISOString();
 
@@ -266,6 +268,7 @@ export class WorkspaceManager {
 
     // Write description.md (raw MR/PR description)
     await this.writeDescription(target.description);
+    await this.writeCommitList(options?.commits ?? []);
 
     // Write thread files
     await this.clearThreadFiles('threads');
@@ -322,6 +325,7 @@ export class WorkspaceManager {
     previousActions?: BundlePublishedAction[],
     previousOutputs?: BundleOutputs,
     bundledThreads: ReviewThread[] = threads,
+    options?: { hasCommitList?: boolean },
   ): BundleState {
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
 
@@ -386,6 +390,7 @@ export class WorkspaceManager {
         instructions: '.revpack/INSTRUCTIONS.md',
         instructionsDir: '.revpack/instructions/',
         description: '.revpack/description.md',
+        ...(options?.hasCommitList ? { commits: '.revpack/commits.md' } : {}),
         latestPatch: '.revpack/diffs/latest.patch',
         incrementalPatch: prepareSummary.comparison.targetCodeChangedSinceCheckpoint
           ? '.revpack/diffs/incremental.patch'
@@ -521,6 +526,32 @@ export class WorkspaceManager {
     const sanitized = sanitizeDescriptionForAgent(description ?? '');
     const descPath = path.join(this.baseDir, 'description.md');
     await fs.writeFile(descPath, sanitized, 'utf-8');
+  }
+
+  async writeCommitList(commits: ReviewCommit[]): Promise<void> {
+    const commitPath = path.join(this.baseDir, 'commits.md');
+    if (commits.length === 0) {
+      await fs.rm(commitPath, { force: true });
+      return;
+    }
+
+    const lines: string[] = [
+      '# Commit List',
+      '',
+      'Commit messages are intent context only. Verify behavior against the diff and source code.',
+      '',
+    ];
+
+    for (const commit of commits) {
+      const author = commit.authorName.trim() || 'unknown author';
+      const date = commit.authorDate.trim() || 'unknown date';
+      lines.push(`## ${commit.shortSha} - ${author} - ${date}`);
+      lines.push('');
+      lines.push(commit.message.trim());
+      lines.push('');
+    }
+
+    await fs.writeFile(commitPath, lines.join('\n').trimEnd() + '\n', 'utf-8');
   }
 
   /**
@@ -660,6 +691,7 @@ export class WorkspaceManager {
     const unresolvedThreads = threads.filter((t) => t.resolvable && !t.resolved);
     const generalComments = threads.filter((t) => !t.resolvable && !isSystemOnlyThread(t));
     const isIncrementalCodeReview = options?.prepareSummary?.comparison.targetCodeChangedSinceCheckpoint === true;
+    const hasCommitList = await this.fileHasContent(path.join(this.baseDir, 'commits.md'));
 
     const tableCell = (value: string): string => value.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
 
@@ -784,7 +816,11 @@ export class WorkspaceManager {
     }
 
     const instructionRoute = buildInstructionRoute(ps, unresolvedThreads.length > 0);
-    const readingOrder = this.buildContextReadingOrder(isIncrementalCodeReview, instructionRoute.proactiveReview);
+    const readingOrder = this.buildContextReadingOrder(
+      isIncrementalCodeReview,
+      instructionRoute.proactiveReview,
+      hasCommitList,
+    );
     const threadFileCount = unresolvedThreads.length + generalComments.length;
     const incrementalChangedFiles = isIncrementalCodeReview ? await incrementalFiles() : [];
 
@@ -826,6 +862,7 @@ export class WorkspaceManager {
         ? 'These files are part of the full MR/PR diff. Use them for context, anchoring, duplicate checks, and verification when needed.'
         : undefined,
       changedFiles: diffs.map((d) => ({ path: tableCell(d.newPath || d.oldPath), status: diffStatus(d) })),
+      hasCommitList,
       incrementalChangedFiles: incrementalChangedFiles.map((f) => ({ path: tableCell(f.path), status: f.status })),
       changedThreads,
       unresolvedThreads: unresolvedThreads.map((t) => {
@@ -868,12 +905,17 @@ export class WorkspaceManager {
     };
   }
 
-  private buildContextReadingOrder(isIncrementalCodeReview: boolean, proactiveReview: boolean): string[] {
+  private buildContextReadingOrder(
+    isIncrementalCodeReview: boolean,
+    proactiveReview: boolean,
+    hasCommitList: boolean,
+  ): string[] {
     if (isIncrementalCodeReview) {
       return [
         'Read this context file.',
         'Read the files listed in **Required Instructions for This Run**.',
         'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
+        ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
         'Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.',
         'Read relevant changed or unresolved thread files in `.revpack/threads/`.',
         'Use `.revpack/diffs/latest.patch` only for full MR/PR context when needed.',
@@ -889,6 +931,7 @@ export class WorkspaceManager {
       'Read this context file.',
       'Read the files listed in **Required Instructions for This Run**.',
       'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
+      ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
       'Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
       'Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
     ];
@@ -937,6 +980,15 @@ export class WorkspaceManager {
         : 'These threads have been updated since the last review checkpoint. Prioritize reviewing them.',
       rows,
     };
+  }
+
+  private async fileHasContent(filePath: string): Promise<boolean> {
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      return content.trim().length > 0;
+    } catch {
+      return false;
+    }
   }
 
   private async renderContextTemplate(view: ContextTemplateView): Promise<string> {

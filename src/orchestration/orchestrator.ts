@@ -225,11 +225,13 @@ export class ReviewOrchestrator {
     const resolvedThreads = allThreads.filter((thread) => thread.resolvable && thread.resolved);
 
     const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
+    const commits = await this.git.listReviewCommits(target.diffRefs.baseSha, target.diffRefs.headSha);
     const bundleDiffs = this.reviewDiffsFromPatch(latestPatchContent);
 
     const bundle = await this.workspace.createBundle(target, activeThreads, bundleDiffs, versions, threadIndex, {
       latestPatchContent,
       resolvedThreads,
+      commits,
     });
 
     // Compute prepare summary — compare against remote checkpoint
@@ -347,6 +349,7 @@ export class ReviewOrchestrator {
       previousActions,
       previousOutputs,
       allThreads,
+      { hasCommitList: commits.length > 0 },
     );
     await this.workspace.saveBundleState(bundleState);
 
