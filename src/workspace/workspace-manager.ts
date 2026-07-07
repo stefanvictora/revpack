@@ -328,6 +328,7 @@ export class WorkspaceManager {
     options?: { hasCommitList?: boolean },
   ): BundleState {
     const latestVersionId = versions.length > 0 ? versions[0].versionId : undefined;
+    const { repositoryRoot: _repositoryRoot, ...portableLocalMetadata } = localMetadata;
 
     // Build thread items with digests
     const threadItems: BundleThreadItem[] = bundledThreads
@@ -372,7 +373,7 @@ export class WorkspaceManager {
         diffRefs: target.diffRefs,
         providerVersionId: latestVersionId,
       },
-      local: localMetadata,
+      local: portableLocalMetadata,
       prepare: prepareSummary,
       threads: {
         digestVersion: DIGEST_VERSION,
