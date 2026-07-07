@@ -2333,6 +2333,16 @@ describe('WorkspaceManager', () => {
       expect(state.tool).toMatchObject({ name: 'revpack' });
     });
 
+    it('omits absolute repository root from persisted local metadata', () => {
+      const state = manager.buildBundleState(makeTarget(), [], [], new Map(), makePrepareSummary(), {
+        ...makeLocal(),
+        repositoryRoot: 'C:\\Users\\alice\\work\\private-repo',
+      });
+
+      expect(state.local).not.toHaveProperty('repositoryRoot');
+      expect(JSON.stringify(state)).not.toContain('private-repo');
+    });
+
     it('uses first version as providerVersionId', () => {
       const versions: ReviewVersion[] = [
         makeVersion('v-latest', '2026-01-02T00:00:00Z'),

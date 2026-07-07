@@ -211,7 +211,8 @@ export interface BundleState {
 }
 
 export interface BundleLocal {
-  repositoryRoot: string;
+  /** Deprecated in persisted bundle.json. Older bundles may contain this absolute host path. */
+  repositoryRoot?: string;
   branch: string;
   headSha: string;
   matchesTargetSourceBranch: boolean;

@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Fixed prepared `bundle.json` files leaking the absolute local repository path in `local.repositoryRoot`.
 - Fixed `revpack prepare` leaving stale per-file patch files in `.revpack/diffs/patches/by-file/` across repeated prepare runs.
 - Fixed generated review instructions so non-GitLab review bundles use plain suggestion fences while GitLab bundles keep range-offset suggestion fences.
 - Fixed GitLab fallback checkout for deleted MR source branches, including follow-up bundle commands run from the fallback branch and fork fallback fetches.
