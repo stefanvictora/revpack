@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Clarified rerun semantics for prepared review bundles: existing conditional outputs are pending drafts that agents reconcile or remove, bundles are single-writer.
 - Improved generated `CONTEXT.md` changed-file summaries with added and removed line counts, binary-file handling, and an explicit pointer to `diffs/files.json` as the authoritative changed-file index.
 - Changed prepared review bundles so revpack-owned schema references live under read-only `.revpack/schemas/`, while `.revpack/outputs/` contains only agent-created drafts; agents create output files only when they have draft material, and missing default queue outputs are treated as empty.
 - Changed prepared review bundle instructions so `.revpack/CONTEXT.md` is the single entry point and contains the short review contract, while `.revpack/INSTRUCTIONS.md` is only a catalog.

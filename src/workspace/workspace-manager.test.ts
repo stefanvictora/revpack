@@ -1303,6 +1303,9 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('## Review Contract');
       expect(content).toContain('## Suggested Reading Order');
       expect(content).toContain('REVIEW.md');
+      expect(content).toContain(
+        'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
+      );
       expect(content).toContain('Use `.revpack/INSTRUCTIONS.md` only as a catalog');
       expect(content).not.toContain('Read `.revpack/AGENT_CONTRACT.md`');
     });
@@ -1319,6 +1322,15 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('`.revpack/instructions/02-thread-replies.md` — skip, no unresolved threads');
       // Fresh review (no prepareSummary) → proactive review instructions required
       expect(content).not.toContain('03-new-findings-and-anchors.md` — skip');
+
+      const workflowInstructions = await fs.readFile(
+        path.join(tmpDir, '.revpack', 'instructions', '01-review-workflow-and-outputs.md'),
+        'utf-8',
+      );
+      expect(workflowInstructions).toContain('## Rerunning a review');
+      expect(workflowInstructions).toContain(
+        'Existing `replies.json`, `new-findings.json`, and `review.md` are pending, revisable drafts.',
+      );
       expect(content).toContain('`.revpack/instructions/03-new-findings-and-anchors.md`');
     });
 

@@ -940,6 +940,7 @@ export class WorkspaceManager {
         'Read this context file.',
         'Read the files listed in **Required Instructions for This Run**.',
         'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
+        'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
         ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
         'Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.',
         'Read relevant changed or unresolved thread files in `.revpack/threads/`.',
@@ -948,7 +949,6 @@ export class WorkspaceManager {
         'Use `.revpack/diffs/line-map.ndjson` to choose valid review anchors before creating findings.',
         'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
         'Inspect checked-out source files when needed to understand the new branch state.',
-        'Read existing `.revpack/outputs/summary.md`, if present, before updating it.',
       ];
     }
 
@@ -956,6 +956,7 @@ export class WorkspaceManager {
       'Read this context file.',
       'Read the files listed in **Required Instructions for This Run**.',
       'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
+      'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
       ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
       'Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
       'Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
@@ -968,7 +969,6 @@ export class WorkspaceManager {
         'Use `.revpack/diffs/line-map.ndjson` to choose valid review anchors before creating findings.',
         'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
         'Inspect checked-out source files when needed to understand the new branch state.',
-        'Read existing `.revpack/outputs/summary.md`, if present, before updating it.',
       );
     }
 
