@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Improved generated `CONTEXT.md` changed-file summaries with added and removed line counts, binary-file handling, and an explicit pointer to `diffs/files.json` as the authoritative changed-file index.
-- Changed prepared review bundles so `.revpack/outputs/` contains schemas but no empty draft output placeholders; agents create output files only when they have draft material, and missing default queue outputs are treated as empty.
+- Changed prepared review bundles so revpack-owned schema references live under read-only `.revpack/schemas/`, while `.revpack/outputs/` contains only agent-created drafts; agents create output files only when they have draft material, and missing default queue outputs are treated as empty.
 - Changed prepared review bundle instructions so `.revpack/CONTEXT.md` is the single entry point and contains the short review contract, while `.revpack/INSTRUCTIONS.md` is only a catalog.
 - Relaxed finding category validation so `revpack publish findings` accepts any non-empty category while still recommending the standard category set.
 - Changed bare `revpack config` to print profile-oriented help instead of acting as an alias for `revpack config show`, with clearer inspect/edit and manage sections for profile workflows.

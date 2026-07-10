@@ -84,6 +84,7 @@ The bundle gives the agent the review context it needs:
     latest.patch          # full diff
     incremental.patch     # follow-up changes, when a checkpoint exists
     line-map.ndjson       # valid line-comment locations
+  schemas/                # read-only schema references for JSON outputs
   outputs/
     new-findings.json     # agent-created new line comments, when needed
     replies.json          # agent-created replies to existing threads, when needed
@@ -93,7 +94,7 @@ The bundle gives the agent the review context it needs:
 
 The bundle is local and disposable. Use `revpack clean` to remove it, then run `revpack prepare` to recreate it. Published checkpoints are stored with the PR/MR, so cleaning the local bundle does not reset incremental review history.
 
-The agent reads the input files and writes draft material only to `.revpack/outputs/`. Missing conditional draft files mean there is nothing pending for that output. You can inspect or edit those files before publishing. Replies can target either active threads or resolved threads by `T-NNN` ID.
+The agent reads the bundle inputs, including schema references under `.revpack/schemas/`, and writes draft material only to `.revpack/outputs/`. Missing conditional draft files mean there is nothing pending for that output. You can inspect or edit those files before publishing. Replies can target either active threads or resolved threads by `T-NNN` ID.
 
 ## Publishing
 

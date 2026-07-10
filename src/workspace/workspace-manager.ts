@@ -255,6 +255,7 @@ export class WorkspaceManager {
     await this.ensureDir(path.join(this.baseDir, 'resolved-threads'));
     await this.ensureDir(path.join(this.baseDir, 'diffs'));
     await this.ensureDir(path.join(this.baseDir, 'outputs'));
+    await this.ensureDir(path.join(this.baseDir, 'schemas'));
 
     const bundle: WorkspaceBundle = {
       preparedAt,
@@ -287,7 +288,7 @@ export class WorkspaceManager {
     await this.writeDiffs(diffs, options?.latestPatchContent);
     await this.writeDiffBundle();
 
-    await this.writeOutputSchemas();
+    await this.writeSchemaReferences();
 
     // Write .gitignore to exclude bundle from version control
     await this.writeGitignore();
@@ -1248,17 +1249,17 @@ export class WorkspaceManager {
   }
 
   /**
-   * Write JSON schema files for output validation.
+   * Write read-only JSON schema references for agents authoring outputs.
    */
-  private async writeOutputSchemas(): Promise<void> {
-    const outputDir = path.join(this.baseDir, 'outputs');
+  private async writeSchemaReferences(): Promise<void> {
+    const schemaDir = path.join(this.baseDir, 'schemas');
     await fs.writeFile(
-      path.join(outputDir, 'new-findings.schema.json'),
+      path.join(schemaDir, 'new-findings.schema.json'),
       JSON.stringify(NEW_FINDINGS_JSON_SCHEMA, null, 2),
       'utf-8',
     );
     await fs.writeFile(
-      path.join(outputDir, 'replies.schema.json'),
+      path.join(schemaDir, 'replies.schema.json'),
       JSON.stringify(REPLIES_JSON_SCHEMA, null, 2),
       'utf-8',
     );

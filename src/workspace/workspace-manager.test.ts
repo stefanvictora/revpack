@@ -179,14 +179,15 @@ describe('WorkspaceManager', () => {
     expect(entries).toContain('threads');
     expect(entries).toContain('diffs');
     expect(entries).toContain('outputs');
+    expect(entries).toContain('schemas');
 
-    // Verify output schema files are written
+    // Verify schema reference files are written outside the agent-writable output directory
     const outputEntries = await fs.readdir(path.join(bundleDir, 'outputs'));
-    expect(outputEntries).toContain('new-findings.schema.json');
-    expect(outputEntries).toContain('replies.schema.json');
+    expect(outputEntries).not.toContain('new-findings.schema.json');
+    expect(outputEntries).not.toContain('replies.schema.json');
 
-    const newFindingsSchema = await fs.readFile(path.join(bundleDir, 'outputs', 'new-findings.schema.json'), 'utf-8');
-    const repliesSchema = await fs.readFile(path.join(bundleDir, 'outputs', 'replies.schema.json'), 'utf-8');
+    const newFindingsSchema = await fs.readFile(path.join(bundleDir, 'schemas', 'new-findings.schema.json'), 'utf-8');
+    const repliesSchema = await fs.readFile(path.join(bundleDir, 'schemas', 'replies.schema.json'), 'utf-8');
     expect(newFindingsSchema).toContain('Array of review findings to publish as provider diff threads.');
     expect(newFindingsSchema).not.toContain('GitLab/GitHub');
     expect(repliesSchema).toContain('Internal disposition tag (not published to the provider).');
@@ -593,16 +594,16 @@ describe('WorkspaceManager', () => {
     expect(content).toBe('# Test');
   });
 
-  it('creates output schemas without draft output files on bundle creation', async () => {
+  it('creates schema references without draft output files on bundle creation', async () => {
     await createBundle(manager, makeTarget(), []);
     await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'))).rejects.toThrow();
     await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'review.md'))).rejects.toThrow();
     await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'replies.json'))).rejects.toThrow();
     await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'))).rejects.toThrow();
     await expect(
-      fs.access(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.schema.json')),
+      fs.access(path.join(tmpDir, '.revpack', 'schemas', 'new-findings.schema.json')),
     ).resolves.toBeUndefined();
-    await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'replies.schema.json'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(tmpDir, '.revpack', 'schemas', 'replies.schema.json'))).resolves.toBeUndefined();
     // .gitignore should be created to exclude bundle from version control
     const gitignore = await fs.readFile(path.join(tmpDir, '.revpack', '.gitignore'), 'utf-8');
     expect(gitignore).toBe('*\n');

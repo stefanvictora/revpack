@@ -171,6 +171,8 @@ Treat commit messages as intent context only. They may explain why the change wa
 {{#if incremental}}
 | `.revpack/diffs/incremental.patch` | Code changes since last review checkpoint |
 {{/if}}
+| `.revpack/schemas/new-findings.schema.json` | Read-only schema reference for authoring `outputs/new-findings.json` |
+| `.revpack/schemas/replies.schema.json` | Read-only schema reference for authoring `outputs/replies.json` |
 | `.revpack/outputs/` | Agent output files |
 
 {{#if incremental}}
