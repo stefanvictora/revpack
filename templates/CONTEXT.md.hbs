@@ -181,10 +181,12 @@ Treat commit messages as intent context only. They may explain why the change wa
 
 These files appear in `.revpack/diffs/incremental.patch` and are the primary review focus.
 
-| File | Status |
-|---|---|
+This table is a derived orientation summary of the checkpoint delta.
+
+| File | Status | Added | Removed |
+|---|---|---:|---:|
 {{#each incrementalChangedFiles}}
-| `{{path}}` | {{status}} |
+| `{{path}}` | {{status}} | {{added}} | {{removed}} |
 {{/each}}
 
 {{/if}}
@@ -195,10 +197,10 @@ These files appear in `.revpack/diffs/incremental.patch` and are the primary rev
 {{changedFilesIntro}}
 {{/if}}
 
-| File | Status |
-|---|---|
+| File | Status | Added | Removed |
+|---|---|---:|---:|
 {{#each changedFiles}}
-| `{{path}}` | {{status}} |
+| `{{path}}` | {{status}} | {{added}} | {{removed}} |
 {{/each}}
 
 {{#if changedThreads}}

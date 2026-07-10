@@ -941,19 +941,31 @@ describe('WorkspaceManager', () => {
         oldPath: 'src/before.ts',
         newPath: 'src/after.ts',
       };
+      const binaryDiff: ReviewDiff = {
+        ...makeDiff(),
+        diff: '',
+        newFile: true,
+        oldPath: 'assets/new-image.png',
+        newPath: 'assets/new-image.png',
+      };
 
-      const allDiffs = [makeDiff(), newFileDiff, deletedDiff, renamedDiff];
+      const allDiffs = [makeDiff(), newFileDiff, deletedDiff, renamedDiff, binaryDiff];
       const { threadIndex } = await createBundle(manager, makeTarget(), [], allDiffs);
 
       const contextPath = await manager.writeContext(makeTarget(), [], allDiffs, threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Changed Files');
+      expect(content).toContain(
+        'This is a derived orientation summary. `.revpack/diffs/files.json` is the authoritative changed-file index.',
+      );
+      expect(content).toContain('| File | Status | Added | Removed |');
       expect(content).toContain('`src/app.ts`');
-      expect(content).toContain('| modified |');
-      expect(content).toContain('| added |');
-      expect(content).toContain('| deleted |');
-      expect(content).toContain('| renamed |');
+      expect(content).toContain('| `src/app.ts` | modified | +1 | −0 |');
+      expect(content).toContain('| `src/new-file.ts` | added | +1 | −0 |');
+      expect(content).toContain('| `src/old.ts` | deleted | +1 | −0 |');
+      expect(content).toContain('| `src/after.ts` | renamed | +1 | −0 |');
+      expect(content).toContain('| `assets/new-image.png` | added | — | — |');
     });
 
     it('includes commit messages as context when commit-list state is present', async () => {
@@ -1170,8 +1182,10 @@ describe('WorkspaceManager', () => {
       );
       expect(content).not.toContain('## Changed Files');
       expect(content).toContain('## Files Changed Since Last Checkpoint');
-      expect(content).toContain('| `src/incremental.ts` | modified |');
+      expect(content).toContain('This table is a derived orientation summary of the checkpoint delta.');
+      expect(content).toContain('| `src/incremental.ts` | modified | +2 | −1 |');
       expect(content).toContain('## Files Changed in Current MR/PR');
+      expect(content).toContain('`.revpack/diffs/files.json` is the authoritative changed-file index.');
       expect(content).toContain('`src/app.ts`');
       expect(content).toContain(
         '`.revpack/diffs/line-map.ndjson` contains valid positional anchors for the current MR/PR diff, not only the checkpoint delta.',
