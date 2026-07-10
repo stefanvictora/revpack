@@ -37,7 +37,7 @@ Write `summary.md` for fresh and incremental code review runs. Do not write fill
 
 ## Output validation
 
-revpack validates output files, JSON syntax, schemas, and positional anchors before publishing. Use the required lookup steps in the finding instructions to choose anchors, but do not spend extra tool calls re-checking what revpack can verify mechanically.
+Use the read-only schema references at `schemas/replies.schema.json` and `schemas/new-findings.schema.json` when authoring their corresponding JSON outputs. Revpack independently validates output files, JSON syntax, schemas, and positional anchors before publishing. Use the required lookup steps in the finding instructions to choose anchors, but do not spend extra tool calls re-checking what revpack can verify mechanically.
 
 ## Input files
 
