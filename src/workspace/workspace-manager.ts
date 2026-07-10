@@ -89,9 +89,9 @@ interface ContextTemplateView {
   hasThreadFiles: boolean;
   changedFilesTitle: string;
   changedFilesIntro?: string;
-  changedFiles: Array<{ path: string; status: string }>;
+  changedFiles: Array<{ path: string; status: string; added: string; removed: string }>;
   hasCommitList: boolean;
-  incrementalChangedFiles: Array<{ path: string; status: string }>;
+  incrementalChangedFiles: Array<{ path: string; status: string; added: string; removed: string }>;
   changedThreads?: {
     title: string;
     intro: string;
@@ -721,11 +721,25 @@ export class WorkspaceManager {
     const diffStatus = (d: ReviewDiff): string =>
       d.newFile ? 'added' : d.deletedFile ? 'deleted' : d.renamedFile ? 'renamed' : 'modified';
 
-    const incrementalFiles = async (): Promise<Array<{ path: string; status: string }>> => {
+    const fileSummary = (file: PatchFileEntry): { added: string; removed: string } => {
+      if (file.binary) return { added: '—', removed: '—' };
+      return {
+        added: `+${file.lines.filter((line) => line.type === 'added').length}`,
+        removed: `−${file.lines.filter((line) => line.type === 'removed').length}`,
+      };
+    };
+
+    const incrementalFiles = async (): Promise<
+      Array<{ path: string; status: string; added: string; removed: string }>
+    > => {
       try {
         const patch = await fs.readFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), 'utf-8');
         const parsed = parsePatch(patch);
-        return parsed.files.map((f) => ({ path: f.newPath || f.oldPath, status: f.status }));
+        return parsed.files.map((f) => ({
+          path: f.newPath || f.oldPath,
+          status: f.status,
+          ...fileSummary(f),
+        }));
       } catch {
         return [];
       }
@@ -862,11 +876,18 @@ export class WorkspaceManager {
       hasThreadFiles: threadFileCount > 0,
       changedFilesTitle: isIncrementalCodeReview ? 'Files Changed in Current MR/PR' : 'Changed Files',
       changedFilesIntro: isIncrementalCodeReview
-        ? 'These files are part of the full MR/PR diff. Use them for context, anchoring, duplicate checks, and verification when needed.'
-        : undefined,
-      changedFiles: diffs.map((d) => ({ path: tableCell(d.newPath || d.oldPath), status: diffStatus(d) })),
+        ? 'These files are part of the full MR/PR diff. Use them for context, anchoring, duplicate checks, and verification when needed. This is a derived orientation summary; `.revpack/diffs/files.json` is the authoritative changed-file index.'
+        : 'This is a derived orientation summary. `.revpack/diffs/files.json` is the authoritative changed-file index.',
+      changedFiles: diffs.map((d) => {
+        const parsedFile = parsePatch(WorkspaceManager.diffToGitPatch(d)).files[0];
+        return {
+          path: tableCell(d.newPath || d.oldPath),
+          status: diffStatus(d),
+          ...(parsedFile ? fileSummary(parsedFile) : { added: '+0', removed: '−0' }),
+        };
+      }),
       hasCommitList,
-      incrementalChangedFiles: incrementalChangedFiles.map((f) => ({ path: tableCell(f.path), status: f.status })),
+      incrementalChangedFiles: incrementalChangedFiles.map((f) => ({ ...f, path: tableCell(f.path) })),
       changedThreads,
       unresolvedThreads: unresolvedThreads.map((t) => {
         const prefix = threadIndex.get(t.threadId) ?? '?';
