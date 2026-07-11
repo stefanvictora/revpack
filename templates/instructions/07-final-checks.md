@@ -11,7 +11,7 @@ Check from your current work that:
 - conditional output files were omitted when they have no useful draft material
 - any JSON output files you wrote are valid JSON arrays
 - every finding has `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one line field
-- every finding is anchored to a line in `.revpack/diffs/line-map.ndjson`
+- every finding is anchored to a record in the corresponding per-file Anchor Map listed in `.revpack/diffs/files.json`
 - there are no duplicate findings from existing threads or Previous Actions
 - findings are concise, concrete, and actionable
 - in incremental mode, no valid finding was removed solely because it is outside the checkpoint delta; remove it only if it is not MR/PR-caused, is already covered, is not concrete/actionable, or has no valid positional anchor

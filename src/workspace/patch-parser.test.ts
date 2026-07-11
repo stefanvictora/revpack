@@ -195,7 +195,6 @@ Binary files /dev/null and b/assets/logo.png differ`;
       expect(file.oldExists).toBe(false);
       expect(file.newExists).toBe(true);
       expect(file.lines).toHaveLength(0);
-      expect(file.hunks).toHaveLength(0);
     });
   });
 

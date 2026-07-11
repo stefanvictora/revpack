@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Replaced the global `.revpack/diffs/line-map.ndjson` and `change-blocks.json` artifacts with compact per-file Anchor Maps indexed by `files.json`; existing installed agent instructions that name the removed artifacts must be deleted and recreated with `revpack setup agent <target>` after upgrading.
 - Clarified rerun semantics for prepared review bundles: existing conditional outputs are pending drafts that agents reconcile or remove, bundles are single-writer.
 - Improved generated `CONTEXT.md` changed-file summaries with added and removed line counts, binary-file handling, and an explicit pointer to `diffs/files.json` as the authoritative changed-file index.
 - Changed prepared review bundles so revpack-owned schema references live under read-only `.revpack/schemas/`, while `.revpack/outputs/` contains only agent-created drafts; agents create output files only when they have draft material, and missing default queue outputs are treated as empty.

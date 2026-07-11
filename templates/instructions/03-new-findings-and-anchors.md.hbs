@@ -23,7 +23,7 @@ When reviewing a changed line, also inspect the surrounding method, class, or ca
 - Does the change preserve existing API, database, security, audit, or compatibility behavior?
 - Are existing tests still meaningful, or did the change bypass them?
 
-Create positional findings only on lines listed in `line-map.ndjson`.
+Create positional findings only on lines listed in a per-file Anchor Map.
 
 ## Incremental review scope
 
@@ -37,19 +37,18 @@ Do not remove a valid finding solely because it is outside the checkpoint delta.
 
 The workspace contains only the new branch state. Deleted lines do not exist in checked-out files.
 
-| Artifact                   | Use for                                                                                                    |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `diffs/files.json`         | Navigation, file selection, and authoritative per-file patch paths. Not for review anchors.                |
-| `diffs/latest.patch`       | Overall MR/PR understanding, cross-file relationships, change intent.                                      |
-| `diffs/patches/by-file/`   | Detailed review of individual files selected through `diffs/files.json` (preferred over full patch).       |
-| `diffs/line-map.ndjson`    | **Source of truth** for valid positional anchors. Every finding must reference a line here.                |
-| `diffs/change-blocks.json` | Understanding larger edits and replacement relationships. `preferredCommentTarget` gives a default anchor. |
+| Artifact                 | Use for                                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `diffs/files.json`       | Navigation, file selection, paths, and authoritative per-file patch and Anchor Map paths. Not itself an anchor.  |
+| `diffs/latest.patch`     | Overall MR/PR understanding, cross-file relationships, change intent.                                             |
+| `diffs/patches/by-file/` | Detailed review of individual files selected through `diffs/files.json` (preferred over full patch).              |
+| `diffs/anchor-maps/`     | **Source of truth** for valid positional anchors. Every finding must reference a record in a per-file Anchor Map. |
 
-**Do not** calculate line numbers manually from patches or checked-out files. Use patches to understand changes; use `line-map.ndjson` to choose anchors.
+**Do not** calculate line numbers manually from patches or checked-out files. Use patches to understand changes; use Anchor Maps to choose anchors.
 
 ## Positional anchors
 
-Each finding must anchor to exactly one `line-map.ndjson` entry. Looking up that entry is a required input step for writing a finding; revpack's later validation is the mechanical safety check, not a substitute for choosing the anchor.
+Each finding must anchor to exactly one Anchor Map record. Looking up that record is a required input step for writing a finding; revpack's later validation is the mechanical safety check, not a substitute for choosing the anchor.
 
 | `kind`    | Required line fields         |
 | --------- | ---------------------------- |
@@ -59,9 +58,9 @@ Each finding must anchor to exactly one `line-map.ndjson` entry. Looking up that
 
 Before writing each finding:
 
-1. Find the exact `line-map.ndjson` entry you want to comment on.
-2. Copy its `oldPath` and `newPath`.
-3. Set line fields only from that entry:
+1. Find the exact Anchor Map record you want to comment on. Use the file's `anchorMapFile` from `diffs/files.json`, or search all of `diffs/anchor-maps/` by a distinctive text snippet.
+2. Match the Anchor Map filename to its `fileId` entry in `diffs/files.json`, then copy that entry's `oldPath` and `newPath`.
+3. Set line fields only from the Anchor Map record:
    - `added` → `newLine`
    - `removed` → `oldLine`
    - `context` → both `oldLine` and `newLine`
@@ -72,11 +71,11 @@ Prefer added-line anchors — they are the clearest for issues introduced by the
 
 Do not anchor a deletion finding to the next surviving line in the new file. A nearby `context` line is only valid if the finding is about that surviving line, and then both `oldLine` and `newLine` must be provided.
 
-If the relevant `line-map.ndjson` entry has `"newLine": null`, the finding must not contain `newLine`.
-If the relevant entry has `"oldLine": null`, the finding must not contain `oldLine`.
-If the relevant entry has both line numbers, the finding must contain both.
+If the relevant Anchor Map record omits `newLine`, the finding must not contain `newLine`.
+If the relevant record omits `oldLine`, the finding must not contain `oldLine`.
+If the relevant record has both line numbers, the finding must contain both, even when their values are equal.
 
-A line in the workspace but not in `line-map.ndjson` is not valid for a finding.
+A line in the workspace but not in a per-file Anchor Map is not valid for a finding.
 
 ## Duplicate avoidance
 

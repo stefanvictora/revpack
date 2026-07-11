@@ -8,7 +8,6 @@ const makeLineMap = (): LineMap => ({
       oldPath: 'src/App.java',
       newPath: 'src/App.java',
       status: 'modified',
-      hunks: [],
       lines: [
         { type: 'context', oldLine: 1, newLine: 1, text: 'class App {' },
         { type: 'added', newLine: 2, text: '    private String name;' },
@@ -26,7 +25,6 @@ const makeLineMap = (): LineMap => ({
       oldPath: 'src/RenamedOld.java',
       newPath: 'src/RenamedNew.java',
       status: 'renamed',
-      hunks: [],
       lines: [{ type: 'added', newLine: 5, text: '    renamed();' }],
       binary: false,
       oldExists: true,
