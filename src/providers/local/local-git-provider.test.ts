@@ -828,7 +828,7 @@ describe('LocalGitProvider orchestrator boundary', () => {
 
   it('ignores a stale remote bundle when preparing a local review', async () => {
     const staleBundle: BundleState = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       preparedAt: '2026-01-01T00:00:00.000Z',
       tool: { name: 'revpack', version: '0.2.0' },
       target: {
@@ -898,8 +898,7 @@ describe('LocalGitProvider orchestrator boundary', () => {
         latestPatch: '.revpack/diffs/latest.patch',
         incrementalPatch: null,
         filesJson: '.revpack/diffs/files.json',
-        lineMapNdjson: '.revpack/diffs/line-map.ndjson',
-        changeBlocks: '.revpack/diffs/change-blocks.json',
+        anchorMapsDir: '.revpack/diffs/anchor-maps/',
         outputs: '.revpack/outputs',
       },
     };

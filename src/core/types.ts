@@ -333,8 +333,7 @@ export interface BundlePaths {
   latestPatch: string;
   incrementalPatch: string | null;
   filesJson: string;
-  lineMapNdjson: string;
-  changeBlocks: string;
+  anchorMapsDir: string;
   outputs: string;
 }
 

@@ -56,6 +56,10 @@ _Avoid_: Issue, defect, annotation
 The valid diff position where a finding can be published on a review target.
 _Avoid_: Anchor, line number, file location
 
+**Anchor Map**:
+A review bundle artifact that maps diff text to valid positional anchors without serving as the diff used to understand the change.
+_Avoid_: Line map, annotated diff
+
 **Reply**:
 An agent-proposed, publishable response to an existing review thread.
 _Avoid_: Response, answer, follow-up comment

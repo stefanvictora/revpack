@@ -222,7 +222,7 @@ describe('WorkspaceManager', () => {
     expect(context).toContain('## Review Contract');
     expect(context).toContain('do not discard a valid, non-duplicate issue');
     expect(findingsInstructions).toContain('## Incremental review scope');
-    expect(findingsInstructions).toContain('Looking up that entry is a required input step');
+    expect(findingsInstructions).toContain('Looking up that record is a required input step');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
   });
 
@@ -403,6 +403,7 @@ describe('WorkspaceManager', () => {
 
     const diffDir = path.join(tmpDir, '.revpack', 'diffs');
     const filesJson = JSON.parse(await fs.readFile(path.join(diffDir, 'files.json'), 'utf-8'));
+    expect(filesJson.schemaVersion).toBe(2);
     expect(filesJson.files).toHaveLength(1);
     expect(filesJson.files[0]).toMatchObject({
       fileId: 'F001',
@@ -412,177 +413,52 @@ describe('WorkspaceManager', () => {
       added: 2,
       removed: 1,
       patchFile: 'patches/by-file/F001-service.patch',
+      anchorMapFile: 'anchor-maps/F001-service.ndjson',
     });
-    expect(filesJson.files[0].hunks[0]).toMatchObject({
-      hunkId: 'F001-H001',
-      oldStart: 10,
-      oldEnd: 12,
-      newStart: 10,
-      newEnd: 13,
-    });
+    expect(filesJson.files[0]).not.toHaveProperty('hunks');
 
-    const lineMapLines = (await fs.readFile(path.join(diffDir, 'line-map.ndjson'), 'utf-8'))
+    const anchorMapLines = (await fs.readFile(path.join(diffDir, filesJson.files[0].anchorMapFile), 'utf-8'))
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line));
-    expect(lineMapLines).toEqual([
+    expect(anchorMapLines).toEqual([
       {
-        fileId: 'F001',
-        hunkId: 'F001-H001',
         kind: 'context',
         oldLine: 10,
         newLine: 10,
-        oldPath: 'src/service.ts',
-        newPath: 'src/service.ts',
         text: 'const value = read();',
       },
       {
-        fileId: 'F001',
-        hunkId: 'F001-H001',
         kind: 'removed',
         oldLine: 11,
-        newLine: null,
-        oldPath: 'src/service.ts',
-        newPath: 'src/service.ts',
         text: 'oldCall(value);',
       },
       {
-        fileId: 'F001',
-        hunkId: 'F001-H001',
         kind: 'added',
-        oldLine: null,
         newLine: 11,
-        oldPath: 'src/service.ts',
-        newPath: 'src/service.ts',
         text: 'newCall(value);',
       },
       {
-        fileId: 'F001',
-        hunkId: 'F001-H001',
         kind: 'context',
         oldLine: 12,
         newLine: 12,
-        oldPath: 'src/service.ts',
-        newPath: 'src/service.ts',
         text: 'return value;',
       },
       {
-        fileId: 'F001',
-        hunkId: 'F001-H001',
         kind: 'added',
-        oldLine: null,
         newLine: 13,
-        oldPath: 'src/service.ts',
-        newPath: 'src/service.ts',
         text: 'audit(value);',
       },
     ]);
-
-    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
-    expect(changeBlocks.blocks).toEqual([
-      {
-        blockId: 'B001',
-        fileId: 'F001',
-        hunkId: 'F001-H001',
-        kind: 'replace',
-        oldStart: 11,
-        oldEnd: 11,
-        newStart: 11,
-        newEnd: 11,
-        preferredCommentTarget: { side: 'new', path: 'src/service.ts', line: 11 },
-      },
-      {
-        blockId: 'B002',
-        fileId: 'F001',
-        hunkId: 'F001-H001',
-        kind: 'insert',
-        oldStart: 12,
-        oldEnd: 12,
-        newStart: 13,
-        newEnd: 13,
-        preferredCommentTarget: { side: 'new', path: 'src/service.ts', line: 13 },
-      },
-    ]);
-  });
-
-  it('produces delete change-block when lines are only removed', async () => {
-    const diff: ReviewDiff = {
-      oldPath: 'src/app.ts',
-      newPath: 'src/app.ts',
-      diff: '@@ -1,4 +1,2 @@\n keep1\n-removed_a\n-removed_b\n keep2\n',
-      newFile: false,
-      renamedFile: false,
-      deletedFile: false,
-    };
-    await createBundle(manager, makeTarget(), [], [diff]);
-    const diffDir = path.join(tmpDir, '.revpack', 'diffs');
-    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
-    expect(changeBlocks.blocks).toHaveLength(1);
-    expect(changeBlocks.blocks[0]).toMatchObject({
-      kind: 'delete',
-      oldStart: 2,
-      oldEnd: 3,
-      preferredCommentTarget: { side: 'old', path: 'src/app.ts', line: 2 },
-    });
-  });
-
-  it('produces insert change-block spanning multiple added lines', async () => {
-    const diff: ReviewDiff = {
-      oldPath: 'src/app.ts',
-      newPath: 'src/app.ts',
-      diff: '@@ -5,2 +5,4 @@\n before\n+added1\n+added2\n after\n',
-      newFile: false,
-      renamedFile: false,
-      deletedFile: false,
-    };
-    await createBundle(manager, makeTarget(), [], [diff]);
-    const diffDir = path.join(tmpDir, '.revpack', 'diffs');
-    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
-    expect(changeBlocks.blocks).toHaveLength(1);
-    expect(changeBlocks.blocks[0]).toMatchObject({
-      kind: 'insert',
-      oldStart: 5,
-      oldEnd: 5,
-      newStart: 6,
-      newEnd: 7,
-      preferredCommentTarget: { side: 'new', path: 'src/app.ts', line: 6 },
-    });
-  });
-
-  it('uses newPath for insert preferredCommentTarget in renamed files', async () => {
-    const diff: ReviewDiff = {
-      oldPath: 'src/old-name.ts',
-      newPath: 'src/new-name.ts',
-      diff: '@@ -1,2 +1,3 @@\n keep\n+inserted\n end\n',
-      newFile: false,
-      renamedFile: true,
-      deletedFile: false,
-    };
-    await createBundle(manager, makeTarget(), [], [diff]);
-    const diffDir = path.join(tmpDir, '.revpack', 'diffs');
-    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
-    expect(changeBlocks.blocks[0].preferredCommentTarget).toMatchObject({
-      side: 'new',
-      path: 'src/new-name.ts',
-    });
-  });
-
-  it('uses oldPath for delete preferredCommentTarget in renamed files', async () => {
-    const diff: ReviewDiff = {
-      oldPath: 'src/old-name.ts',
-      newPath: 'src/new-name.ts',
-      diff: '@@ -1,3 +1,2 @@\n keep\n-removed\n end\n',
-      newFile: false,
-      renamedFile: true,
-      deletedFile: false,
-    };
-    await createBundle(manager, makeTarget(), [], [diff]);
-    const diffDir = path.join(tmpDir, '.revpack', 'diffs');
-    const changeBlocks = JSON.parse(await fs.readFile(path.join(diffDir, 'change-blocks.json'), 'utf-8'));
-    expect(changeBlocks.blocks[0].preferredCommentTarget).toMatchObject({
-      side: 'old',
-      path: 'src/old-name.ts',
-    });
+    for (const record of anchorMapLines) {
+      expect(record).not.toHaveProperty('fileId');
+      expect(record).not.toHaveProperty('hunkId');
+      expect(record).not.toHaveProperty('oldPath');
+      expect(record).not.toHaveProperty('newPath');
+      expect(Object.values(record)).not.toContain(null);
+    }
+    await expect(fs.access(path.join(diffDir, 'line-map.ndjson'))).rejects.toThrow();
+    await expect(fs.access(path.join(diffDir, 'change-blocks.json'))).rejects.toThrow();
   });
 
   it('writes output files', async () => {
@@ -1189,7 +1065,7 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('`.revpack/diffs/files.json` is the authoritative changed-file index.');
       expect(content).toContain('`src/app.ts`');
       expect(content).toContain(
-        '`.revpack/diffs/line-map.ndjson` contains valid positional anchors for the current MR/PR diff, not only the checkpoint delta.',
+        'The per-file Anchor Maps listed in `.revpack/diffs/files.json` contain valid positional anchors for the current MR/PR diff, not only the checkpoint delta.',
       );
       expect(content).toContain(
         'Do not treat the absence of a previous action as proof that no issue exists. If a concrete MR/PR issue was missed by an earlier review pass, it may still be reported now.',
@@ -2011,6 +1887,9 @@ describe('WorkspaceManager', () => {
       expect(entry.newExists).toBe(true);
       expect(entry.added).toBe(0);
       expect(entry.removed).toBe(0);
+      expect(entry.anchorMapFile).toBe('anchor-maps/F001-logo.ndjson');
+      const anchorMap = await fs.readFile(path.join(tmpDir, '.revpack', 'diffs', entry.anchorMapFile), 'utf-8');
+      expect(anchorMap).toBe('');
     });
 
     it('marks a binary deletion as deleted with binary=true', async () => {
@@ -3277,7 +3156,7 @@ describe('WorkspaceManager', () => {
       expect(files[0]).toMatch(/^F001-[a-zA-Z0-9_-]+\.patch$/);
     });
 
-    it('removes stale per-file patches when bundle is recreated', async () => {
+    it('replaces stale per-file artifacts and removes legacy diff artifacts when bundle is recreated', async () => {
       const makeFileDiff = (fileName: string): ReviewDiff => ({
         oldPath: `src/${fileName}.ts`,
         newPath: `src/${fileName}.ts`,
@@ -3289,12 +3168,20 @@ describe('WorkspaceManager', () => {
 
       await createBundle(manager, makeTarget(), [], [makeFileDiff('first'), makeFileDiff('second')]);
 
+      const diffDir = path.join(tmpDir, '.revpack', 'diffs');
       const patchDir = path.join(tmpDir, '.revpack', 'diffs', 'patches', 'by-file');
+      const anchorMapDir = path.join(diffDir, 'anchor-maps');
       expect((await fs.readdir(patchDir)).sort()).toEqual(['F001-first.patch', 'F002-second.patch']);
+      expect((await fs.readdir(anchorMapDir)).sort()).toEqual(['F001-first.ndjson', 'F002-second.ndjson']);
+      await fs.writeFile(path.join(diffDir, 'line-map.ndjson'), 'legacy\n', 'utf-8');
+      await fs.writeFile(path.join(diffDir, 'change-blocks.json'), '{}\n', 'utf-8');
 
       await createBundle(manager, makeTarget(), [], [makeFileDiff('second')]);
 
       expect((await fs.readdir(patchDir)).sort()).toEqual(['F001-second.patch']);
+      expect((await fs.readdir(anchorMapDir)).sort()).toEqual(['F001-second.ndjson']);
+      await expect(fs.access(path.join(diffDir, 'line-map.ndjson'))).rejects.toThrow();
+      await expect(fs.access(path.join(diffDir, 'change-blocks.json'))).rejects.toThrow();
     });
   });
 

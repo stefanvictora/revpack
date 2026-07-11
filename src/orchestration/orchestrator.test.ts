@@ -559,19 +559,17 @@ describe('ReviewOrchestrator', () => {
       const diffsDir = path.join(tmpDir, '.revpack', 'diffs');
       const latestPatch = await fs.readFile(path.join(diffsDir, 'latest.patch'), 'utf-8');
       const filesJson = JSON.parse(await fs.readFile(path.join(diffsDir, 'files.json'), 'utf-8')) as {
-        files: Array<{ newPath: string; oldPath: string; patchFile: string }>;
+        files: Array<{ newPath: string; oldPath: string; patchFile: string; anchorMapFile: string }>;
       };
-      const lineMap = await fs.readFile(path.join(diffsDir, 'line-map.ndjson'), 'utf-8');
-      const changeBlocks = JSON.parse(await fs.readFile(path.join(diffsDir, 'change-blocks.json'), 'utf-8')) as {
-        blocks: unknown[];
-      };
+      const anchorMap = await fs.readFile(path.join(diffsDir, filesJson.files[0].anchorMapFile), 'utf-8');
       const perFilePatch = await fs.readFile(path.join(diffsDir, filesJson.files[0].patchFile), 'utf-8');
 
       expect(latestPatch).toBe(localPatch());
       expect(filesJson.files[0]).toMatchObject({ oldPath: 'src/app.ts', newPath: 'src/app.ts' });
       expect(filesJson.files[0].patchFile).toMatch(/patches\/by-file\/F001-/);
-      expect(lineMap).toContain('"fileId":"F001"');
-      expect(changeBlocks.blocks).toHaveLength(1);
+      expect(filesJson.files[0].anchorMapFile).toMatch(/anchor-maps\/F001-/);
+      expect(anchorMap).toContain('"kind":"added"');
+      expect(anchorMap).not.toContain('"fileId"');
       expect(perFilePatch).toBe(localPatch());
     });
 
@@ -875,7 +873,10 @@ describe('ReviewOrchestrator', () => {
 
       const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
       const bundleState = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
-      expect(bundleState.schemaVersion).toBe(2);
+      expect(bundleState.schemaVersion).toBe(3);
+      expect(bundleState.paths.anchorMapsDir).toBe('.revpack/diffs/anchor-maps/');
+      expect(bundleState.paths).not.toHaveProperty('lineMapNdjson');
+      expect(bundleState.paths).not.toHaveProperty('changeBlocks');
       expect(bundleState.target.id).toBe('42');
       expect(bundleState.target.provider).toBe('gitlab');
       expect(bundleState.threads.items.map((i: { providerThreadId: string }) => i.providerThreadId)).toContain(

@@ -51,7 +51,7 @@ After selecting the bundle:
 - Resolve changed source-file paths against the reviewed project root.
 - Write only under `BUNDLE_ROOT/outputs/`.
 
-For positional findings, use paths and line numbers exactly as provided by `BUNDLE_ROOT/diffs/line-map.ndjson`.
+For positional findings, use paths from `BUNDLE_ROOT/diffs/files.json` and line numbers from its corresponding per-file `anchorMapFile`.
 
 ## Start the review
 

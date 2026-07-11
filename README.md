@@ -83,7 +83,9 @@ The bundle gives the agent the review context it needs:
   diffs/
     latest.patch          # full diff
     incremental.patch     # follow-up changes, when a checkpoint exists
-    line-map.ndjson       # valid line-comment locations
+    files.json            # changed-file index and per-file artifact paths
+    patches/by-file/      # standard per-file diffs
+    anchor-maps/          # compact per-file positional anchors
   schemas/                # read-only schema references for JSON outputs
   outputs/
     new-findings.json     # agent-created new line comments, when needed

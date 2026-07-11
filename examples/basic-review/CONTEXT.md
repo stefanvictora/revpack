@@ -29,7 +29,7 @@ Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the fu
 6. Do not write filler such as "No new findings", "Nothing to report", "Reviewed without comments", or "Looks good".
 7. Do not run build, test, lint, format, package-manager, migration, Docker, application-startup, Git-hook, publishing, or repository-audit commands.
 8. Use patch files to understand the code change.
-9. Use `.revpack/diffs/line-map.ndjson` as the source of truth for positional anchors.
+9. Use the per-file Anchor Maps listed in `.revpack/diffs/files.json` as the source of truth for positional anchors.
 10. Do not derive old or new line numbers from the checked-out workspace or by manually counting patch lines.
 11. Create new findings only for concrete, actionable issues introduced, exposed, or made worse by the MR/PR.
 12. In incremental mode, focus review effort on the checkpoint delta, but do not discard a valid, non-duplicate issue introduced, exposed, or made worse by the current MR/PR merely because it is outside the checkpoint delta.
@@ -39,7 +39,7 @@ Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the fu
 16. Resolve only threads created by revpack itself (`SELF` threads).
 17. `summary.md` describes what the MR/PR changes, not what the reviewer found.
 18. `review.md` is optional MR/PR-level synthesis, not a second findings file or review report.
-19. Do not reference internal bundle files such as `.revpack/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `line-map.ndjson` in public output.
+19. Do not reference internal bundle files such as `.revpack/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `anchor-maps/` in public output.
 20. If you accidentally modify files outside `.revpack/outputs/`, stop and report it in your final response. Do not attempt broad cleanup commands.
 
 ## Current Run Mode
@@ -61,12 +61,13 @@ Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the fu
 
 ## Bundle Contents
 
-| Path                             | Description                     |
-| -------------------------------- | ------------------------------- |
-| `.revpack/threads/`              | unresolved review threads       |
-| `.revpack/diffs/latest.patch`    | canonical full unified diff     |
-| `.revpack/diffs/line-map.ndjson` | valid positional review anchors |
-| `.revpack/outputs/`              | agent output files              |
+| Path                          | Description                                                 |
+| ----------------------------- | ----------------------------------------------------------- |
+| `.revpack/threads/`           | unresolved review threads                                   |
+| `.revpack/diffs/latest.patch` | canonical full unified diff                                 |
+| `.revpack/diffs/files.json`   | changed-file index with per-file patch and Anchor Map paths |
+| `.revpack/diffs/anchor-maps/` | compact per-file maps of valid positional review anchors    |
+| `.revpack/outputs/`           | agent output files                                          |
 
 ## Unresolved Threads
 

@@ -353,7 +353,7 @@ export class WorkspaceManager {
       });
 
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       preparedAt: new Date().toISOString(),
       tool: { name: 'revpack', version: '0.2.0' },
       target: {
@@ -398,8 +398,7 @@ export class WorkspaceManager {
           ? '.revpack/diffs/incremental.patch'
           : null,
         filesJson: '.revpack/diffs/files.json',
-        lineMapNdjson: '.revpack/diffs/line-map.ndjson',
-        changeBlocks: '.revpack/diffs/change-blocks.json',
+        anchorMapsDir: '.revpack/diffs/anchor-maps/',
         outputs: '.revpack/outputs',
       },
     };
@@ -946,8 +945,7 @@ export class WorkspaceManager {
         'Read relevant changed or unresolved thread files in `.revpack/threads/`.',
         'Use `.revpack/diffs/latest.patch` only for full MR/PR context when needed.',
         'Use `.revpack/diffs/files.json` to locate relevant per-file patch paths for the incremental change, thread updates, or a concrete concern you are verifying.',
-        'Use `.revpack/diffs/line-map.ndjson` to choose valid review anchors before creating findings.',
-        'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
+        'Use the per-file Anchor Maps listed in `.revpack/diffs/files.json` to choose valid review anchors before creating findings.',
         'Inspect checked-out source files when needed to understand the new branch state.',
       ];
     }
@@ -966,8 +964,7 @@ export class WorkspaceManager {
       order.push(
         'Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.',
         'Use the patch paths listed in `.revpack/diffs/files.json` for focused review of individual changed files.',
-        'Use `.revpack/diffs/line-map.ndjson` to choose valid review anchors before creating findings.',
-        'Use `.revpack/diffs/change-blocks.json` when you need to understand larger insert/delete/replace relationships.',
+        'Use the per-file Anchor Maps listed in `.revpack/diffs/files.json` to choose valid review anchors before creating findings.',
         'Inspect checked-out source files when needed to understand the new branch state.',
       );
     }
@@ -1024,9 +1021,8 @@ export class WorkspaceManager {
 
   /**
    * Parse diffs/latest.patch and write:
-   * - diffs/files.json (file index)
-   * - diffs/line-map.ndjson (per-line map with explicit nulls)
-   * - diffs/change-blocks.json (grouped change blocks)
+   * - diffs/files.json (file index and per-file artifact paths)
+   * - diffs/anchor-maps/FXXX-Name.ndjson (compact per-file positional anchors)
    * - diffs/patches/by-file/FXXX-Name.patch (per-file unified diffs)
    */
   private async writeDiffBundle(): Promise<void> {
@@ -1038,46 +1034,45 @@ export class WorkspaceManager {
       return; // No patch file yet
     }
     const lineMap = parsePatch(patchContent);
-    if (lineMap.files.length === 0) return;
 
-    // Assign file IDs
+    // Recreate derived artifact directories and remove replaced global artifacts
+    // so repeated prepare runs cannot leave stale or conflicting inputs.
+    const patchesByFileDir = path.join(this.baseDir, 'diffs', 'patches', 'by-file');
+    const anchorMapsDir = path.join(this.baseDir, 'diffs', 'anchor-maps');
+    await Promise.all([
+      fs.rm(patchesByFileDir, { recursive: true, force: true }),
+      fs.rm(anchorMapsDir, { recursive: true, force: true }),
+      fs.rm(path.join(this.baseDir, 'diffs', 'line-map.ndjson'), { force: true }),
+      fs.rm(path.join(this.baseDir, 'diffs', 'change-blocks.json'), { force: true }),
+    ]);
+    await this.ensureDir(patchesByFileDir);
+    await this.ensureDir(anchorMapsDir);
+
+    // Assign file IDs after cleanup so an empty patch still produces a fresh,
+    // authoritative files.json with no stale entries.
     const filesWithIds = lineMap.files.map((f, idx) => ({
       ...f,
       fileId: `F${String(idx + 1).padStart(3, '0')}`,
     }));
 
-    // Recreate derived per-file patches so previous prepare runs cannot leave
-    // stale FNNN-prefixed files next to the current files.json index.
-    const patchesByFileDir = path.join(this.baseDir, 'diffs', 'patches', 'by-file');
-    await fs.rm(patchesByFileDir, { recursive: true, force: true });
-    await this.ensureDir(patchesByFileDir);
-
     // 1. Write files.json
     await this.writeFilesJson(filesWithIds);
 
-    // 2. Write line-map.ndjson
-    await this.writeLineMapNdjson(filesWithIds);
+    // 2. Write per-file Anchor Maps, including empty maps for files without anchors
+    await this.writeAnchorMaps(filesWithIds, anchorMapsDir);
 
-    // 3. Write change-blocks.json
-    await this.writeChangeBlocks(filesWithIds);
-
-    // 4. Write per-file patch files
+    // 3. Write per-file patch files
     const patchSections = WorkspaceManager.splitPatchByFile(patchContent);
     await this.writePerFilePatchFiles(filesWithIds, patchSections, patchesByFileDir);
   }
 
   private async writeFilesJson(files: (PatchFileEntry & { fileId: string })[]): Promise<void> {
     const fileIndex = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       files: files.map((f) => {
         const added = f.lines.filter((l) => l.type === 'added').length;
         const removed = f.lines.filter((l) => l.type === 'removed').length;
-        const shortName =
-          f.newPath
-            .split('/')
-            .pop()
-            ?.replace(/\.[^.]+$/, '') ?? f.fileId;
-        const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+        const artifactStem = WorkspaceManager.diffArtifactStem(f);
         return {
           fileId: f.fileId,
           status: f.status,
@@ -1088,120 +1083,28 @@ export class WorkspaceManager {
           newPath: f.newPath,
           added,
           removed,
-          hunks: f.hunks.map((h) => ({
-            hunkId: h.hunkId,
-            oldStart: h.oldStart,
-            oldEnd: h.oldEnd,
-            newStart: h.newStart,
-            newEnd: h.newEnd,
-          })),
-          patchFile: `patches/by-file/${f.fileId}-${safeName}.patch`,
+          patchFile: `patches/by-file/${artifactStem}.patch`,
+          anchorMapFile: `anchor-maps/${artifactStem}.ndjson`,
         };
       }),
     };
     await this.writeJson(path.join(this.baseDir, 'diffs', 'files.json'), fileIndex);
   }
 
-  private async writeLineMapNdjson(files: (PatchFileEntry & { fileId: string })[]): Promise<void> {
-    const lines: string[] = [];
+  private async writeAnchorMaps(files: (PatchFileEntry & { fileId: string })[], anchorMapsDir: string): Promise<void> {
     for (const file of files) {
-      for (const hunk of file.hunks) {
-        for (const entry of hunk.lines) {
-          lines.push(
-            JSON.stringify({
-              fileId: file.fileId,
-              hunkId: hunk.hunkId,
-              kind: entry.type,
-              oldLine: entry.oldLine ?? null,
-              newLine: entry.newLine ?? null,
-              oldPath: file.oldPath,
-              newPath: file.newPath,
-              text: entry.text,
-            }),
-          );
-        }
-      }
+      const lines = file.lines.map((entry) =>
+        JSON.stringify({
+          kind: entry.type,
+          ...(entry.oldLine !== undefined ? { oldLine: entry.oldLine } : {}),
+          ...(entry.newLine !== undefined ? { newLine: entry.newLine } : {}),
+          text: entry.text,
+        }),
+      );
+      const content = lines.length > 0 ? `${lines.join('\n')}\n` : '';
+      const fileName = `${WorkspaceManager.diffArtifactStem(file)}.ndjson`;
+      await fs.writeFile(path.join(anchorMapsDir, fileName), content, 'utf-8');
     }
-    await fs.writeFile(path.join(this.baseDir, 'diffs', 'line-map.ndjson'), lines.join('\n') + '\n', 'utf-8');
-  }
-
-  private async writeChangeBlocks(files: (PatchFileEntry & { fileId: string })[]): Promise<void> {
-    const blocks: unknown[] = [];
-    let blockIndex = 0;
-
-    for (const file of files) {
-      for (const hunk of file.hunks) {
-        // Group consecutive added/removed lines into blocks
-        let i = 0;
-        while (i < hunk.lines.length) {
-          const entry = hunk.lines[i];
-          if (entry.type === 'context') {
-            i++;
-            continue;
-          }
-
-          // Collect contiguous removed + added lines as a potential replace block
-          const removedLines: typeof hunk.lines = [];
-          const addedLines: typeof hunk.lines = [];
-
-          while (i < hunk.lines.length && hunk.lines[i].type === 'removed') {
-            removedLines.push(hunk.lines[i]);
-            i++;
-          }
-          while (i < hunk.lines.length && hunk.lines[i].type === 'added') {
-            addedLines.push(hunk.lines[i]);
-            i++;
-          }
-
-          if (removedLines.length === 0 && addedLines.length === 0) {
-            i++;
-            continue;
-          }
-
-          blockIndex++;
-          const blockId = `B${String(blockIndex).padStart(3, '0')}`;
-          let kind: 'insert' | 'delete' | 'replace';
-          if (removedLines.length > 0 && addedLines.length > 0) {
-            kind = 'replace';
-          } else if (removedLines.length > 0) {
-            kind = 'delete';
-          } else {
-            kind = 'insert';
-          }
-
-          const oldStart = removedLines.length > 0 ? removedLines[0].oldLine! : addedLines[0].newLine! - 1;
-          const oldEnd = removedLines.length > 0 ? removedLines[removedLines.length - 1].oldLine! : oldStart;
-          const newStart = addedLines.length > 0 ? addedLines[0].newLine! : removedLines[0].oldLine!;
-          const newEnd = addedLines.length > 0 ? addedLines[addedLines.length - 1].newLine! : newStart;
-
-          // Determine preferred comment target
-          const preferredSide = addedLines.length > 0 ? 'new' : 'old';
-          const preferredLine = preferredSide === 'new' ? addedLines[0].newLine! : removedLines[0].oldLine!;
-          const preferredPath = preferredSide === 'new' ? file.newPath : file.oldPath;
-
-          blocks.push({
-            blockId,
-            fileId: file.fileId,
-            hunkId: hunk.hunkId,
-            kind,
-            oldStart,
-            oldEnd,
-            newStart,
-            newEnd,
-            preferredCommentTarget: {
-              side: preferredSide,
-              path: preferredPath,
-              line: preferredLine,
-            },
-          });
-        }
-      }
-    }
-
-    await this.writeJson(path.join(this.baseDir, 'diffs', 'change-blocks.json'), {
-      schemaVersion: 1,
-      blocks,
-    });
   }
 
   /**
@@ -1236,16 +1139,16 @@ export class WorkspaceManager {
   ): Promise<void> {
     for (let idx = 0; idx < files.length; idx++) {
       const file = files[idx];
-      const shortName =
-        file.newPath
-          .split('/')
-          .pop()
-          ?.replace(/\.[^.]+$/, '') ?? file.fileId;
-      const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
-      const fileName = `${file.fileId}-${safeName}.patch`;
+      const fileName = `${WorkspaceManager.diffArtifactStem(file)}.patch`;
       const content = patchSections[idx] ?? '';
       await fs.writeFile(path.join(patchesByFileDir, fileName), content.trimEnd() + '\n', 'utf-8');
     }
+  }
+
+  private static diffArtifactStem(file: PatchFileEntry & { fileId: string }): string {
+    const shortName = path.posix.basename(file.newPath)?.replace(/\.[^.]+$/, '') ?? file.fileId;
+    const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+    return `${file.fileId}-${safeName}`;
   }
 
   /**
