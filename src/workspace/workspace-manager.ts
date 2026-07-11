@@ -1146,11 +1146,7 @@ export class WorkspaceManager {
   }
 
   private static diffArtifactStem(file: PatchFileEntry & { fileId: string }): string {
-    const shortName =
-      file.newPath
-        .split('/')
-        .pop()
-        ?.replace(/\.[^.]+$/, '') ?? file.fileId;
+    const shortName = path.posix.basename(file.newPath)?.replace(/\.[^.]+$/, '') ?? file.fileId;
     const safeName = shortName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
     return `${file.fileId}-${safeName}`;
   }
