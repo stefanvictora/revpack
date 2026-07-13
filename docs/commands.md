@@ -9,7 +9,7 @@ revpack setup --agent codex        # create REVIEW.md and install one agent adap
 revpack prepare                    # create or refresh the review bundle
 # run your agent
 revpack status
-revpack publish all
+revpack publish                    # interactively preview, select, and confirm outputs
 ```
 
 For another PR/MR, use `revpack checkout <url-or-id>`. For a local branch review, use `revpack prepare --local [base]`.
@@ -88,6 +88,7 @@ The publish history section reports earlier `revpack publish` actions recorded i
 Publishes agent outputs back to the PR/MR.
 
 ```bash
+revpack publish
 revpack publish all
 revpack publish replies
 revpack publish findings
@@ -100,9 +101,23 @@ revpack publish summary --repo workspace/repo
 After publishing, revpack refreshes the bundle by default so the new provider comments are reflected locally.
 This publish-triggered refresh preserves other pending output files; run `revpack prepare` explicitly when you want stale replies pruned against the latest thread state. Replies to resolved threads are preserved as long as the provider still returns the thread.
 Missing default queue files such as `.revpack/outputs/replies.json` and `.revpack/outputs/new-findings.json` are treated as having no pending items.
-Malformed queue files stop guided publish before any material or checkpoint is selected.
+Malformed queue files stop Guided Publish before any material or checkpoint is selected.
 
-Bare `revpack publish` starts the guided publish flow for choosing review material and checkpoint state.
+Bare `revpack publish` starts Guided Publish, a TTY-only preview-and-selection screen. Pending material starts selected, while empty categories remain visible but disabled. The controls are:
+
+- Up and Down move the highlight through groups and items.
+- Space toggles the highlighted item or every selectable item when a group header is highlighted.
+- `a` toggles every selectable item in the focused group.
+- Page Up and Page Down scroll the complete preview independently.
+- Enter continues to a confirmation showing what will publish and how many drafts will remain.
+- Escape cancels or returns from confirmation to selection; Ctrl+C cancels immediately.
+
+Findings and replies are individually selectable. Unselected findings and replies are deferred: they remain unchanged and in their original order in the output queues for a later publishing run. If pending material is deselected, Guided Publish turns off the checkpoint automatically and does not turn it back on during that run. You can explicitly select it again after reviewing the warning that it will record a checkpoint while drafts remain.
+
+Guided Publish requires the prepared bundle to match the current review-target head. A stale bundle shows only refresh and cancel choices; refresh preserves pending drafts and rebuilds the selection screen. If refresh or freshness detection fails, nothing is published and drafts are left untouched.
+
+Bare `revpack publish` requires interactive stdin and stdout. It fails with explicit-command guidance when run without a terminal. Scripts and CI should use `revpack publish all` or a specific `revpack publish <command>`; these commands remain non-interactive.
+
 `revpack publish description` is kept as a compatibility alias for `revpack publish summary`.
 `revpack publish note` publishes `.revpack/outputs/note.md` as a visible review note. `revpack publish review` remains a compatibility alias for the same file.
 `revpack publish checkpoint` records review state for future incremental runs.

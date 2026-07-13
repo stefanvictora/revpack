@@ -573,7 +573,7 @@ export class ReviewOrchestrator {
     findings: NewFinding[],
     reviewBody: string,
     defaultRepo?: string,
-  ): Promise<{ created: boolean; noteId?: string }> {
+  ): Promise<{ created: boolean; noteId?: string; threadIds?: string[] }> {
     // Build provider comment objects — marker + footer added here, same as publishFinding
     const comments = findings.map((f) => {
       const side: 'LEFT' | 'RIGHT' = f.oldLine != null && f.newLine == null ? 'LEFT' : 'RIGHT';
@@ -586,13 +586,18 @@ export class ReviewOrchestrator {
     });
 
     // Submit the PR review batch
+    let threadIds: string[] | undefined;
     if (this.provider.submitReview) {
       const targetRef = await this.resolveRef(undefined, defaultRepo);
       const body = reviewBody.trim() ? `${reviewBody.trim()}${REVIEW_NOTE_FOOTER}` : '';
-      await this.provider.submitReview(targetRef, comments, body, 'COMMENT');
+      const result = await this.provider.submitReview(targetRef, comments, body, 'COMMENT');
+      threadIds = result?.threadIds;
     }
 
-    return { created: findings.length > 0 || !!reviewBody.trim() };
+    return {
+      created: findings.length > 0 || !!reviewBody.trim(),
+      ...(threadIds === undefined ? {} : { threadIds }),
+    };
   }
 
   /**

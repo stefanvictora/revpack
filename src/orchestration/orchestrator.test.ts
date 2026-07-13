@@ -2212,7 +2212,7 @@ describe('ReviewOrchestrator', () => {
 
   describe('publishReviewBatch', () => {
     it('submits findings and review body via submitReview', async () => {
-      const submitReviewMock = vi.fn().mockResolvedValue(undefined);
+      const submitReviewMock = vi.fn().mockResolvedValue({ threadIds: ['github-thread-1'] });
       mockProvider = { ...createMockProvider(), submitReview: submitReviewMock };
 
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
@@ -2230,7 +2230,7 @@ describe('ReviewOrchestrator', () => {
       ];
       const result = await orchestrator.publishReviewBatch(findings, '## Summary\nGood work.', 'group/project');
 
-      expect(result.created).toBe(true);
+      expect(result).toEqual({ created: true, threadIds: ['github-thread-1'] });
       expect(submitReviewMock).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
         expect.arrayContaining([expect.objectContaining({ path: 'src/app.ts', line: 10, side: 'RIGHT' })]),
