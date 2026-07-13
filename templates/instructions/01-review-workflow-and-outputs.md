@@ -33,7 +33,7 @@ Write `summary.md` for fresh and incremental code review runs. Do not write fill
 
 Treat a bundle as single-writer: do not run multiple review agents against the same bundle at the same time.
 
-Existing `replies.json`, `new-findings.json`, and `review.md` are pending, revisable drafts. Read and reconcile them before finishing a rerun: retain still-valid material, revise or remove stale material, deduplicate additions, and delete a conditional output file when nothing remains. Do not assume existing content was already published; successful publishing removes consumed drafts.
+Existing `replies.json`, `new-findings.json`, and `note.md` are pending, revisable drafts. Read and reconcile them before finishing a rerun: retain still-valid material, revise or remove stale material, deduplicate additions, and delete a conditional output file when nothing remains. Do not assume existing content was already published; successful publishing removes consumed drafts.
 
 When reconciling an existing `replies.json`, a referenced `T-NNN` thread may be in `.revpack/threads/` or `.revpack/resolved-threads/`. A thread's current resolved state does not by itself invalidate a pending draft reply; retain, revise, or remove the draft based on whether it remains useful.
 
