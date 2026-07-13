@@ -263,37 +263,15 @@ describe('publish command internals', () => {
     await expect(fs.readFile(customPath, 'utf-8')).resolves.toBe('Custom review body');
   });
 
-  it('publishes legacy review.md when note.md is absent', async () => {
+  it('does not publish review.md when note.md is absent', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await writeBundleState();
     const legacyPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
     await fs.writeFile(legacyPath, 'Legacy review body', 'utf-8');
 
-    const orchestrator = {
-      publishReview: vi.fn().mockResolvedValue({ created: true, noteId: 'note-1' }),
-    };
-    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
-
-    await expect(__testing.publishReviewCmd({})).resolves.toBe(1);
-
-    expect(orchestrator.publishReview).toHaveBeenCalledWith('Legacy review body', 'group/project');
-    await expect(fs.access(legacyPath)).rejects.toThrow();
-  });
-
-  it('falls back to legacy review.md when note.md is empty', async () => {
-    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
-    await writeBundleState();
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), ' \n', 'utf-8');
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), 'Legacy review body', 'utf-8');
-
-    const orchestrator = {
-      publishReview: vi.fn().mockResolvedValue({ created: true, noteId: 'note-1' }),
-    };
-    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
-
-    await expect(__testing.publishReviewCmd({})).resolves.toBe(1);
-
-    expect(orchestrator.publishReview).toHaveBeenCalledWith('Legacy review body', 'group/project');
+    await expect(__testing.publishReviewCmd({})).rejects.toThrow('.revpack/outputs/note.md is empty');
+    expect(createOrchestrator).not.toHaveBeenCalled();
+    await expect(fs.readFile(legacyPath, 'utf-8')).resolves.toBe('Legacy review body');
   });
 
   it('builds guided publish items with review material separate from checkpoint state', async () => {
@@ -306,6 +284,7 @@ describe('publish command internals', () => {
     expect(items.map((item) => item.kind)).toEqual(['replies', 'findings', 'summary', 'note', 'checkpoint']);
     expect(items[3]).toMatchObject({
       kind: 'note',
+      detail: '.revpack/outputs/note.md empty/skipped',
       selectable: false,
       defaultSelected: false,
     });
@@ -321,10 +300,52 @@ describe('publish command internals', () => {
 
     const { items } = await __testing.buildGuidedPublishItems({ bundleIsStale: true });
 
+    expect(items.find((item) => item.kind === 'note')).toMatchObject({
+      detail: 'empty/skipped',
+      selectable: false,
+    });
     expect(items.find((item) => item.kind === 'checkpoint')).toMatchObject({
       selectable: true,
       defaultSelected: false,
     });
+  });
+
+  it.each([
+    ['replies.json', '{invalid'],
+    ['new-findings.json', '{}'],
+  ])('rejects malformed %s before offering guided publish actions', async (filename, content) => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', filename), content, 'utf-8');
+
+    await expect(__testing.buildGuidedPublishItems()).rejects.toThrow(
+      `.revpack/outputs/${filename} must be a JSON array.`,
+    );
+  });
+
+  it('counts valid guided publish queues and a pending review note', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'replies.json'), '[{}, {}]', 'utf-8');
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'), '[{}]', 'utf-8');
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), 'Review note', 'utf-8');
+
+    const { items } = await __testing.buildGuidedPublishItems();
+
+    expect(items[0]).toMatchObject({ detail: '2 pending', selectable: true, defaultSelected: true });
+    expect(items[1]).toMatchObject({ detail: '1 pending', selectable: true, defaultSelected: true });
+    expect(items[3]).toMatchObject({
+      detail: '.revpack/outputs/note.md pending',
+      selectable: true,
+      defaultSelected: true,
+    });
+  });
+
+  it('surfaces queue read errors other than a missing file', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs', 'replies.json'), { recursive: true });
+
+    await expect(__testing.buildGuidedPublishItems()).rejects.toThrow();
   });
 
   it('parses guided publish selections from defaults, all, and explicit numbers', () => {

@@ -39,7 +39,8 @@ import { sanitizeDescriptionForAgent } from './checkpoint.js';
  */
 export type ThreadIndex = Map<string, string>;
 
-const OUTPUT_FILENAMES = ['replies.json', 'new-findings.json', 'summary.md', 'note.md', 'review.md'] as const;
+const OUTPUT_FILENAMES = ['replies.json', 'new-findings.json', 'summary.md', 'note.md'] as const;
+const DEFAULT_REVIEW_NOTE_PATH = '.revpack/outputs/note.md';
 
 const OUTPUT_STATE_KEYS = {
   'summary.md': 'summary',
@@ -383,7 +384,7 @@ export class WorkspaceManager {
       },
       outputs: {
         summary: previousOutputs?.summary ?? { path: '.revpack/outputs/summary.md' },
-        review: { path: previousOutputs?.review.path ?? '.revpack/outputs/note.md' },
+        review: { path: DEFAULT_REVIEW_NOTE_PATH },
       },
       publishedActions: previousActions ?? [],
       paths: {
@@ -452,20 +453,16 @@ export class WorkspaceManager {
   /**
    * Compute whether a queue-style output file currently has content to publish.
    */
-  async getPendingOutputState(outputKey: 'review'): Promise<Extract<OutputState, 'empty' | 'pending'>> {
+  async getPendingOutputState(_outputKey: 'review'): Promise<Extract<OutputState, 'empty' | 'pending'>> {
     const state = await this.loadBundleState();
     if (!state) return 'empty';
-    const candidatePaths = [state.outputs[outputKey].path, '.revpack/outputs/review.md'];
-    for (const candidatePath of candidatePaths) {
-      const filePath = path.resolve(this.workingDir, candidatePath);
-      try {
-        const content = await fs.readFile(filePath, 'utf-8');
-        if (content.trim()) return 'pending';
-      } catch {
-        /* try the next compatible path */
-      }
+    const filePath = path.resolve(this.workingDir, DEFAULT_REVIEW_NOTE_PATH);
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      return content.trim() ? 'pending' : 'empty';
+    } catch {
+      return 'empty';
     }
-    return 'empty';
   }
 
   /**

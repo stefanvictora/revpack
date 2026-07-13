@@ -18,7 +18,6 @@ export { mergeWithMarkers, MARKER_START, MARKER_END };
 const DEFAULT_REPLIES_FILE = '.revpack/outputs/replies.json';
 const DEFAULT_FINDINGS_FILE = '.revpack/outputs/new-findings.json';
 const DEFAULT_NOTE_FILE = '.revpack/outputs/note.md';
-const LEGACY_REVIEW_FILE = '.revpack/outputs/review.md';
 const DEFAULT_SUMMARY_FILE = '.revpack/outputs/summary.md';
 const DEFAULT_LATEST_PATCH_FILE = '.revpack/diffs/latest.patch';
 
@@ -288,7 +287,6 @@ async function trackFindingActions(ws: WorkspaceManager, findings: NewFinding[],
 async function clearDefaultReviewOutput(clearDefaultOutput = true): Promise<void> {
   if (clearDefaultOutput) {
     await fs.rm(workspacePath(DEFAULT_NOTE_FILE), { force: true });
-    await fs.rm(workspacePath(LEGACY_REVIEW_FILE), { force: true });
   }
 }
 
@@ -303,39 +301,10 @@ async function readOptionalTextFile(filePath: string): Promise<{ exists: boolean
 async function loadDefaultReviewNote(): Promise<{
   filePath: string;
   content: string;
-  primaryExists: boolean;
-  primaryEmpty: boolean;
-  source: 'primary' | 'legacy' | 'none';
+  exists: boolean;
 }> {
-  const primary = await readOptionalTextFile(DEFAULT_NOTE_FILE);
-  if (primary.content.trim()) {
-    return {
-      filePath: DEFAULT_NOTE_FILE,
-      content: primary.content,
-      primaryExists: primary.exists,
-      primaryEmpty: false,
-      source: 'primary',
-    };
-  }
-
-  const legacy = await readOptionalTextFile(LEGACY_REVIEW_FILE);
-  if (legacy.content.trim()) {
-    return {
-      filePath: LEGACY_REVIEW_FILE,
-      content: legacy.content,
-      primaryExists: primary.exists,
-      primaryEmpty: primary.exists,
-      source: 'legacy',
-    };
-  }
-
-  return {
-    filePath: DEFAULT_NOTE_FILE,
-    content: primary.content,
-    primaryExists: primary.exists,
-    primaryEmpty: primary.exists,
-    source: 'none',
-  };
+  const note = await readOptionalTextFile(DEFAULT_NOTE_FILE);
+  return { filePath: DEFAULT_NOTE_FILE, content: note.content, exists: note.exists };
 }
 
 async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
@@ -556,12 +525,19 @@ function isPublishableOutputState(state: string): boolean {
 }
 
 async function countJsonArray(filePath: string): Promise<number> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(workspacePath(filePath), 'utf-8');
+    raw = await fs.readFile(workspacePath(filePath), 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw err;
+  }
+  try {
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.length : 0;
+    if (!Array.isArray(parsed)) throw new Error('expected array');
+    return parsed.length;
   } catch {
-    return 0;
+    throw new Error(`${filePath} must be a JSON array.`);
   }
 }
 
@@ -638,16 +614,13 @@ async function buildGuidedPublishItems(options?: {
     {
       kind: 'note',
       label: 'Review note',
-      detail:
-        note.source === 'primary'
-          ? `${DEFAULT_NOTE_FILE} pending`
-          : note.source === 'legacy'
-            ? `${LEGACY_REVIEW_FILE} pending (legacy)`
-            : note.primaryEmpty
-              ? `${DEFAULT_NOTE_FILE} empty/skipped`
-              : 'empty/skipped',
-      selectable: note.source !== 'none',
-      defaultSelected: note.source !== 'none',
+      detail: note.content.trim()
+        ? `${DEFAULT_NOTE_FILE} pending`
+        : note.exists
+          ? `${DEFAULT_NOTE_FILE} empty/skipped`
+          : 'empty/skipped',
+      selectable: !!note.content.trim(),
+      defaultSelected: !!note.content.trim(),
     },
     {
       kind: 'checkpoint',
@@ -947,7 +920,7 @@ export function registerPublishCommand(program: Command): void {
     publish
       .command(commandName, opts)
       .description('Publish note.md as a review note')
-      .option('--from <file>', `Review note file (default: ${DEFAULT_NOTE_FILE}, falls back to ${LEGACY_REVIEW_FILE})`)
+      .option('--from <file>', `Review note file (default: ${DEFAULT_NOTE_FILE})`)
       .option('--repo <repo>', 'Repository slug')
       .action(async (opts: { from?: string; repo?: string }, cmd: Command) => {
         try {

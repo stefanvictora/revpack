@@ -2067,6 +2067,16 @@ describe('WorkspaceManager', () => {
       expect(state).toBe('empty');
     });
 
+    it('ignores review.md recorded by an older bundle', async () => {
+      await createBundleWithState(manager);
+      const state = await manager.loadBundleState();
+      state!.outputs.review.path = '.revpack/outputs/review.md';
+      await manager.saveBundleState(state!);
+      await manager.writeOutput('review.md', 'Legacy review body');
+
+      await expect(manager.getPendingOutputState('review')).resolves.toBe('empty');
+    });
+
     it('returns pending when review note content exists regardless of legacy publish hash', async () => {
       await createBundleWithState(manager);
       const state = await manager.loadBundleState();
@@ -2156,9 +2166,13 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), []);
       await manager.writeOutput('summary.md', '# Written content');
       await manager.writeOutput('note.md', '# Review content');
+      await manager.writeOutput('review.md', '# Unrecognized legacy content');
       await manager.discardOutputs();
       await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'))).rejects.toThrow();
       await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'note.md'))).rejects.toThrow();
+      await expect(fs.readFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), 'utf-8')).resolves.toBe(
+        '# Unrecognized legacy content',
+      );
     });
 
     it('removes queue draft output files', async () => {
@@ -2278,7 +2292,7 @@ describe('WorkspaceManager', () => {
       expect(state.paths.incrementalPatch).toBe('.revpack/diffs/incremental.patch');
     });
 
-    it('uses previousActions and previousOutputs when provided', () => {
+    it('preserves previous actions and summary state while normalizing the review note path', () => {
       const actions = [
         { type: 'reply' as const, providerThreadId: 'x', title: 'T', publishedAt: '2026-01-01T00:00:00Z' },
       ];
@@ -2298,6 +2312,7 @@ describe('WorkspaceManager', () => {
       );
       expect(state.publishedActions).toBe(actions);
       expect(state.outputs.summary.lastPublishedHash).toBe('abc');
+      expect(state.outputs.review.path).toBe('.revpack/outputs/note.md');
     });
 
     it('populates thread items with latestCommentAt from most recent non-system comment', () => {
