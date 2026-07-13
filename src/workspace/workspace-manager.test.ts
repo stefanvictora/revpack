@@ -1206,7 +1206,7 @@ describe('WorkspaceManager', () => {
       );
       expect(workflowInstructions).toContain('## Rerunning a review');
       expect(workflowInstructions).toContain(
-        'Existing `replies.json`, `new-findings.json`, and `review.md` are pending, revisable drafts.',
+        'Existing `replies.json`, `new-findings.json`, and `note.md` are pending, revisable drafts.',
       );
       expect(content).toContain('`.revpack/instructions/03-new-findings-and-anchors.md`');
     });
