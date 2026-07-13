@@ -100,10 +100,11 @@ revpack publish summary --repo workspace/repo
 After publishing, revpack refreshes the bundle by default so the new provider comments are reflected locally.
 This publish-triggered refresh preserves other pending output files; run `revpack prepare` explicitly when you want stale replies pruned against the latest thread state. Replies to resolved threads are preserved as long as the provider still returns the thread.
 Missing default queue files such as `.revpack/outputs/replies.json` and `.revpack/outputs/new-findings.json` are treated as having no pending items.
+Malformed queue files stop guided publish before any material or checkpoint is selected.
 
 Bare `revpack publish` starts the guided publish flow for choosing review material and checkpoint state.
 `revpack publish description` is kept as a compatibility alias for `revpack publish summary`.
-`revpack publish note` publishes `.revpack/outputs/note.md` as a visible review note. Legacy `.revpack/outputs/review.md` is still accepted when `note.md` is absent or empty, and `revpack publish review` remains a compatibility alias.
+`revpack publish note` publishes `.revpack/outputs/note.md` as a visible review note. `revpack publish review` remains a compatibility alias for the same file.
 `revpack publish checkpoint` records review state for future incremental runs.
 
 ## `clean`
