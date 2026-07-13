@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added distinct active and resolved review-thread context to prepared bundles: active threads include replyable target-level discussions regardless of their pre-reply provider resolvability, while resolved threads remain available on demand for duplicate checks and draft reply reconciliation.
 - Added `.revpack/commits.md` to prepared review bundles when non-merge commit messages are available, making commit intent visible as review context.
 - Added Bundle Context Use through generated `revpack-context` agent adapters and a neutral `.revpack/CONTEXT.md` task router, allowing agents to inspect, discuss, challenge, or fix active review threads without activating the formal Review Contract; fixing threads also drafts useful publishable replies.
-- Added guided `revpack publish` for selecting pending review material and checkpoint state interactively, rejecting malformed queue drafts before selection, plus primary `revpack publish note` and `.revpack/outputs/note.md` review-note output with `publish review` as a hidden compatibility alias.
+- Added TTY-only Guided Publish for bare `revpack publish`, with keyboard navigation, complete item previews, individual and grouped finding/reply selection, a final confirmation, preserved deferred drafts, and mandatory refresh before publishing a stale bundle; malformed queue drafts are rejected before selection, explicit subcommands remain non-interactive for scripts and CI, and primary `revpack publish note` plus `.revpack/outputs/note.md` provide review-note output with `publish review` as a hidden compatibility alias.
 
 ### Changed
 

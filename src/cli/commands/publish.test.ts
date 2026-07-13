@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { __testing } from './publish.js';
-import { createOrchestrator, getRepoFromGit } from '../helpers.js';
+import { Command } from 'commander';
+import { __testing, registerPublishCommand } from './publish.js';
+import { createOrchestrator, getRepoFromGit, handleError } from '../helpers.js';
 import { computeContentHash } from '../../workspace/thread-digest.js';
+import { loadPublishMaterial } from '../../workspace/publish-material.js';
 
 vi.mock('../helpers.js', () => ({
   createOrchestrator: vi.fn(),
@@ -94,8 +96,47 @@ describe('publish command internals', () => {
     );
   }
 
+  function makeTerminal(interactive = true) {
+    return {
+      interactive,
+      dimensions: () => ({ columns: 120, rows: 40 }),
+      start: vi.fn(),
+      stop: vi.fn(),
+      readKey: vi.fn(),
+      writeFrame: vi.fn(),
+    };
+  }
+
+  it('presents bare publish as guided while retaining every automation-friendly subcommand', () => {
+    const program = new Command();
+    registerPublishCommand(program);
+    const publish = program.commands.find((command) => command.name() === 'publish');
+
+    expect(publish?.description()).toContain('Preview and select');
+    expect(publish?.options.map((option) => option.long)).toContain('--no-refresh');
+    expect(publish?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(['all', 'replies', 'findings', 'summary', 'description', 'note', 'review', 'checkpoint']),
+    );
+  });
+
+  it('routes bare publish through the interactive TTY guard', async () => {
+    const program = new Command();
+    registerPublishCommand(program);
+
+    await program.parseAsync(['publish'], { from: 'user' });
+
+    expect(handleError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          'Interactive publishing requires a terminal.\n' +
+          'Use `revpack publish all` or a specific `revpack publish <command>` in scripts.',
+      }),
+    );
+    expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
   it('matches T-NNN reply refs case-insensitively', () => {
-    const entries = [{ threadId: 'T-001', body: 'reply' }];
+    const entries = [{ threadId: 'T-001', body: 'reply', resolve: false }];
 
     expect(__testing.findReplyEntryIndex(entries, 't-001', 'thread-1')).toBe(0);
   });
@@ -144,6 +185,29 @@ describe('publish command internals', () => {
     const repliesPath = path.join(tmpDir, 'missing-replies.json');
 
     await expect(__testing.publishReplies({ from: repliesPath })).rejects.toThrow('No replies file found');
+  });
+
+  it('keeps explicit custom reply files compatible when resolve is omitted', async () => {
+    const repliesPath = path.join(tmpDir, 'replies.json');
+    await fs.writeFile(
+      repliesPath,
+      JSON.stringify([{ threadId: 'T-001', body: 'Leave the thread unresolved' }]),
+      'utf-8',
+    );
+    const orchestrator = {
+      publishReply: vi.fn().mockResolvedValue(undefined),
+      resolveThread: vi.fn(),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishReplies({ from: repliesPath })).resolves.toBe(1);
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(
+      undefined,
+      'T-001',
+      'Leave the thread unresolved',
+      'group/project',
+    );
+    expect(orchestrator.resolveThread).not.toHaveBeenCalled();
   });
 
   it('skips empty summaries instead of publishing an empty description section', async () => {
@@ -274,92 +338,507 @@ describe('publish command internals', () => {
     await expect(fs.readFile(legacyPath, 'utf-8')).resolves.toBe('Legacy review body');
   });
 
-  it('builds guided publish items with review material separate from checkpoint state', async () => {
-    await writeBundleState('gitlab');
-    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), ' \n', 'utf-8');
-
-    const { items } = await __testing.buildGuidedPublishItems();
-
-    expect(items.map((item) => item.kind)).toEqual(['replies', 'findings', 'summary', 'note', 'checkpoint']);
-    expect(items[3]).toMatchObject({
-      kind: 'note',
-      detail: '.revpack/outputs/note.md empty/skipped',
-      selectable: false,
-      defaultSelected: false,
-    });
-    expect(items[4]).toMatchObject({
-      kind: 'checkpoint',
-      selectable: true,
-      defaultSelected: true,
-    });
-  });
-
-  it('does not select checkpoint by default for stale guided publish', async () => {
-    await writeBundleState('gitlab');
-
-    const { items } = await __testing.buildGuidedPublishItems({ bundleIsStale: true });
-
-    expect(items.find((item) => item.kind === 'note')).toMatchObject({
-      detail: 'empty/skipped',
-      selectable: false,
-    });
-    expect(items.find((item) => item.kind === 'checkpoint')).toMatchObject({
-      selectable: true,
-      defaultSelected: false,
-    });
-  });
-
-  it.each([
-    ['replies.json', '{invalid'],
-    ['new-findings.json', '{}'],
-  ])('rejects malformed %s before offering guided publish actions', async (filename, content) => {
-    await writeBundleState('gitlab');
-    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', filename), content, 'utf-8');
-
-    await expect(__testing.buildGuidedPublishItems()).rejects.toThrow(
-      `.revpack/outputs/${filename} must be a JSON array.`,
+  it('rejects guided publishing without interactive input and output', () => {
+    expect(() => __testing.requireInteractiveTerminal({ interactive: false })).toThrow(
+      'Interactive publishing requires a terminal.\n' +
+        'Use `revpack publish all` or a specific `revpack publish <command>` in scripts.',
     );
   });
 
-  it('counts valid guided publish queues and a pending review note', async () => {
+  it('checks terminal interactivity before reading the active bundle', async () => {
+    const loadMaterial = vi.fn();
+
+    await expect(
+      __testing.guidedPublish(
+        {},
+        {
+          terminal: makeTerminal(false),
+          loadMaterial,
+        },
+      ),
+    ).rejects.toThrow('Interactive publishing requires a terminal.');
+    expect(loadMaterial).not.toHaveBeenCalled();
+  });
+
+  it('classifies matching and changed target heads without treating errors as current', async () => {
+    const orchestrator = {
+      open: vi
+        .fn()
+        .mockResolvedValueOnce({ diffRefs: { headSha: 'abcdef123456' } })
+        .mockResolvedValueOnce({ diffRefs: { headSha: 'fedcba654321' } }),
+    };
+
+    await expect(
+      __testing.determineBundleFreshness(orchestrator as never, 'group/project', 'abcdef123456'),
+    ).resolves.toBe('current');
+    await expect(
+      __testing.determineBundleFreshness(orchestrator as never, 'group/project', 'abcdef123456'),
+    ).resolves.toBe('stale');
+  });
+
+  it('blocks guided publishing when freshness cannot be determined', async () => {
+    const orchestrator = { open: vi.fn().mockRejectedValue(new Error('provider unavailable')) };
+
+    await expect(
+      __testing.determineBundleFreshness(orchestrator as never, 'group/project', 'head-sha'),
+    ).rejects.toThrow('Could not determine whether the active review bundle is current. Nothing was published.');
+  });
+
+  it('blocks guided publishing when the provider returns no current target head', async () => {
+    const orchestrator = { open: vi.fn().mockResolvedValue({ diffRefs: { headSha: '' } }) };
+
+    await expect(
+      __testing.determineBundleFreshness(orchestrator as never, 'group/project', 'head-sha'),
+    ).rejects.toThrow('Could not determine the current review-target head. Nothing was published.');
+  });
+
+  it('builds the complete selector model with stable queue indexes and document content', async () => {
     await writeBundleState('gitlab');
-    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'replies.json'), '[{}, {}]', 'utf-8');
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'), '[{}]', 'utf-8');
-    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), 'Review note', 'utf-8');
+    await writeValidFindingBundle();
+    const outputsDir = path.join(tmpDir, '.revpack', 'outputs');
+    await fs.writeFile(
+      path.join(outputsDir, 'replies.json'),
+      JSON.stringify([{ threadId: 'T-001', body: 'Complete reply', resolve: true }]),
+      'utf-8',
+    );
+    await fs.writeFile(path.join(outputsDir, 'summary.md'), 'Complete summary', 'utf-8');
+    await fs.writeFile(path.join(outputsDir, 'note.md'), 'Complete note', 'utf-8');
 
-    const { items } = await __testing.buildGuidedPublishItems();
+    const model = __testing.toGuidedPublishModel(await loadPublishMaterial(tmpDir));
 
-    expect(items[0]).toMatchObject({ detail: '2 pending', selectable: true, defaultSelected: true });
-    expect(items[1]).toMatchObject({ detail: '1 pending', selectable: true, defaultSelected: true });
-    expect(items[3]).toMatchObject({
-      detail: '.revpack/outputs/note.md pending',
-      selectable: true,
-      defaultSelected: true,
+    expect(model).toMatchObject({
+      provider: 'gitlab',
+      findings: [{ index: 0, value: expect.objectContaining({ body: 'Audit call can throw unexpectedly.' }) }],
+      replies: [{ index: 0, value: { threadId: 'T-001', body: 'Complete reply', resolve: true } }],
+      summary: { state: 'pending', content: 'Complete summary' },
+      note: { content: 'Complete note' },
+      checkpoint: { state: 'none', targetHeadSha: 'head-sha' },
     });
   });
 
-  it('surfaces queue read errors other than a missing file', async () => {
+  it('opens the selector when any one publish category is pending and skips only the fully current state', async () => {
     await writeBundleState('gitlab');
-    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs', 'replies.json'), { recursive: true });
+    const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
+    const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+    bundle.prepare.checkpoint = { headSha: 'head-sha' };
+    bundle.prepare.comparison = {
+      targetCodeChangedSinceCheckpoint: false,
+      threadsChangedSinceCheckpoint: false,
+      descriptionChangedSinceCheckpoint: false,
+    };
+    await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+    const current = await loadPublishMaterial(tmpDir);
 
-    await expect(__testing.buildGuidedPublishItems()).rejects.toThrow();
+    expect(__testing.hasSelectablePublishMaterial(current)).toBe(false);
+    const pendingVariants = [
+      { ...current, findings: [{ index: 0, value: {}, raw: {} }] },
+      { ...current, replies: [{ index: 0, value: {}, raw: {} }] },
+      { ...current, summary: { ...current.summary, state: 'pending' as const } },
+      { ...current, summary: { ...current.summary, state: 'modified since publish' as const } },
+      { ...current, note: { ...current.note, state: 'pending' as const } },
+      { ...current, checkpointState: 'outdated' as const },
+    ];
+    for (const material of pendingVariants) {
+      expect(__testing.hasSelectablePublishMaterial(material as never)).toBe(true);
+    }
   });
 
-  it('parses guided publish selections from defaults, all, and explicit numbers', () => {
-    const items = [
-      { kind: 'replies', label: 'Replies', detail: '1 pending', selectable: true, defaultSelected: true },
-      { kind: 'note', label: 'Review note', detail: 'empty/skipped', selectable: false, defaultSelected: false },
-      { kind: 'checkpoint', label: 'Checkpoint', detail: 'not recorded', selectable: true, defaultSelected: false },
-    ] as const;
+  it('reports successful publications, retained drafts, and refresh failure without treating publication as failed', () => {
+    expect(() =>
+      __testing.reportPublishResult({
+        successes: [{ kind: 'reply', index: 1, label: 'T-002' }],
+        failures: [],
+        remainingReplies: 1,
+        remainingFindings: 2,
+        checkpoint: 'skipped',
+        refresh: 'failed',
+        refreshError: 'provider temporarily unavailable',
+      }),
+    ).not.toThrow();
 
-    expect([...__testing.parseGuidedSelection('', [...items])!]).toEqual(['replies']);
-    expect([...__testing.parseGuidedSelection('a', [...items])!]).toEqual(['replies', 'checkpoint']);
-    expect([...__testing.parseGuidedSelection('3', [...items])!]).toEqual(['checkpoint']);
-    expect(__testing.parseGuidedSelection('q', [...items])).toBeNull();
-    expect(() => __testing.parseGuidedSelection('2', [...items])).toThrow('Invalid selection');
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('1 item(s) published: T-002'));
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('3 draft(s) remain (2 finding(s), 1 reply/replies).'),
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Publishing succeeded, but the review bundle could not be refreshed'),
+    );
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('provider temporarily unavailable'));
+  });
+
+  it('does not print a refresh-failure warning when refresh was intentionally skipped', () => {
+    __testing.reportPublishResult({
+      successes: [{ kind: 'reply', index: 0, label: 'T-001' }],
+      failures: [],
+      remainingReplies: 0,
+      remainingFindings: 0,
+      checkpoint: 'skipped',
+      refresh: 'skipped',
+    });
+
+    expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('review bundle could not be refreshed'));
+  });
+
+  it('strictly validates queues before creating a provider or opening the selector', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'replies.json'), '[{}]', 'utf-8');
+    const runSelector = vi.fn();
+
+    await expect(
+      __testing.guidedPublish(
+        { refresh: false },
+        {
+          terminal: makeTerminal(),
+          runSelector,
+        },
+      ),
+    ).rejects.toThrow('schema-invalid replies');
+    expect(createOrchestrator).not.toHaveBeenCalled();
+    expect(runSelector).not.toHaveBeenCalled();
+  });
+
+  it('blocks guided publishing when no repository can be determined', async () => {
+    await writeBundleState('gitlab');
+    const orchestrator = { publishReply: vi.fn() };
+
+    await expect(
+      __testing.guidedPublish(
+        { refresh: false },
+        {
+          terminal: makeTerminal(),
+          createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
+          getRepository: vi.fn().mockResolvedValue(undefined),
+          runSelector: vi.fn(),
+        },
+      ),
+    ).rejects.toThrow('Could not determine the repository for publishing.');
+
+    expect(orchestrator.publishReply).not.toHaveBeenCalled();
+  });
+
+  it('offers only cancellation or refresh for a stale bundle and cancellation preserves drafts', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+    const replies = [{ threadId: 'T-001', body: 'Keep this draft', resolve: false }];
+    await fs.writeFile(repliesPath, JSON.stringify(replies), 'utf-8');
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ diffRefs: { headSha: 'different-head' } }),
+      prepare: vi.fn(),
+    };
+    const runStalePrompt = vi.fn().mockResolvedValue('cancel');
+    const runSelector = vi.fn();
+
+    await __testing.guidedPublish(
+      { refresh: false },
+      {
+        terminal: makeTerminal(),
+        createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
+        getRepository: vi.fn().mockResolvedValue('group/project'),
+        runStalePrompt,
+        runSelector,
+      },
+    );
+
+    expect(runStalePrompt).toHaveBeenCalledTimes(1);
+    expect(runSelector).not.toHaveBeenCalled();
+    expect(orchestrator.prepare).not.toHaveBeenCalled();
+    await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual(replies);
+  });
+
+  it('refreshes a stale bundle with pending drafts preserved, then rebuilds the selector model', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+    const replies = [{ threadId: 'T-001', body: 'Preserved draft', resolve: false }];
+    await fs.writeFile(repliesPath, JSON.stringify(replies), 'utf-8');
+    const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ diffRefs: { headSha: 'refreshed-head' } }),
+      prepare: vi.fn().mockImplementation(async () => {
+        const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+        bundle.target.diffRefs.headSha = 'refreshed-head';
+        await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+      }),
+    };
+    const runSelector = vi.fn().mockResolvedValue(null);
+
+    await __testing.guidedPublish(
+      { refresh: false },
+      {
+        terminal: makeTerminal(),
+        createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
+        getRepository: vi.fn().mockResolvedValue('group/project'),
+        runStalePrompt: vi.fn().mockResolvedValue('refresh'),
+        runSelector,
+      },
+    );
+
+    expect(orchestrator.prepare).toHaveBeenCalledWith(undefined, 'group/project', {
+      preservePendingOutputs: true,
+    });
+    expect(orchestrator.open).toHaveBeenCalledTimes(2);
+    expect(runSelector).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replies: [expect.objectContaining({ index: 0, value: expect.objectContaining({ body: 'Preserved draft' }) })],
+        checkpoint: expect.objectContaining({ targetHeadSha: 'refreshed-head' }),
+      }),
+      expect.any(Object),
+    );
+    await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual(replies);
+  });
+
+  it('rechecks freshness after confirmation and refuses to publish a newly stale selection', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+    const replies = [{ threadId: 'T-001', body: 'Do not publish stale context', resolve: false }];
+    await fs.writeFile(repliesPath, JSON.stringify(replies), 'utf-8');
+    const orchestrator = {
+      open: vi
+        .fn()
+        .mockResolvedValueOnce({ diffRefs: { headSha: 'head-sha' } })
+        .mockResolvedValueOnce({ diffRefs: { headSha: 'advanced-head' } }),
+      prepare: vi.fn(),
+      workspace: { appendPublishedAction: vi.fn().mockResolvedValue(true) },
+      publishReply: vi.fn().mockResolvedValue(undefined),
+    };
+    const runStalePrompt = vi.fn().mockResolvedValue('cancel');
+
+    await __testing.guidedPublish(
+      { refresh: false },
+      {
+        terminal: makeTerminal(),
+        createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
+        getRepository: vi.fn().mockResolvedValue('group/project'),
+        runSelector: vi.fn().mockResolvedValue({
+          replyIndexes: [0],
+          findingIndexes: [],
+          summary: false,
+          note: false,
+          checkpoint: false,
+        }),
+        runStalePrompt,
+      },
+    );
+
+    expect(orchestrator.open).toHaveBeenCalledTimes(2);
+    expect(runStalePrompt).toHaveBeenCalledTimes(1);
+    expect(orchestrator.publishReply).not.toHaveBeenCalled();
+    await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual(replies);
+  });
+
+  it('discards a stale confirmed selection and rebuilds the selector after refresh', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+    await fs.writeFile(
+      repliesPath,
+      JSON.stringify([{ threadId: 'T-001', body: 'Reconfirm after refresh', resolve: false }]),
+      'utf-8',
+    );
+    const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
+    const orchestrator = {
+      open: vi
+        .fn()
+        .mockResolvedValueOnce({ diffRefs: { headSha: 'head-sha' } })
+        .mockResolvedValue({ diffRefs: { headSha: 'advanced-head' } }),
+      prepare: vi.fn().mockImplementation(async () => {
+        const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+        bundle.target.diffRefs.headSha = 'advanced-head';
+        await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+      }),
+      workspace: { appendPublishedAction: vi.fn().mockResolvedValue(true) },
+      publishReply: vi.fn(),
+    };
+    const runSelector = vi
+      .fn()
+      .mockResolvedValueOnce({
+        replyIndexes: [0],
+        findingIndexes: [],
+        summary: false,
+        note: false,
+        checkpoint: false,
+      })
+      .mockResolvedValueOnce(null);
+
+    await __testing.guidedPublish(
+      { refresh: false },
+      {
+        terminal: makeTerminal(),
+        createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
+        getRepository: vi.fn().mockResolvedValue('group/project'),
+        runSelector,
+        runStalePrompt: vi.fn().mockResolvedValue('refresh'),
+      },
+    );
+
+    expect(orchestrator.prepare).toHaveBeenCalledWith(undefined, 'group/project', {
+      preservePendingOutputs: true,
+    });
+    expect(runSelector).toHaveBeenCalledTimes(2);
+    expect(runSelector.mock.calls[1][0]).toMatchObject({
+      checkpoint: { targetHeadSha: 'advanced-head' },
+      replies: [expect.objectContaining({ index: 0 })],
+    });
+    expect(orchestrator.publishReply).not.toHaveBeenCalled();
+    await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toHaveLength(1);
+  });
+
+  it('surfaces stale refresh failure without changing pending drafts', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+    const replies = [{ threadId: 'T-001', body: 'Still pending', resolve: false }];
+    await fs.writeFile(repliesPath, JSON.stringify(replies), 'utf-8');
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ diffRefs: { headSha: 'different-head' } }),
+      prepare: vi.fn().mockRejectedValue(new Error('working tree is behind target')),
+    };
+    const runSelector = vi.fn();
+
+    await expect(
+      __testing.guidedPublish(
+        { refresh: false },
+        {
+          terminal: makeTerminal(),
+          createOrchestrator: vi.fn().mockResolvedValue(orchestrator as never),
+          getRepository: vi.fn().mockResolvedValue('group/project'),
+          runStalePrompt: vi.fn().mockResolvedValue('refresh'),
+          runSelector,
+        },
+      ),
+    ).rejects.toThrow('Could not refresh the stale review bundle. Pending drafts were left unchanged.');
+
+    expect(runSelector).not.toHaveBeenCalled();
+    await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual(replies);
+  });
+
+  it('does not write draft queues when the current-bundle selector is cancelled', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+    const original = '[ { "threadId": "T-001", "body": "Cancel me", "resolve": false } ]\n';
+    await fs.writeFile(repliesPath, original, 'utf-8');
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ diffRefs: { headSha: 'head-sha' } }),
+      publishReply: vi.fn(),
+    };
+
+    await __testing.guidedPublish(
+      { refresh: false },
+      {
+        terminal: makeTerminal(),
+        createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
+        getRepository: vi.fn().mockResolvedValue('group/project'),
+        runSelector: vi.fn().mockResolvedValue(null),
+      },
+    );
+
+    expect(orchestrator.publishReply).not.toHaveBeenCalled();
+    await expect(fs.readFile(repliesPath, 'utf-8')).resolves.toBe(original);
+  });
+
+  it('hands an accepted guided selection to the shared executor without refreshing when disabled', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    const repliesPath = path.join(tmpDir, '.revpack', 'outputs', 'replies.json');
+    await fs.writeFile(
+      repliesPath,
+      JSON.stringify([{ threadId: 'T-001', body: 'Confirmed reply', resolve: false }]),
+      'utf-8',
+    );
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ diffRefs: { headSha: 'head-sha' } }),
+      workspace: { appendPublishedAction: vi.fn().mockResolvedValue(true) },
+      publishReply: vi.fn().mockResolvedValue(undefined),
+      prepare: vi.fn(),
+    };
+
+    await __testing.guidedPublish(
+      { refresh: false },
+      {
+        terminal: makeTerminal(),
+        createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
+        getRepository: vi.fn().mockResolvedValue('group/project'),
+        runSelector: vi.fn().mockResolvedValue({
+          replyIndexes: [0],
+          findingIndexes: [],
+          summary: false,
+          note: false,
+          checkpoint: false,
+        }),
+      },
+    );
+
+    expect(orchestrator.open).toHaveBeenCalledTimes(2);
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(undefined, 'T-001', 'Confirmed reply', 'group/project');
+    expect(orchestrator.prepare).not.toHaveBeenCalled();
+    await expect(fs.access(repliesPath)).rejects.toThrow();
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Publishing cancelled'));
+  });
+
+  it('refreshes by default after an accepted guided selection', async () => {
+    await writeBundleState('gitlab');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.revpack', 'outputs', 'replies.json'),
+      JSON.stringify([{ threadId: 'T-001', body: 'Confirmed reply', resolve: false }]),
+      'utf-8',
+    );
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ diffRefs: { headSha: 'head-sha' } }),
+      workspace: { appendPublishedAction: vi.fn().mockResolvedValue(true) },
+      publishReply: vi.fn().mockResolvedValue(undefined),
+      prepare: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await __testing.guidedPublish(undefined, {
+      terminal: makeTerminal(),
+      createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
+      getRepository: vi.fn().mockResolvedValue('group/project'),
+      runSelector: vi.fn().mockResolvedValue({
+        replyIndexes: [0],
+        findingIndexes: [],
+        summary: false,
+        note: false,
+        checkpoint: false,
+      }),
+    });
+
+    expect(orchestrator.prepare).toHaveBeenCalledWith(undefined, 'group/project', {
+      preservePendingOutputs: true,
+    });
+  });
+
+  it('exits without opening the selector when no material is pending and the checkpoint is current', async () => {
+    await writeBundleState('gitlab');
+    const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
+    const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+    bundle.prepare.checkpoint = { headSha: 'head-sha' };
+    bundle.prepare.comparison = {
+      targetCodeChangedSinceCheckpoint: false,
+      threadsChangedSinceCheckpoint: false,
+      descriptionChangedSinceCheckpoint: false,
+    };
+    await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+    const runSelector = vi.fn();
+
+    await __testing.guidedPublish(
+      { refresh: false },
+      {
+        terminal: makeTerminal(),
+        createOrchestrator: vi.fn().mockResolvedValue({
+          open: vi.fn().mockResolvedValue({ diffRefs: { headSha: 'head-sha' } }),
+        }),
+        getRepository: vi.fn().mockResolvedValue('group/project'),
+        runSelector,
+      },
+    );
+
+    expect(runSelector).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('checkpoint is current'));
   });
 
   it('removes the default review note after including it in a GitHub review batch', async () => {
@@ -484,6 +963,7 @@ describe('publish command internals', () => {
     expect(orchestrator.prepare).toHaveBeenCalledWith(undefined, 'group/project', {
       preservePendingOutputs: true,
     });
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Bundle refreshed.'));
   });
 
   it('publishes all Bitbucket outputs through individual non-GitHub operations', async () => {
@@ -491,17 +971,24 @@ describe('publish command internals', () => {
     await writeValidFindingBundle();
     await fs.writeFile(
       path.join(tmpDir, '.revpack', 'outputs', 'replies.json'),
-      JSON.stringify([{ threadId: '100', body: 'Reply body' }]),
+      JSON.stringify([{ threadId: '100', body: 'Reply body', resolve: false }]),
       'utf-8',
     );
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'), 'Generated summary', 'utf-8');
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), 'Review note', 'utf-8');
 
     const orchestrator = {
+      workspace: {
+        appendPublishedAction: vi.fn().mockResolvedValue(true),
+        updateOutputPublishState: vi.fn().mockResolvedValue(true),
+      },
       publishReply: vi.fn().mockResolvedValue(undefined),
       publishFinding: vi.fn().mockResolvedValue('finding-1'),
       publishReviewBatch: vi.fn().mockResolvedValue({ created: true }),
-      open: vi.fn().mockResolvedValue({ description: 'Existing description' }),
+      open: vi.fn().mockResolvedValue({
+        description: 'Existing description',
+        diffRefs: { headSha: 'live-head-sha' },
+      }),
       updateDescription: vi.fn().mockResolvedValue(undefined),
       publishReview: vi.fn().mockResolvedValue({ created: true, noteId: 'note-1' }),
       publishCheckpoint: vi.fn().mockResolvedValue(undefined),
@@ -527,11 +1014,12 @@ describe('publish command internals', () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await fs.writeFile(
       path.join(tmpDir, '.revpack', 'outputs', 'replies.json'),
-      JSON.stringify([{ threadId: '100', body: 'Reply body' }]),
+      JSON.stringify([{ threadId: '100', body: 'Reply body', resolve: false }]),
       'utf-8',
     );
 
     const orchestrator = {
+      workspace: { appendPublishedAction: vi.fn().mockResolvedValue(true) },
       publishReply: vi.fn().mockResolvedValue(undefined),
       publishFinding: vi.fn(),
       publishReviewBatch: vi.fn(),
@@ -543,15 +1031,92 @@ describe('publish command internals', () => {
     await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow('checkpoint failed');
 
     expect(orchestrator.publishReply).toHaveBeenCalledTimes(1);
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Publishing failed after one or more'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('✗ Checkpoint: checkpoint failed'));
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('The checkpoint failed and the review bundle was not refreshed.'),
+    );
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Provider actions may already have succeeded'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Succeeded: 100'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Failed: Checkpoint'));
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Remaining drafts: 0 finding(s), 0 reply/replies.'),
+    );
   });
 
-  it('warns about partial success when non-GitHub findings fail after a reply succeeds', async () => {
+  it('refreshes after publish all by default while preserving pending outputs', async () => {
+    await writeBundleState('gitlab');
+    const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
+    const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+    bundle.prepare.checkpoint = { headSha: 'head-sha' };
+    bundle.prepare.comparison = {
+      targetCodeChangedSinceCheckpoint: false,
+      threadsChangedSinceCheckpoint: false,
+      descriptionChangedSinceCheckpoint: false,
+    };
+    await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.revpack', 'outputs', 'replies.json'),
+      JSON.stringify([{ threadId: 'T-001', body: 'Publish and refresh', resolve: false }]),
+      'utf-8',
+    );
+    const orchestrator = {
+      workspace: { appendPublishedAction: vi.fn().mockResolvedValue(true) },
+      publishReply: vi.fn().mockResolvedValue(undefined),
+      prepare: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await __testing.publishAllPending();
+
+    expect(orchestrator.prepare).toHaveBeenCalledWith(undefined, 'group/project', {
+      preservePendingOutputs: true,
+    });
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Replies'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('✓ T-001'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Refresh'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Bundle refreshed.'));
+  });
+
+  it('routes publish all --no-refresh through the non-interactive executor without refreshing', async () => {
+    await writeBundleState('gitlab');
+    const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
+    const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+    bundle.prepare.checkpoint = { headSha: 'head-sha' };
+    bundle.prepare.comparison = {
+      targetCodeChangedSinceCheckpoint: false,
+      threadsChangedSinceCheckpoint: false,
+      descriptionChangedSinceCheckpoint: false,
+    };
+    await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.revpack', 'outputs', 'replies.json'),
+      JSON.stringify([{ threadId: 'T-001', body: 'Automation reply', resolve: false }]),
+      'utf-8',
+    );
+    const orchestrator = {
+      workspace: { appendPublishedAction: vi.fn().mockResolvedValue(true) },
+      publishReply: vi.fn().mockResolvedValue(undefined),
+      prepare: vi.fn(),
+    };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+    const program = new Command();
+    registerPublishCommand(program);
+
+    await program.parseAsync(['publish', '--no-refresh', 'all'], { from: 'user' });
+
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(undefined, 'T-001', 'Automation reply', 'group/project');
+    expect(orchestrator.prepare).not.toHaveBeenCalled();
+    expect(handleError).not.toHaveBeenCalled();
+  });
+
+  it('validates every queue before publish all performs any provider action', async () => {
     await writeBundleState('bitbucket-cloud');
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await fs.writeFile(
       path.join(tmpDir, '.revpack', 'outputs', 'replies.json'),
-      JSON.stringify([{ threadId: '100', body: 'Reply body' }]),
+      JSON.stringify([{ threadId: '100', body: 'Reply body', resolve: false }]),
       'utf-8',
     );
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'new-findings.json'), '{not json', 'utf-8');
@@ -562,11 +1127,10 @@ describe('publish command internals', () => {
     };
     vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
 
-    await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow('must be a JSON array');
+    await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow('must contain valid JSON');
 
-    expect(orchestrator.publishReply).toHaveBeenCalledTimes(1);
+    expect(orchestrator.publishReply).not.toHaveBeenCalled();
     expect(orchestrator.publishCheckpoint).not.toHaveBeenCalled();
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Publishing failed after one or more'));
   });
 
   it('stops before checkpoint when description publishing fails unexpectedly', async () => {

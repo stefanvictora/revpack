@@ -119,5 +119,5 @@ export interface ReviewProvider {
     comments: Array<{ body: string; path: string; line?: number; side?: 'LEFT' | 'RIGHT' }>,
     body: string,
     event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
-  ): Promise<void>;
+  ): Promise<void | { threadIds?: string[] }>;
 }

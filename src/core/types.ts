@@ -194,6 +194,15 @@ export interface ReplyDraft {
   disposition?: ReplyDisposition;
 }
 
+/** Stable item-level selection returned by Guided Publish. */
+export interface PublishSelection {
+  replyIndexes: number[];
+  findingIndexes: number[];
+  summary: boolean;
+  note: boolean;
+  checkpoint: boolean;
+}
+
 // ─── Workspace Bundle ────────────────────────────────────
 
 /** The on-disk bundle.json — canonical machine-readable state. */
