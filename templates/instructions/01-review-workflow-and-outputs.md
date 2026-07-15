@@ -18,7 +18,7 @@ Allowed activity: reading and searching files needed for review (source files, d
 
 ## Output files
 
-Create output files only when you have draft material for them. Missing `replies.json`, `new-findings.json`, and `review.md` means there is nothing to publish for that output.
+Create output files only when you have draft material for them. Missing `replies.json`, `new-findings.json`, and `note.md` means there is nothing to publish for that output.
 
 Write `summary.md` for fresh and incremental code review runs. Do not write filler content to any output file.
 
@@ -27,13 +27,13 @@ Write `summary.md` for fresh and incremental code review runs. Do not write fill
 | `outputs/replies.json`      | Useful replies to existing MR/PR threads                                   |
 | `outputs/new-findings.json` | New positional review findings                                             |
 | `outputs/summary.md`        | Changelog-style description of what the MR/PR changes — not what you found |
-| `outputs/review.md`         | Useful optional MR/PR-level synthesis                                      |
+| `outputs/note.md`           | Useful optional MR/PR-level synthesis                                      |
 
 ## Rerunning a review
 
 Treat a bundle as single-writer: do not run multiple review agents against the same bundle at the same time.
 
-Existing `replies.json`, `new-findings.json`, and `review.md` are pending, revisable drafts. Read and reconcile them before finishing a rerun: retain still-valid material, revise or remove stale material, deduplicate additions, and delete a conditional output file when nothing remains. Do not assume existing content was already published; successful publishing removes consumed drafts.
+Existing `replies.json`, `new-findings.json`, and `note.md` are pending, revisable drafts. Read and reconcile them before finishing a rerun: retain still-valid material, revise or remove stale material, deduplicate additions, and delete a conditional output file when nothing remains. Do not assume existing content was already published; successful publishing removes consumed drafts.
 
 Read an existing `summary.md` before updating it.
 

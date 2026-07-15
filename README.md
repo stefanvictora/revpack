@@ -64,7 +64,7 @@ revpack prepare
 # Codex: $revpack-review
 # Or ask any agent to perform a revpack review.
 revpack status
-revpack publish all
+revpack publish
 ```
 
 ## How it works
@@ -91,7 +91,7 @@ The bundle gives the agent the review context it needs:
     new-findings.json     # agent-created new line comments, when needed
     replies.json          # agent-created replies to existing threads, when needed
     summary.md            # agent-created PR/MR summary
-    review.md             # agent-created optional review-level note, when needed
+    note.md               # agent-created optional review note, when needed
 ```
 
 The bundle is local and disposable. Use `revpack clean` to remove it, then run `revpack prepare` to recreate it. Published checkpoints are stored with the PR/MR, so cleaning the local bundle does not reset incremental review history.
@@ -102,14 +102,28 @@ The agent reads the bundle inputs, including schema references under `.revpack/s
 
 You decide what goes back to the provider.
 
-| Output                      | Command                      |
-| --------------------------- | ---------------------------- |
-| All pending outputs         | `revpack publish all`        |
-| New line comments           | `revpack publish findings`   |
-| Replies to existing threads | `revpack publish replies`    |
-| PR/MR summary               | `revpack publish summary`    |
-| Review note                 | `revpack publish review`     |
-| Review checkpoint           | `revpack publish checkpoint` |
+Run bare `revpack publish` in an interactive terminal to open Guided Publish. It shows every category in a keyboard-navigable list and a complete preview of the highlighted item before anything is published. Findings and replies can be selected individually.
+
+- Use Up and Down to navigate.
+- Press Space to toggle an item or group header, or `a` to toggle every selectable item in the focused group.
+- Use Page Up and Page Down to scroll the preview.
+- Press Enter to review a confirmation of what will publish and what will remain, or Escape to cancel or return to the selection screen.
+
+Pending material starts selected. If you leave out a finding or reply, it remains unchanged as a deferred draft for a later run. Deselecting pending material also turns off the checkpoint; you can explicitly re-enable it after reviewing a warning that drafts will remain.
+
+Guided Publish will not publish from a stale bundle. It offers to refresh the bundle, preserving pending drafts, or cancel. If freshness cannot be determined, publishing stops rather than proceeding with potentially outdated previews.
+
+Bare `revpack publish` requires interactive input and output terminals. Use the explicit commands below in scripts, CI, and other non-interactive environments.
+
+| Output                       | Command                      |
+| ---------------------------- | ---------------------------- |
+| Guided preview and selection | `revpack publish`            |
+| All pending outputs          | `revpack publish all`        |
+| New line comments            | `revpack publish findings`   |
+| Replies to existing threads  | `revpack publish replies`    |
+| PR/MR summary                | `revpack publish summary`    |
+| Review note                  | `revpack publish note`       |
+| Review checkpoint            | `revpack publish checkpoint` |
 
 Useful variants:
 

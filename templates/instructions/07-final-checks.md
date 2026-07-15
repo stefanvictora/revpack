@@ -16,7 +16,7 @@ Check from your current work that:
 - findings are concise, concrete, and actionable
 - in incremental mode, no valid finding was removed solely because it is outside the checkpoint delta; remove it only if it is not MR/PR-caused, is already covered, is not concrete/actionable, or has no valid positional anchor
 - `summary.md` describes MR/PR changes, not review findings
-- `review.md` does not reference internal revpack files
+- `note.md` does not reference internal revpack files
 
 Do not run build, test, lint, format, package-manager, migration, Docker, application-startup, Git-hook, publishing, or repository-audit commands.
 

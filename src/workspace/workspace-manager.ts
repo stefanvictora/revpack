@@ -21,6 +21,7 @@ import { formatTargetKind } from '../core/display.js';
 import { formatTargetDisplayId } from '../providers/display.js';
 import { WorkspaceError } from '../core/errors.js';
 import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
+import { extractDiffContext } from './diff-context.js';
 import type { GitHelper } from './git-helper.js';
 import { computeContentHash, computeThreadDigest, DIGEST_VERSION } from './thread-digest.js';
 import {
@@ -39,7 +40,8 @@ import { sanitizeDescriptionForAgent } from './checkpoint.js';
  */
 export type ThreadIndex = Map<string, string>;
 
-const OUTPUT_FILENAMES = ['replies.json', 'new-findings.json', 'summary.md', 'review.md'] as const;
+const OUTPUT_FILENAMES = ['replies.json', 'new-findings.json', 'summary.md', 'note.md'] as const;
+const DEFAULT_REVIEW_NOTE_PATH = '.revpack/outputs/note.md';
 
 const OUTPUT_STATE_KEYS = {
   'summary.md': 'summary',
@@ -383,7 +385,7 @@ export class WorkspaceManager {
       },
       outputs: {
         summary: previousOutputs?.summary ?? { path: '.revpack/outputs/summary.md' },
-        review: { path: previousOutputs?.review.path ?? '.revpack/outputs/review.md' },
+        review: { path: DEFAULT_REVIEW_NOTE_PATH },
       },
       publishedActions: previousActions ?? [],
       paths: {
@@ -452,11 +454,10 @@ export class WorkspaceManager {
   /**
    * Compute whether a queue-style output file currently has content to publish.
    */
-  async getPendingOutputState(outputKey: 'review'): Promise<Extract<OutputState, 'empty' | 'pending'>> {
+  async getPendingOutputState(_outputKey: 'review'): Promise<Extract<OutputState, 'empty' | 'pending'>> {
     const state = await this.loadBundleState();
     if (!state) return 'empty';
-    const entry = state.outputs[outputKey];
-    const filePath = path.resolve(this.workingDir, entry.path);
+    const filePath = path.resolve(this.workingDir, DEFAULT_REVIEW_NOTE_PATH);
     try {
       const content = await fs.readFile(filePath, 'utf-8');
       return content.trim() ? 'pending' : 'empty';
@@ -1367,7 +1368,7 @@ export class WorkspaceManager {
     if (thread.position && lineMap) {
       const positionMatchesCurrent = !thread.position.headSha || thread.position.headSha === currentHeadSha;
       if (positionMatchesCurrent) {
-        const diffSnippet = this.extractDiffContext(thread.position, lineMap);
+        const diffSnippet = extractDiffContext(thread.position, lineMap);
         if (diffSnippet) {
           lines.push('## Diff Context');
           lines.push('');
@@ -1413,45 +1414,6 @@ export class WorkspaceManager {
       lines.push('');
     }
     return lines.join('\n');
-  }
-
-  /**
-   * Extract a few lines of diff context around a thread's position.
-   * Shows ~3 lines of context above the referenced line and the line itself,
-   * similar to GitLab's inline diff viewer.
-   */
-  private extractDiffContext(
-    position: { filePath: string; newLine?: number; oldLine?: number; newPath?: string; oldPath?: string },
-    lineMap: LineMap,
-  ): string | null {
-    const targetPath = position.newPath || position.filePath;
-    const file = lineMap.files.find((f) => f.newPath === targetPath || f.oldPath === targetPath);
-    if (!file || file.lines.length === 0) return null;
-
-    const targetLine = position.newLine ?? position.oldLine;
-    if (!targetLine) return null;
-
-    // Find the index of the referenced line
-    const lineIdx = file.lines.findIndex((l) => {
-      if (position.newLine && l.newLine === position.newLine) return true;
-      if (position.oldLine && l.oldLine === position.oldLine) return true;
-      return false;
-    });
-    if (lineIdx === -1) return null;
-
-    // Show 3 context lines above and 1 below
-    const start = Math.max(0, lineIdx - 3);
-    const end = Math.min(file.lines.length - 1, lineIdx + 1);
-
-    const snippetLines: string[] = [];
-    for (let i = start; i <= end; i++) {
-      const entry = file.lines[i];
-      const prefix = entry.type === 'added' ? '+' : entry.type === 'removed' ? '-' : ' ';
-      const lineNum = entry.newLine ?? entry.oldLine ?? '';
-      const marker = i === lineIdx ? ' ◀' : '';
-      snippetLines.push(`${prefix} ${String(lineNum).padStart(4)} | ${entry.text}${marker}`);
-    }
-    return snippetLines.join('\n');
   }
 
   private async ensureDir(dir: string): Promise<void> {

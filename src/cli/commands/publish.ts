@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import chalk from 'chalk';
-import type { NewFinding } from '../../core/types.js';
+import type { NewFinding, PublishSelection } from '../../core/types.js';
+import { sameCommitSha } from '../../core/commits.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { parsePatch } from '../../workspace/patch-parser.js';
 import { validateFindings, formatValidationErrors } from '../../workspace/finding-validator.js';
@@ -10,12 +11,27 @@ import { createOrchestrator, getRepoFromGit, handleError } from '../helpers.js';
 import { computeContentHash } from '../../workspace/thread-digest.js';
 import { mergeWithMarkers, MARKER_START, MARKER_END } from '../../workspace/description-summary.js';
 import { buildFindingHeader } from '../../workspace/finding-formatter.js';
+import { loadPublishMaterial, type PublishMaterial } from '../../workspace/publish-material.js';
+import {
+  executePublishPlan,
+  selectAllPublishMaterial,
+  type PublishExecutionResult,
+  type PublishPlanProgress,
+} from '../../orchestration/publish-plan.js';
+import type { ReviewOrchestrator } from '../../orchestration/orchestrator.js';
+import {
+  createNodePublishTerminal,
+  runGuidedPublish,
+  runStalePublishPrompt,
+  type GuidedPublishModel,
+  type PublishTerminal,
+} from './publish-tui.js';
 
 export { mergeWithMarkers, MARKER_START, MARKER_END };
 
 const DEFAULT_REPLIES_FILE = '.revpack/outputs/replies.json';
 const DEFAULT_FINDINGS_FILE = '.revpack/outputs/new-findings.json';
-const DEFAULT_REVIEW_FILE = '.revpack/outputs/review.md';
+const DEFAULT_NOTE_FILE = '.revpack/outputs/note.md';
 const DEFAULT_SUMMARY_FILE = '.revpack/outputs/summary.md';
 const DEFAULT_LATEST_PATCH_FILE = '.revpack/diffs/latest.patch';
 
@@ -59,9 +75,12 @@ async function loadRepliesJson(filePath: string, options: { allowMissing: boolea
   let raw: string;
   try {
     raw = await fs.readFile(filePath, 'utf-8');
-  } catch {
-    if (options.allowMissing) return [];
-    throw new Error(`No replies file found at ${filePath}.`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (options.allowMissing) return [];
+      throw new Error(`No replies file found at ${filePath}.`, { cause: error });
+    }
+    throw new Error(`Could not read replies file at ${filePath}.`, { cause: error });
   }
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -284,8 +303,25 @@ async function trackFindingActions(ws: WorkspaceManager, findings: NewFinding[],
 
 async function clearDefaultReviewOutput(clearDefaultOutput = true): Promise<void> {
   if (clearDefaultOutput) {
-    await fs.rm(workspacePath(DEFAULT_REVIEW_FILE), { force: true });
+    await fs.rm(workspacePath(DEFAULT_NOTE_FILE), { force: true });
   }
+}
+
+async function readOptionalTextFile(filePath: string): Promise<{ exists: boolean; content: string }> {
+  try {
+    return { exists: true, content: await fs.readFile(workspacePath(filePath), 'utf-8') };
+  } catch {
+    return { exists: false, content: '' };
+  }
+}
+
+async function loadDefaultReviewNote(): Promise<{
+  filePath: string;
+  content: string;
+  exists: boolean;
+}> {
+  const note = await readOptionalTextFile(DEFAULT_NOTE_FILE);
+  return { filePath: DEFAULT_NOTE_FILE, content: note.content, exists: note.exists };
 }
 
 async function publishFindings(opts: { from?: string; dryRun?: boolean; noRefresh?: boolean }): Promise<number> {
@@ -391,7 +427,7 @@ async function publishDescription(opts: { from?: string; replace?: boolean; repo
 }
 
 /**
- * GitHub-specific: load, validate, and submit findings + review.md as a single PR review batch.
+ * GitHub-specific: load, validate, and submit findings + review note as a single PR review batch.
  * Clears successfully published outputs. Returns the number of findings published.
  */
 async function publishFindingsAndReviewBatch(reviewContent: string): Promise<number> {
@@ -422,12 +458,17 @@ async function publishFindingsAndReviewBatch(reviewContent: string): Promise<num
 }
 
 async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty?: boolean }): Promise<number> {
-  const filePath = opts.from ?? DEFAULT_REVIEW_FILE;
+  const defaultNote = opts.from ? null : await loadDefaultReviewNote();
+  const filePath = opts.from ?? defaultNote?.filePath ?? DEFAULT_NOTE_FILE;
   let content: string;
-  try {
-    content = await fs.readFile(workspacePath(filePath), 'utf-8');
-  } catch {
-    throw new Error(`No review note found at ${filePath}.`);
+  if (defaultNote) {
+    content = defaultNote.content;
+  } else {
+    try {
+      content = await fs.readFile(workspacePath(filePath), 'utf-8');
+    } catch {
+      throw new Error(`No review note found at ${filePath}.`);
+    }
   }
   if (opts.allowEmpty && !content.trim()) {
     console.log(chalk.dim('No review note published'));
@@ -445,7 +486,7 @@ async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty
     console.log(chalk.dim('No review note published'));
   }
 
-  const isDefaultReviewFile = workspacePath(filePath) === workspacePath(DEFAULT_REVIEW_FILE);
+  const isDefaultReviewFile = !opts.from;
   if (result.created && isDefaultReviewFile) {
     await clearDefaultReviewOutput();
   }
@@ -466,121 +507,271 @@ function isNoReviewNoteToPublishError(err: unknown): boolean {
   return err.message.includes('No review note found') || / is empty(?:; nothing to publish)?$/.test(err.message);
 }
 
-function isNoSummaryToPublishError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  return err.message.includes('No summary found') || /^\.revpack\/outputs\/summary\.md is empty/.test(err.message);
+type BundleFreshness = 'current' | 'stale';
+
+interface GuidedPublishDependencies {
+  terminal?: PublishTerminal;
+  loadMaterial?: typeof loadPublishMaterial;
+  createOrchestrator?: typeof createOrchestrator;
+  getRepository?: typeof getRepoFromGit;
+  runSelector?: typeof runGuidedPublish;
+  runStalePrompt?: typeof runStalePublishPrompt;
 }
 
-function warnPartialSuccess(occurred: boolean): void {
-  if (!occurred) return;
-  console.error(
-    chalk.yellow(
-      'Publishing failed after one or more provider actions may already have succeeded.\n' +
-        'The checkpoint was not recorded and pending output files were not cleared.\n' +
-        'Review the PR/MR before retrying to avoid duplicate comments.',
-    ),
+function requireInteractiveTerminal(terminal: Pick<PublishTerminal, 'interactive'>): void {
+  if (terminal.interactive) return;
+  throw new Error(
+    'Interactive publishing requires a terminal.\n' +
+      'Use `revpack publish all` or a specific `revpack publish <command>` in scripts.',
   );
 }
 
-async function publishAllPending(opts: { refresh?: boolean } = {}): Promise<void> {
-  let total = 0;
-  let partialSuccess = false;
-  let reviewPublishedInBatch = false;
+function requirePublishRepository(repository: string | undefined): string {
+  if (repository) return repository;
+  throw new Error('Could not determine the repository for publishing.');
+}
 
-  const ws = new WorkspaceManager(process.cwd());
-  const bundleState = await ws.loadBundleState();
-  const isGitHub = bundleState?.target.provider === 'github';
-
-  console.log(chalk.bold('─── Replies ───'));
-  const replyCount = await publishReplies({ noRefresh: true });
-  if (replyCount === 0) console.log(chalk.dim('  (none pending)'));
-  total += replyCount;
-  if (replyCount > 0) partialSuccess = true;
-
-  console.log('');
-  console.log(chalk.bold('─── Findings ───'));
-  if (isGitHub) {
-    let reviewContent = '';
-    try {
-      reviewContent = await fs.readFile(workspacePath(DEFAULT_REVIEW_FILE), 'utf-8');
-    } catch {
-      /* review.md absent is fine */
-    }
-    try {
-      const batchCount = await publishFindingsAndReviewBatch(reviewContent);
-      reviewPublishedInBatch = batchCount > 0 && !!reviewContent.trim();
-      if (batchCount === 0) console.log(chalk.dim('  (none pending)'));
-      total += batchCount;
-      if (batchCount > 0) partialSuccess = true;
-    } catch (err) {
-      warnPartialSuccess(partialSuccess);
-      throw err;
-    }
-  } else {
-    try {
-      const findingCount = await publishFindings({ noRefresh: true });
-      if (findingCount === 0) console.log(chalk.dim('  (none pending)'));
-      total += findingCount;
-      if (findingCount > 0) partialSuccess = true;
-    } catch (err) {
-      warnPartialSuccess(partialSuccess);
-      throw err;
-    }
-  }
-
-  console.log('');
-  console.log(chalk.bold('─── Description ───'));
+async function determineBundleFreshness(
+  orchestrator: Pick<ReviewOrchestrator, 'open'>,
+  repository: string,
+  preparedHeadSha: string,
+): Promise<BundleFreshness> {
+  let currentHeadSha: string;
   try {
-    total += await publishDescription({});
-    partialSuccess = true;
-  } catch (err) {
-    if (!isNoSummaryToPublishError(err)) {
-      warnPartialSuccess(partialSuccess);
-      throw err;
-    }
-    console.log(chalk.dim('  (no summary to publish)'));
+    const target = await orchestrator.open(undefined, repository);
+    currentHeadSha = target.diffRefs.headSha;
+  } catch (error) {
+    throw new Error(
+      'Could not determine whether the active review bundle is current. Nothing was published.\n' +
+        (error instanceof Error ? error.message : String(error)),
+      { cause: error },
+    );
   }
+  if (!currentHeadSha) {
+    throw new Error('Could not determine the current review-target head. Nothing was published.');
+  }
+  return sameCommitSha(currentHeadSha, preparedHeadSha) ? 'current' : 'stale';
+}
 
-  if (!reviewPublishedInBatch) {
+function toGuidedPublishModel(material: PublishMaterial): GuidedPublishModel {
+  return {
+    provider: material.bundleState.target.provider,
+    findings: material.findings.map(({ index, value }) => ({ index, value })),
+    findingContexts: material.findingContexts,
+    replies: material.replies.map(({ index, value }) => ({ index, value })),
+    replyContexts: material.replyContexts,
+    summary: { state: material.summary.state, content: material.summary.content },
+    note: { content: material.note.content },
+    checkpoint: {
+      state: material.checkpointState,
+      targetHeadSha: material.bundleState.target.diffRefs.headSha,
+    },
+  };
+}
+
+function hasSelectablePublishMaterial(material: PublishMaterial): boolean {
+  return (
+    material.findings.length > 0 ||
+    material.replies.length > 0 ||
+    material.summary.state === 'pending' ||
+    material.summary.state === 'modified since publish' ||
+    material.note.state === 'pending' ||
+    material.checkpointState !== 'current'
+  );
+}
+
+const PUBLISH_SECTION_LABELS: Record<Extract<PublishPlanProgress, { type: 'section' }>['section'], string> = {
+  replies: 'Replies',
+  findings: 'Findings',
+  summary: 'Summary',
+  note: 'Review note',
+  checkpoint: 'Checkpoint',
+  refresh: 'Refresh',
+};
+
+function printPublishProgress(event: PublishPlanProgress): void {
+  if (event.type === 'section') {
     console.log('');
-    console.log(chalk.bold('─── Review note ───'));
-    try {
-      total += await publishReviewCmd({ allowEmpty: true });
-      partialSuccess = true;
-    } catch (err) {
-      if (!isNoReviewNoteToPublishError(err)) {
-        warnPartialSuccess(partialSuccess);
-        throw err;
-      }
-      console.log(chalk.dim('  (no review note to publish)'));
-    }
+    console.log(chalk.bold(`─── ${PUBLISH_SECTION_LABELS[event.section]} ───`));
+    return;
+  }
+  if (event.type === 'success') {
+    console.log(chalk.green(`  ✓ ${event.label}`));
+    return;
+  }
+  if (event.type === 'failure') {
+    console.error(chalk.red(`  ✗ ${event.label}: ${event.error}`));
+    return;
+  }
+  console.log(chalk.dim(`  ${event.message}`));
+}
+
+function reportPublishResult(result: PublishExecutionResult): void {
+  const remainingDrafts = result.remainingReplies + result.remainingFindings;
+  const successfulLabels = result.successes.map((item) => item.label);
+  if (result.failures.length > 0) {
+    const failureSummary =
+      result.checkpoint === 'failed'
+        ? 'The checkpoint failed and the review bundle was not refreshed.'
+        : result.checkpoint === 'blocked'
+          ? 'Publishing stopped before the checkpoint and refresh because selected review material failed.'
+          : 'Publishing stopped before refresh because selected review material failed.';
+    console.error('');
+    console.error(
+      chalk.yellow(
+        `${failureSummary}\n` +
+          'Provider actions may already have succeeded. Review the target before retrying to avoid duplicate comments.',
+      ),
+    );
+    console.error(chalk.dim(`Succeeded: ${successfulLabels.length > 0 ? successfulLabels.join(', ') : 'none'}`));
+    console.error(chalk.dim(`Failed: ${result.failures.map((failure) => failure.label).join(', ')}`));
+    console.error(
+      chalk.dim(`Remaining drafts: ${result.remainingFindings} finding(s), ${result.remainingReplies} reply/replies.`),
+    );
+    throw new Error(
+      `${result.failures.length} selected publish action(s) failed: ` +
+        `${result.failures.map((failure) => `${failure.label}: ${failure.error}`).join('; ')}. ` +
+        'Remaining drafts are reported above.',
+    );
   }
 
   console.log('');
-  console.log(chalk.bold('─── Checkpoint ───'));
-  try {
-    await publishCheckpointCmd({});
-  } catch (err) {
-    warnPartialSuccess(partialSuccess);
-    throw err;
-  }
-
-  console.log('');
-  if (total === 0) {
-    console.log(chalk.dim('No pending outputs to publish.'));
+  if (result.successes.length === 0) {
+    console.log(chalk.dim('No pending outputs were selected for publishing.'));
   } else {
-    console.log(chalk.green(`✓ ${total} item(s) published`));
+    console.log(chalk.green(`✓ ${result.successes.length} item(s) published: ${successfulLabels.join(', ')}`));
   }
+  if (remainingDrafts > 0) {
+    console.log(
+      chalk.yellow(
+        `${remainingDrafts} draft(s) remain (${result.remainingFindings} finding(s), ${result.remainingReplies} reply/replies).`,
+      ),
+    );
+  }
+  if (result.refresh === 'failed') {
+    console.error(
+      chalk.yellow(
+        `Publishing succeeded, but the review bundle could not be refreshed: ${result.refreshError ?? 'unknown error'}`,
+      ),
+    );
+  }
+}
 
-  if (opts.refresh !== false) {
-    await autoRefresh();
+async function executePreparedPublishPlan(
+  material: PublishMaterial,
+  selection: PublishSelection,
+  orchestrator: ReviewOrchestrator,
+  repository: string,
+  refresh: boolean,
+): Promise<PublishExecutionResult> {
+  const result = await executePublishPlan({
+    material,
+    selection,
+    orchestrator,
+    repository,
+    refresh,
+    onProgress: printPublishProgress,
+  });
+  reportPublishResult(result);
+  return result;
+}
+
+async function guidedPublish(
+  opts: { refresh?: boolean } = {},
+  dependencies: GuidedPublishDependencies = {},
+): Promise<void> {
+  const terminal = dependencies.terminal ?? createNodePublishTerminal();
+  requireInteractiveTerminal(terminal);
+
+  const loadMaterial = dependencies.loadMaterial ?? loadPublishMaterial;
+  const createPublishOrchestrator = dependencies.createOrchestrator ?? createOrchestrator;
+  const getRepository = dependencies.getRepository ?? getRepoFromGit;
+  const runSelector = dependencies.runSelector ?? runGuidedPublish;
+  const runStalePrompt = dependencies.runStalePrompt ?? runStalePublishPrompt;
+
+  let material = await loadMaterial(process.cwd());
+  const orchestrator = await createPublishOrchestrator();
+  const repository = requirePublishRepository((await getRepository()) ?? material.bundleState.target.repository);
+
+  const refreshStaleBundle = async (): Promise<boolean> => {
+    const staleChoice = await runStalePrompt(terminal);
+    if (staleChoice === 'cancel') {
+      console.log(chalk.dim('Publishing cancelled. No drafts were changed.'));
+      return false;
+    }
+    try {
+      await orchestrator.prepare(undefined, repository, { preservePendingOutputs: true });
+    } catch (error) {
+      throw new Error(
+        'Could not refresh the stale review bundle. Pending drafts were left unchanged.\n' +
+          (error instanceof Error ? error.message : String(error)),
+        { cause: error },
+      );
+    }
+    material = await loadMaterial(process.cwd());
+    return true;
+  };
+
+  while (true) {
+    const freshness = await determineBundleFreshness(
+      orchestrator,
+      repository,
+      material.bundleState.target.diffRefs.headSha,
+    );
+    if (freshness === 'stale') {
+      if (!(await refreshStaleBundle())) return;
+      continue;
+    }
+
+    if (!hasSelectablePublishMaterial(material)) {
+      console.log(chalk.dim('No review material is pending; the checkpoint is current.'));
+      return;
+    }
+
+    const selection = await runSelector(toGuidedPublishModel(material), terminal);
+    if (!selection) {
+      console.log(chalk.dim('Publishing cancelled. No drafts were changed.'));
+      return;
+    }
+
+    const confirmedFreshness = await determineBundleFreshness(
+      orchestrator,
+      repository,
+      material.bundleState.target.diffRefs.headSha,
+    );
+    if (confirmedFreshness === 'stale') {
+      if (!(await refreshStaleBundle())) return;
+      continue;
+    }
+
+    await executePreparedPublishPlan(material, selection, orchestrator, repository, opts.refresh !== false);
+    return;
   }
+}
+
+async function publishAllPending(opts: { refresh?: boolean } = {}): Promise<void> {
+  const material = await loadPublishMaterial(process.cwd());
+  const orchestrator = await createOrchestrator();
+  const repository = requirePublishRepository((await getRepoFromGit()) ?? material.bundleState.target.repository);
+  await executePreparedPublishPlan(
+    material,
+    selectAllPublishMaterial(material),
+    orchestrator,
+    repository,
+    opts.refresh !== false,
+  );
 }
 
 export const __testing = {
   findReplyEntryIndex,
   normalizeThreadRef,
   isNoReviewNoteToPublishError,
+  requireInteractiveTerminal,
+  determineBundleFreshness,
+  toGuidedPublishModel,
+  hasSelectablePublishMaterial,
+  reportPublishResult,
+  executePreparedPublishPlan,
   publishReplies,
   publishFindings,
   publishDescription,
@@ -588,6 +779,7 @@ export const __testing = {
   publishReviewCmd,
   requirePublishableContent,
   publishAllPending,
+  guidedPublish,
   autoRefresh,
 };
 
@@ -608,20 +800,17 @@ async function autoRefresh(): Promise<void> {
 
 export function registerPublishCommand(program: Command): void {
   const publish = new Command('publish')
-    .description('Publish pending outputs to the PR/MR')
+    .description('Preview and select pending outputs to publish to the PR/MR')
     .option('--no-refresh', 'Skip auto-refresh after publishing');
 
-  // ── publish (no subcommand) → tell user to be explicit ───
-  publish.action(() => {
-    console.log(chalk.yellow('Please specify what to publish:'));
-    console.log('');
-    console.log('  revpack publish all           Publish everything pending');
-    console.log('  revpack publish findings      Publish findings only');
-    console.log('  revpack publish replies       Publish replies only');
-    console.log('  revpack publish summary       Update PR/MR summary in the description');
-    console.log('  revpack publish review        Publish review.md as a review note');
-    console.log('  revpack publish checkpoint    Record checkpoint only');
-    process.exit(1);
+  // ── publish (no subcommand) → guided human publish flow ───
+  publish.action(async (_opts: Record<string, never>, cmd: Command) => {
+    try {
+      const parentOpts = cmd.opts<{ refresh?: boolean }>();
+      await guidedPublish({ refresh: parentOpts?.refresh });
+    } catch (err) {
+      handleError(err);
+    }
   });
 
   // ── publish all ───────────────────────────────────────────
@@ -704,8 +893,8 @@ export function registerPublishCommand(program: Command): void {
   function addReviewPublishCommand(commandName: string, opts?: { hidden?: boolean }): void {
     publish
       .command(commandName, opts)
-      .description('Publish review.md as a review note')
-      .option('--from <file>', `Review file (default: ${DEFAULT_REVIEW_FILE})`)
+      .description('Publish note.md as a review note')
+      .option('--from <file>', `Review note file (default: ${DEFAULT_NOTE_FILE})`)
       .option('--repo <repo>', 'Repository slug')
       .action(async (opts: { from?: string; repo?: string }, cmd: Command) => {
         try {
@@ -720,7 +909,8 @@ export function registerPublishCommand(program: Command): void {
       });
   }
 
-  addReviewPublishCommand('review');
+  addReviewPublishCommand('note');
+  addReviewPublishCommand('review', { hidden: true });
 
   publish
     .command('checkpoint')

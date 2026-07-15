@@ -14,7 +14,7 @@ Use this index only when you need to understand what an instruction file covers 
 | `02-thread-replies.md`                 | If threads   | If threads              | Yes              | No                     | Deciding whether to reply, writing `outputs/replies.json`                    |
 | `03-new-findings-and-anchors.md`       | Yes          | Yes                     | No               | No                     | Quality bar, diff navigation, positional anchors, severity, categories       |
 | `04-suggestions-and-agent-handover.md` | Yes          | Yes                     | No               | No                     | Suggestion blocks and handover prompts for fixing agents                     |
-| `05-review-note.md`                    | Yes          | Yes                     | No               | No                     | Optional MR/PR-level `outputs/review.md` synthesis                           |
+| `05-review-note.md`                    | Yes          | Yes                     | No               | No                     | Optional MR/PR-level `outputs/note.md` synthesis                             |
 | `06-summary.md`                        | Yes          | Yes                     | No               | No                     | Changelog-style `outputs/summary.md`                                         |
 | `07-final-checks.md`                   | Yes          | Yes                     | Yes              | Yes                    | Lightweight final self-check                                                 |
 

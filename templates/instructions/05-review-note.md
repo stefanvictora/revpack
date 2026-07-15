@@ -1,10 +1,10 @@
 # MR/PR-level review note
 
-`outputs/review.md` is for MR/PR-level synthesis. Default to omitting it.
+`outputs/note.md` is for MR/PR-level synthesis. Default to omitting it.
 
 ## When to write it
 
-Write `review.md` only when you have a concrete concern, confirmation question, or cross-cutting pattern that helps the author or reviewers decide whether the change is ready to merge. It must fit in 1–3 short paragraphs.
+Write `note.md` only when you have a concrete concern, confirmation question, or cross-cutting pattern that helps the author or reviewers decide whether the change is ready to merge. It must fit in 1–3 short paragraphs.
 
 Good uses:
 
@@ -21,7 +21,7 @@ For lower-confidence concerns, phrase as a question: "Please confirm whether exi
 
 ## When to omit it
 
-Do not create `review.md` when all useful feedback is already in findings or thread replies, or when the only possible note would be filler ("looks good", "see inline comments"), a diff summary, a file list, or a speculative/theoretical concern.
+Do not create `note.md` when all useful feedback is already in findings or thread replies, or when the only possible note would be filler ("looks good", "see inline comments"), a diff summary, a file list, or a speculative/theoretical concern.
 
 ## What it is not
 
