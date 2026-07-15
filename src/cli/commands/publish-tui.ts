@@ -488,6 +488,10 @@ function dimWrapped(text: string, width: number): string[] {
   return wrapText(text, width).map((line) => chalk.dim(line));
 }
 
+function warningWrapped(text: string, width: number): string[] {
+  return wrapText(text, width).map((line) => chalk.yellow(line));
+}
+
 const REPLY_CONTEXT_MAX_CHARACTERS = 500;
 const REPLY_CONTEXT_MAX_LINES = 6;
 
@@ -615,7 +619,7 @@ function renderPreview(
       ...wrapText(`Current state: ${state}`, width),
       ...wrapText(`Drafts remaining: ${drafts}`, width),
       ...(documents.length > 0 ? wrapText(`Unpublished documents: ${joinWithAnd(documents)}`, width) : []),
-      ...(warning ? ['', ...wrapText(warning, width)] : []),
+      ...(warning ? ['', ...warningWrapped(warning, width)] : []),
     ];
   }
   return [];
@@ -647,21 +651,30 @@ function selectionFooterLines(model: GuidedPublishModel, selection: SelectionSta
       `${selectedCount} items selected • ${deferredDrafts} ${deferredDrafts === 1 ? 'draft' : 'drafts'} will remain`,
       columns,
     ),
-    ...(warning ? wrapText(warning, columns) : []),
+    ...(warning ? warningWrapped(warning, columns) : []),
     ...dimWrapped(SELECTION_KEY_HELP, columns),
   ];
 }
 
-function selectionLayout(dimensions: { columns: number; rows: number }, footerHeight: number): SelectionLayout {
+function selectionLayout(
+  dimensions: { columns: number; rows: number },
+  footerHeight: number,
+  showPreviewHeading: boolean,
+): SelectionLayout {
   const wide = dimensions.columns >= 100;
   const listWidth = wide ? Math.min(52, Math.max(36, Math.floor(dimensions.columns * 0.42))) : dimensions.columns;
   const previewWidth = wide ? Math.max(20, dimensions.columns - listWidth - 3) : Math.max(20, dimensions.columns - 2);
   const availableHeight = Math.max(6, dimensions.rows - footerHeight);
+  const previewChromeHeight = (wide ? 0 : 1) + Number(showPreviewHeading);
   const listHeight = wide
     ? availableHeight
-    : Math.min(availableHeight - 2, Math.max(4, Math.ceil(availableHeight * 0.55)));
-  const previewHeight = wide ? Math.max(1, availableHeight - 1) : Math.max(1, availableHeight - listHeight - 1);
+    : Math.min(availableHeight - previewChromeHeight - 1, Math.max(4, Math.ceil(availableHeight * 0.55)));
+  const previewHeight = Math.max(1, availableHeight - (wide ? 0 : listHeight) - previewChromeHeight);
   return { wide, listWidth, previewWidth, availableHeight, listHeight, previewHeight };
+}
+
+function showPreviewHeading(focus: FocusTarget | undefined): boolean {
+  return focus?.kind !== 'finding-group' && focus?.kind !== 'reply-group';
 }
 
 function maximumPreviewOffset(
@@ -671,7 +684,7 @@ function maximumPreviewOffset(
   dimensions: { columns: number; rows: number },
 ): number {
   const footerLines = selectionFooterLines(model, selection, dimensions.columns);
-  const layout = selectionLayout(dimensions, footerLines.length);
+  const layout = selectionLayout(dimensions, footerLines.length, showPreviewHeading(focus));
   return Math.max(0, renderPreview(model, selection, focus, layout.previewWidth).length - layout.previewHeight);
 }
 
@@ -742,13 +755,17 @@ function renderSelection(
     ),
   ];
   const footerLines = selectionFooterLines(model, selection, dimensions.columns);
-  const layout = selectionLayout(dimensions, footerLines.length);
+  const previewHasHeading = showPreviewHeading(focus);
+  const layout = selectionLayout(dimensions, footerLines.length, previewHasHeading);
   const previewLines = renderPreview(model, selection, focus, layout.previewWidth);
   const contentLines = layout.wide
     ? (() => {
         const list = visibleListLines(materialLines, layout.listHeight);
         const offset = Math.min(Math.max(0, previewOffset), Math.max(0, previewLines.length - layout.previewHeight));
-        const preview = ['Preview', ...previewLines.slice(offset, offset + layout.previewHeight)];
+        const preview = [
+          ...(previewHasHeading ? ['Preview'] : []),
+          ...previewLines.slice(offset, offset + layout.previewHeight),
+        ];
         return Array.from({ length: layout.availableHeight }, (_, index) => {
           const listLine = list[index] ?? '';
           const previewLine = preview[index] ?? '';
@@ -759,7 +776,12 @@ function renderSelection(
         const constrainedLines = materialLines.map((line) => truncateColumn(line, dimensions.columns));
         const list = visibleListLines(constrainedLines, layout.listHeight);
         const offset = Math.min(Math.max(0, previewOffset), Math.max(0, previewLines.length - layout.previewHeight));
-        return [...list, 'Preview', ...previewLines.slice(offset, offset + layout.previewHeight)];
+        return [
+          ...list,
+          '',
+          ...(previewHasHeading ? ['Preview'] : []),
+          ...previewLines.slice(offset, offset + layout.previewHeight),
+        ];
       })();
 
   return [...contentLines, ...footerLines].join('\n');
@@ -798,7 +820,7 @@ function renderConfirmation(model: GuidedPublishModel, selection: SelectionState
     ...(remaining || documents.length > 0
       ? ['', ...(remaining ? [remaining] : []), ...documents.map((document) => `${document} will remain unpublished.`)]
       : []),
-    ...(warning ? ['', warning] : []),
+    ...(warning ? ['', chalk.yellow(warning)] : []),
     '',
     'Enter publish    Esc back',
   ].join('\n');
