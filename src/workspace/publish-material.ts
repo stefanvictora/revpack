@@ -14,6 +14,7 @@ import { newFindingsArraySchema, repliesArraySchema } from '../core/schemas.js';
 import { computeContentHash } from './thread-digest.js';
 import { parsePatch } from './patch-parser.js';
 import { formatValidationErrors, validateFindings } from './finding-validator.js';
+import { extractDiffContext } from './diff-context.js';
 
 export const DEFAULT_PUBLISH_PATHS = {
   findings: '.revpack/outputs/new-findings.json',
@@ -42,6 +43,7 @@ export interface PublishMaterial {
   findingsPath: string;
   repliesPath: string;
   findings: IndexedDraft<NewFinding>[];
+  findingContexts: Map<number, string>;
   replies: IndexedDraft<ReplyDraft>[];
   replyContexts: Map<number, ReviewThread>;
   summary: PublishDocumentMaterial;
@@ -264,7 +266,10 @@ async function loadReplies(filePath: string): Promise<IndexedDraft<ReplyDraft>[]
   return parsed.data.map((value, index) => ({ index, value, raw: rawEntries[index] }));
 }
 
-async function loadFindings(filePath: string, patchPath: string): Promise<IndexedDraft<NewFinding>[]> {
+async function loadFindings(
+  filePath: string,
+  patchPath: string,
+): Promise<{ drafts: IndexedDraft<NewFinding>[]; contexts: Map<number, string> }> {
   const rawEntries = await readOptionalJsonArray(filePath, 'finding objects');
   const parsed = newFindingsArraySchema.safeParse(rawEntries);
   if (!parsed.success) {
@@ -273,7 +278,7 @@ async function loadFindings(filePath: string, patchPath: string): Promise<Indexe
       .join('\n');
     throw new Error(`${filePath} contains schema-invalid findings:\n${issues}`);
   }
-  if (parsed.data.length === 0) return [];
+  if (parsed.data.length === 0) return { drafts: [], contexts: new Map() };
 
   let patchContent: string;
   try {
@@ -287,13 +292,20 @@ async function loadFindings(filePath: string, patchPath: string): Promise<Indexe
     throw new Error(`Could not read ${patchPath} while validating findings.`, { cause: error });
   }
 
-  const { errors } = validateFindings(parsed.data, parsePatch(patchContent));
+  const lineMap = parsePatch(patchContent);
+  const { errors } = validateFindings(parsed.data, lineMap);
   if (errors.length > 0) {
     throw new Error(
       `${errors.length} invalid finding(s) in ${filePath}. Fix the positions and retry.\n${formatValidationErrors(errors)}`,
     );
   }
-  return parsed.data.map((value, index) => ({ index, value, raw: rawEntries[index] }));
+  const drafts = parsed.data.map((value, index) => ({ index, value, raw: rawEntries[index] }));
+  const contexts = new Map<number, string>();
+  for (const draft of drafts) {
+    const context = extractDiffContext(draft.value, lineMap);
+    if (context) contexts.set(draft.index, context);
+  }
+  return { drafts, contexts };
 }
 
 async function loadReplyContexts(
@@ -365,7 +377,7 @@ export async function loadPublishMaterial(workingDir: string): Promise<PublishMa
   const repliesPath = resolveWorkspacePath(workingDir, DEFAULT_PUBLISH_PATHS.replies);
   const findingsPath = resolveWorkspacePath(workingDir, DEFAULT_PUBLISH_PATHS.findings);
   const patchPath = resolveWorkspacePath(workingDir, DEFAULT_PUBLISH_PATHS.patch);
-  const [summaryContent, noteContent, replies, findings] = await Promise.all([
+  const [summaryContent, noteContent, replies, loadedFindings] = await Promise.all([
     readOptionalFile(summaryPath),
     readOptionalFile(notePath),
     loadReplies(repliesPath),
@@ -378,7 +390,8 @@ export async function loadPublishMaterial(workingDir: string): Promise<PublishMa
     bundleState,
     findingsPath,
     repliesPath,
-    findings,
+    findings: loadedFindings.drafts,
+    findingContexts: loadedFindings.contexts,
     replies,
     replyContexts,
     summary: {

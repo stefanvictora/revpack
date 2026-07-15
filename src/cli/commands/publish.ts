@@ -557,6 +557,7 @@ function toGuidedPublishModel(material: PublishMaterial): GuidedPublishModel {
   return {
     provider: material.bundleState.target.provider,
     findings: material.findings.map(({ index, value }) => ({ index, value })),
+    findingContexts: material.findingContexts,
     replies: material.replies.map(({ index, value }) => ({ index, value })),
     replyContexts: material.replyContexts,
     summary: { state: material.summary.state, content: material.summary.content },
