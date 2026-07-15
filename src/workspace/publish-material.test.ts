@@ -171,6 +171,7 @@ describe('publish material workspace model', () => {
     expect(material.findings).toHaveLength(1);
     expect(material.findings[0]).toMatchObject({ index: 0, value: { severity: 'high', newLine: 2 } });
     expect(material.findings[0].raw).toEqual(finding);
+    expect(material.findingContexts.get(0)).toBe('     1 | const value = read();\n+    2 | audit(value); ◀');
   });
 
   it('removes successful original indexes while preserving deferred replies in order', async () => {

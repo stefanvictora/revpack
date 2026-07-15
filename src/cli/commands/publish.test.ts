@@ -414,6 +414,7 @@ describe('publish command internals', () => {
       note: { content: 'Complete note' },
       checkpoint: { state: 'none', targetHeadSha: 'head-sha' },
     });
+    expect(model.findingContexts.get(0)).toContain('audit(value); ◀');
   });
 
   it('opens the selector when any one publish category is pending and skips only the fully current state', async () => {

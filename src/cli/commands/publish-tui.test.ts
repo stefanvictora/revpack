@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { stripVTControlCharacters } from 'node:util';
+import chalk from 'chalk';
 import {
   createNodePublishTerminal,
   runGuidedPublish,
@@ -71,6 +72,19 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
         },
       },
     ],
+    findingContexts: new Map([
+      [
+        4,
+        [
+          '     14 | before();',
+          '     15 | validate();',
+          '-    16 | previous();',
+          '+    17 | replacement(); ◀',
+          '     18 | after();',
+        ].join('\n'),
+      ],
+      [9, '-     5 | removed(); ◀'],
+    ]),
     replies: [
       {
         index: 3,
@@ -185,6 +199,59 @@ describe('guided publish TUI', () => {
     expect(terminal.frames[0]).toContain('Ctrl+C cancel');
   });
 
+  it('reserves cursor columns so labels do not move when focus changes', async () => {
+    const terminal = new FakeTerminal(['up', 'down', 'down', 'down', 'down', 'down', 'down', 'down', 'escape']);
+
+    await runGuidedPublish(guidedModel(), terminal);
+
+    for (const [label, expectedColumn] of [
+      ['Findings —', 6],
+      ['src/new.ts:17', 8],
+      ['src/other.ts:5', 8],
+      ['Replies —', 6],
+      ['T-001', 8],
+      ['Summary —', 8],
+      ['Review note —', 8],
+      ['Checkpoint —', 8],
+    ] as const) {
+      const columns = terminal.frames.map((frame) =>
+        stripVTControlCharacters(frame)
+          .split('\n')
+          .map((line) => line.split('│')[0])
+          .find((line) => line.includes(label))!
+          .indexOf(label),
+      );
+      expect(new Set(columns)).toEqual(new Set([expectedColumn]));
+
+      const rows = terminal.frames.map(
+        (frame) =>
+          stripVTControlCharacters(frame)
+            .split('\n')
+            .map((line) => line.split('│')[0])
+            .find((line) => line.includes(label))!,
+      );
+      expect(rows.some((line) => line.includes('>'))).toBe(true);
+      expect(rows.some((line) => !line.includes('>'))).toBe(true);
+    }
+  });
+
+  it('dims keyboard hints without muting selection status', async () => {
+    const previousLevel = chalk.level;
+    chalk.level = 1;
+    const terminal = new FakeTerminal(['escape']);
+    try {
+      await runGuidedPublish(guidedModel(), terminal);
+    } finally {
+      chalk.level = previousLevel;
+    }
+
+    const lines = terminal.frames[0].split('\n');
+    const status = lines.find((line) => stripVTControlCharacters(line).includes('items selected'))!;
+    const hints = lines.find((line) => stripVTControlCharacters(line).includes('↑↓ navigate'))!;
+    expect(status).not.toContain('\u001b[2m');
+    expect(hints).toContain('\u001b[2m');
+  });
+
   it('selects replies independently from findings', async () => {
     const terminal = new FakeTerminal(['down', 'down', 'down', 'space', 'enter', 'enter']);
 
@@ -277,12 +344,16 @@ describe('guided publish TUI', () => {
 
     await runGuidedPublish(guidedModel(), terminal);
 
+    expect(terminal.frames[0]).toContain('Finding — will be published as an inline review comment');
     expect(terminal.frames[0]).toContain('HIGH · correctness');
-    expect(terminal.frames[0]).toContain('Old path: src/old.ts');
-    expect(terminal.frames[0]).toContain('New path: src/new.ts');
-    expect(terminal.frames[0]).toContain('Position: new line 17');
+    expect(terminal.frames[0]).toContain('src/old.ts → src/new.ts · new line 17');
+    expect(terminal.frames[0]).toContain('Anchor context — not published');
+    expect(terminal.frames[0]).toContain('+    17 | replacement(); ◀');
     expect(terminal.frames[0]).toContain('Finding body — will be published');
     expect(terminal.frames[0]).toContain('The complete finding body.');
+    expect(terminal.frames[0].indexOf('Anchor context — not published')).toBeLessThan(
+      terminal.frames[0].indexOf('Finding body — will be published'),
+    );
   });
 
   it('marks an unselected finding preview as deferred', async () => {
@@ -290,8 +361,19 @@ describe('guided publish TUI', () => {
 
     await runGuidedPublish(guidedModel(), terminal);
 
-    expect(terminal.frames.at(-1)).toContain('Finding body — deferred');
+    expect(terminal.frames.at(-1)).toContain('Finding — will remain a draft');
+    expect(terminal.frames.at(-1)).toContain('Finding body — will remain a draft');
     expect(terminal.frames.at(-1)).not.toContain('Finding body — will be published');
+  });
+
+  it('does not repeat identical paths in a finding location', async () => {
+    const terminal = new FakeTerminal(['down', 'escape']);
+
+    await runGuidedPublish(guidedModel(), terminal);
+
+    const frame = terminal.frames.at(-1)!;
+    expect(frame).toContain('src/other.ts · old line 5');
+    expect(frame).not.toContain('src/other.ts → src/other.ts');
   });
 
   it('separates resolved thread context from a reply and shows resolution intent', async () => {
@@ -329,12 +411,14 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel({ replyContexts }), terminal);
 
     const frame = terminal.frames.at(-1)!;
+    expect(frame).toContain('Reply T-001 — will be published');
+    expect(frame).toContain('Replies to the existing review thread at src/reply.ts:21.');
     expect(frame).toContain('Thread context — not published');
     expect(frame).toContain('Thread state: resolved');
     expect(frame).toContain('reviewer: Original reviewer context in full.');
-    expect(frame).toContain('Draft reply — will be published');
     expect(frame).toContain('The complete draft reply.');
     expect(frame).toContain('Publishing this reply will resolve the thread.');
+    expect(frame.indexOf('The complete draft reply.')).toBeLessThan(frame.indexOf('Thread context — not published'));
   });
 
   it('marks an unselected reply as deferred without promising a thread change', async () => {
@@ -343,7 +427,7 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel(), terminal);
 
     const frame = terminal.frames.at(-1)!;
-    expect(frame).toContain('Draft reply — deferred');
+    expect(frame).toContain('Reply T-001 — will remain a draft');
     expect(frame).toContain('This reply will remain as a draft; the thread will not be changed.');
     expect(frame).not.toContain('Publishing this reply will resolve the thread.');
   });
@@ -414,11 +498,22 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel(), terminal);
 
     const frame = terminal.frames.at(-1)!;
+    expect(frame).toContain('Checkpoint — will be recorded');
     expect(frame).toContain('Current checkpoint state: outdated');
     expect(frame).toContain('Target head: 12345678');
-    expect(frame).toContain('Will record the reviewed target head and current review state.');
+    expect(frame).toContain('Records the reviewed target head and current review state.');
     expect(frame).toContain('Drafts that will remain: 1');
     expect(frame).toContain('Warning: the checkpoint will be recorded while 1 draft remains unpublished.');
+  });
+
+  it('describes an unselected checkpoint as not recorded', async () => {
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'down', 'down', 'space', 'escape']);
+
+    await runGuidedPublish(guidedModel(), terminal);
+
+    const frame = terminal.frames.at(-1)!;
+    expect(frame).toContain('Checkpoint — will not be recorded');
+    expect(frame).toContain('The current review state will not be recorded.');
   });
 
   it('neutralizes terminal control sequences in every preview source while preserving safe newlines', async () => {
@@ -479,6 +574,7 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(
       guidedModel({
         findings,
+        findingContexts: new Map([[4, `+   17 | context ${poison}safe ◀`]]),
         replies,
         replyContexts: new Map([[3, baseContext]]),
         summary: { state: 'pending', content: `summary line one\nsummary ${poison}line two` },
@@ -494,7 +590,8 @@ describe('guided publish TUI', () => {
     expect(output).not.toContain(String.fromCharCode(8));
     expect(output).not.toContain('\r');
     expect(output).toContain('HIGH · correctness');
-    expect(output).toContain('Old path: old-safe.ts');
+    expect(output).toContain('old-safe.ts → new-safe.ts · new line 17');
+    expect(output).toContain('context safe ◀');
     expect(output).toContain('Reply T-safe');
     expect(output).toContain('reviewer: context safe');
     expect(terminal.frames[3]).toContain('summary line one\nsummary line two');
@@ -594,8 +691,8 @@ describe('guided publish TUI', () => {
 
     await runGuidedPublish(guidedModel({ findings }), terminal);
 
-    expect(terminal.frames[0]).not.toContain('body-line-15');
-    expect(terminal.frames.at(-1)).toContain('body-line-15');
+    expect(terminal.frames[0]).not.toContain('body-line-10');
+    expect(terminal.frames.at(-1)).toContain('body-line-10');
     expect(terminal.frames.at(-1)).toContain('> [x] src/new.ts:17');
   });
 
@@ -678,13 +775,18 @@ describe('guided publish TUI', () => {
     await expect(key).resolves.toBe('interrupt');
     terminal.writeFrame('frame body');
     await terminal.stop();
+    const writesAfterStop = output.write.mock.calls.length;
+    await terminal.stop();
 
     expect(input.setRawMode).toHaveBeenNthCalledWith(1, true);
     expect(input.setRawMode).toHaveBeenNthCalledWith(2, false);
     expect(input.pause).toHaveBeenCalledOnce();
     expect(output.write).toHaveBeenCalledWith('\u001b[?25l');
+    expect(output.write).toHaveBeenCalledWith('\u001b[?1049h');
     expect(output.write).toHaveBeenCalledWith('\u001b[2J\u001b[Hframe body');
-    expect(output.write).toHaveBeenLastCalledWith('\u001b[?25h\u001b[2J\u001b[H');
+    expect(output.write).toHaveBeenCalledWith('\u001b[?25h');
+    expect(output.write).toHaveBeenLastCalledWith('\u001b[?1049l');
+    expect(output.write).toHaveBeenCalledTimes(writesAfterStop);
   });
 
   it.each([
@@ -806,7 +908,67 @@ describe('guided publish TUI', () => {
     expect(input.setRawMode).toHaveBeenNthCalledWith(1, true);
     expect(input.setRawMode).toHaveBeenNthCalledWith(2, false);
     expect(input.pause).toHaveBeenCalledOnce();
-    expect(output.write).toHaveBeenLastCalledWith('\u001b[?25h');
+    expect(output.write).toHaveBeenCalledWith('\u001b[?25h');
+    expect(output.write).toHaveBeenLastCalledWith('\u001b[?1049l');
+  });
+
+  it('leaves the alternate screen even when restoring cursor visibility fails', async () => {
+    const input = Object.assign(new EventEmitter(), {
+      isTTY: true,
+      isRaw: false,
+      readableFlowing: true,
+      resume: vi.fn(),
+      pause: vi.fn(),
+      setRawMode: vi.fn(),
+    });
+    const output = {
+      isTTY: true,
+      columns: 100,
+      rows: 24,
+      write: vi.fn((value: string) => {
+        if (value === '\u001b[?25h') throw new Error('show cursor failed');
+        return true;
+      }),
+    };
+    const terminal = createNodePublishTerminal({
+      input: input as unknown as NodeJS.ReadStream,
+      output: output as unknown as NodeJS.WriteStream,
+    });
+
+    await terminal.start();
+    await expect(Promise.resolve().then(() => terminal.stop())).rejects.toThrow('show cursor failed');
+
+    expect(input.setRawMode).toHaveBeenLastCalledWith(false);
+    expect(output.write).toHaveBeenLastCalledWith('\u001b[?1049l');
+  });
+
+  it('does not leave the alternate screen when startup fails before entering it', () => {
+    const input = Object.assign(new EventEmitter(), {
+      isTTY: true,
+      isRaw: false,
+      readableFlowing: true,
+      resume: vi.fn(),
+      pause: vi.fn(),
+      setRawMode: vi.fn((raw: boolean) => {
+        if (raw) throw new Error('raw mode failed');
+      }),
+    });
+    const output = {
+      isTTY: true,
+      columns: 100,
+      rows: 24,
+      write: vi.fn(() => true),
+    };
+    const terminal = createNodePublishTerminal({
+      input: input as unknown as NodeJS.ReadStream,
+      output: output as unknown as NodeJS.WriteStream,
+    });
+
+    expect(() => terminal.start()).toThrow('raw mode failed');
+
+    expect(output.write).toHaveBeenCalledWith('\u001b[?25h');
+    expect(output.write).not.toHaveBeenCalledWith('\u001b[?1049h');
+    expect(output.write).not.toHaveBeenCalledWith('\u001b[?1049l');
   });
 
   it('does not pause an already-flowing input when terminal startup fails', () => {

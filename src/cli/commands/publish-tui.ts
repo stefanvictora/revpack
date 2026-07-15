@@ -64,6 +64,7 @@ class NodePublishTerminal implements PublishTerminal {
   private started = false;
   private wasRaw = false;
   private shouldPauseOnStop = false;
+  private alternateScreen = false;
 
   constructor(
     private readonly input: NodeJS.ReadStream,
@@ -88,6 +89,8 @@ class NodePublishTerminal implements PublishTerminal {
       emitKeypressEvents(this.input);
       this.input.setRawMode?.(true);
       this.input.resume();
+      this.alternateScreen = true;
+      this.output.write('\u001b[?1049h');
       this.output.write('\u001b[?25l');
     } catch (error) {
       this.started = false;
@@ -106,6 +109,15 @@ class NodePublishTerminal implements PublishTerminal {
       } catch {
         // Preserve the startup error even when the output stream is also failing.
       }
+      if (this.alternateScreen) {
+        try {
+          this.output.write('\u001b[?1049l');
+        } catch {
+          // Preserve the startup error even when restoring the screen also fails.
+        } finally {
+          this.alternateScreen = false;
+        }
+      }
       throw error;
     }
   }
@@ -119,7 +131,15 @@ class NodePublishTerminal implements PublishTerminal {
       try {
         if (this.shouldPauseOnStop) this.input.pause();
       } finally {
-        this.output.write('\u001b[?25h\u001b[2J\u001b[H');
+        try {
+          this.output.write('\u001b[?25h');
+        } finally {
+          try {
+            this.output.write('\u001b[?1049l');
+          } finally {
+            this.alternateScreen = false;
+          }
+        }
       }
     }
   }
@@ -146,6 +166,7 @@ export function createNodePublishTerminal(
 export interface GuidedPublishModel {
   provider: ProviderType;
   findings: ReadonlyArray<{ index: number; value: NewFinding }>;
+  findingContexts: ReadonlyMap<number, string>;
   replies: ReadonlyArray<{ index: number; value: ReplyDraft }>;
   replyContexts: ReadonlyMap<number, ReviewThread>;
   summary: { state: OutputState; content: string };
@@ -237,6 +258,9 @@ function sanitizeGuidedPublishModel(model: GuidedPublishModel): GuidedPublishMod
         category: sanitizeTerminalText(value.category),
       },
     })),
+    findingContexts: new Map(
+      [...model.findingContexts].map(([index, context]) => [index, sanitizeTerminalText(context)]),
+    ),
     replies: model.replies.map(({ index, value }) => ({
       index,
       value: {
@@ -463,17 +487,22 @@ function renderPreview(
     const finding = model.findings.find(({ index }) => index === focus.index)?.value;
     if (!finding) return [];
     const selected = selection.findingIndexes.has(focus.index);
+    const context = model.findingContexts.get(focus.index);
     const positions = [
       finding.oldLine === undefined ? null : `old line ${finding.oldLine}`,
       finding.newLine === undefined ? null : `new line ${finding.newLine}`,
     ].filter((position): position is string => position !== null);
+    const path = finding.oldPath === finding.newPath ? finding.newPath : `${finding.oldPath} → ${finding.newPath}`;
     return [
+      ...boldWrapped(
+        selected ? 'Finding — will be published as an inline review comment' : 'Finding — will remain a draft',
+        width,
+      ),
       ...severityHeading(finding.severity, finding.category, width),
-      ...dimWrapped(`Old path: ${finding.oldPath}`, width),
-      ...dimWrapped(`New path: ${finding.newPath}`, width),
-      ...dimWrapped(`Position: ${positions.join(', ') || 'unavailable'}`, width),
+      ...dimWrapped(`${path} · ${positions.join(', ') || 'position unavailable'}`, width),
+      ...(context ? ['', ...boldWrapped('Anchor context — not published', width), ...wrapText(context, width)] : []),
       '',
-      ...boldWrapped(selected ? 'Finding body — will be published' : 'Finding body — deferred', width),
+      ...boldWrapped(selected ? 'Finding body — will be published' : 'Finding body — will remain a draft', width),
       ...wrapText(finding.body, width),
     ];
   }
@@ -515,16 +544,31 @@ function renderPreview(
         ? 'Publishing this reply will resolve the thread.'
         : 'Publishing this reply will leave the thread unresolved.'
       : 'This reply will remain as a draft; the thread will not be changed.';
+    const contextPosition = context?.position
+      ? `${context.position.filePath}${
+          (context.position.newLine ?? context.position.oldLine) === undefined
+            ? ''
+            : `:${context.position.newLine ?? context.position.oldLine}`
+        }`
+      : null;
     return [
-      ...boldWrapped(`Reply ${reply.threadId}`, width),
+      ...boldWrapped(
+        selected ? `Reply ${reply.threadId} — will be published` : `Reply ${reply.threadId} — will remain a draft`,
+        width,
+      ),
+      ...dimWrapped(
+        contextPosition
+          ? `Replies to the existing review thread at ${contextPosition}.`
+          : 'Replies to the existing review thread.',
+        width,
+      ),
       '',
-      ...boldWrapped('Thread context — not published', width),
-      ...contextLines,
-      '',
-      ...boldWrapped(selected ? 'Draft reply — will be published' : 'Draft reply — deferred', width),
       ...wrapText(reply.body, width),
       '',
       ...wrapText(disposition, width),
+      '',
+      ...boldWrapped('Thread context — not published', width),
+      ...contextLines,
     ];
   }
   if (focus?.kind === 'reply-group') {
@@ -566,7 +610,10 @@ function renderPreview(
     const documents = unpublishedDocuments(model, selection);
     const warning = checkpointWarning(model, selection);
     return [
-      ...boldWrapped('Checkpoint', width),
+      ...boldWrapped(
+        selection.checkpoint ? 'Checkpoint — will be recorded' : 'Checkpoint — will not be recorded',
+        width,
+      ),
       ...wrapText(`Current checkpoint state: ${model.checkpoint.state}`, width),
       ...wrapText(
         `Target head: ${model.checkpoint.targetHeadSha ? model.checkpoint.targetHeadSha.slice(0, 8) : '<unknown>'}`,
@@ -574,8 +621,8 @@ function renderPreview(
       ),
       ...wrapText(
         selection.checkpoint
-          ? 'Will record the reviewed target head and current review state.'
-          : 'The checkpoint will not be recorded.',
+          ? 'Records the reviewed target head and current review state.'
+          : 'The current review state will not be recorded.',
         width,
       ),
       ...wrapText(`Drafts that will remain: ${drafts}`, width),
@@ -614,7 +661,7 @@ function selectionFooterLines(model: GuidedPublishModel, selection: SelectionSta
       columns,
     ),
     ...(warning ? wrapText(warning, columns) : []),
-    ...wrapText(SELECTION_KEY_HELP, columns),
+    ...dimWrapped(SELECTION_KEY_HELP, columns),
   ];
 }
 
@@ -645,6 +692,10 @@ function dimWhenDisabled(value: string, disabled: boolean): string {
   return disabled ? chalk.dim(value) : value;
 }
 
+function focusMarker(focused: boolean): string {
+  return focused ? '> ' : '  ';
+}
+
 function renderSelection(
   model: GuidedPublishModel,
   selection: SelectionState,
@@ -660,7 +711,7 @@ function renderSelection(
   const materialLines = [
     'Review material',
     dimWhenDisabled(
-      `${focus?.kind === 'finding-group' ? '> ' : ''}${groupMarker(selection.findingIndexes.size, model.findings.length)} Findings — ${
+      `${focusMarker(focus?.kind === 'finding-group')}${groupMarker(selection.findingIndexes.size, model.findings.length)} Findings — ${
         model.findings.length === 0 ? 'none' : `${selection.findingIndexes.size}/${model.findings.length} selected`
       }`,
       model.findings.length === 0,
@@ -668,36 +719,36 @@ function renderSelection(
     ...model.findings.map(({ index, value }) => {
       const position = value.newLine ?? value.oldLine ?? '?';
       const label = value.body.split('\n')[0] || '(untitled finding)';
-      return `  ${focus?.kind === 'finding' && focus.index === index ? '> ' : '  '}${
+      return `  ${focusMarker(focus?.kind === 'finding' && focus.index === index)}${
         selection.findingIndexes.has(index) ? '[x]' : '[ ]'
       } ${value.newPath}:${position} ${label}`;
     }),
     dimWhenDisabled(
-      `${focus?.kind === 'reply-group' ? '> ' : ''}${groupMarker(selection.replyIndexes.size, model.replies.length)} Replies — ${
+      `${focusMarker(focus?.kind === 'reply-group')}${groupMarker(selection.replyIndexes.size, model.replies.length)} Replies — ${
         model.replies.length === 0 ? 'none' : `${selection.replyIndexes.size}/${model.replies.length} selected`
       }`,
       model.replies.length === 0,
     ),
     ...model.replies.map(
       ({ index, value }) =>
-        `  ${focus?.kind === 'reply' && focus.index === index ? '> ' : '  '}${
+        `  ${focusMarker(focus?.kind === 'reply' && focus.index === index)}${
           selection.replyIndexes.has(index) ? '[x]' : '[ ]'
         } ${value.threadId} ${value.body.split('\n')[0] || '(empty reply)'}`,
     ),
     '',
     'Documents',
     dimWhenDisabled(
-      `  ${focus?.kind === 'summary' ? '> ' : '  '}${selection.summary ? '[x]' : '[ ]'} Summary — ${summaryDetail}`,
+      `  ${focusMarker(focus?.kind === 'summary')}${selection.summary ? '[x]' : '[ ]'} Summary — ${summaryDetail}`,
       model.summary.state !== 'pending' && model.summary.state !== 'modified since publish',
     ),
     dimWhenDisabled(
-      `  ${focus?.kind === 'note' ? '> ' : '  '}${selection.note ? '[x]' : '[ ]'} Review note — ${notePending ? 'pending' : 'none'}`,
+      `  ${focusMarker(focus?.kind === 'note')}${selection.note ? '[x]' : '[ ]'} Review note — ${notePending ? 'pending' : 'none'}`,
       !notePending,
     ),
     '',
     'Review state',
     dimWhenDisabled(
-      `  ${focus?.kind === 'checkpoint' ? '> ' : '  '}${selection.checkpoint ? '[x]' : '[ ]'} Checkpoint — ${
+      `  ${focusMarker(focus?.kind === 'checkpoint')}${selection.checkpoint ? '[x]' : '[ ]'} Checkpoint — ${
         checkpointDue ? (model.checkpoint.state === 'none' ? 'not recorded' : 'needs update') : 'current'
       }`,
       !checkpointDue,
