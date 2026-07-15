@@ -658,6 +658,7 @@ function selectionLayout(
   dimensions: { columns: number; rows: number },
   footerHeight: number,
   showPreviewHeading: boolean,
+  materialHeight: number,
 ): SelectionLayout {
   const wide = dimensions.columns >= 100;
   const listWidth = wide ? Math.min(52, Math.max(36, Math.floor(dimensions.columns * 0.42))) : dimensions.columns;
@@ -666,7 +667,11 @@ function selectionLayout(
   const previewChromeHeight = (wide ? 0 : 1) + Number(showPreviewHeading);
   const listHeight = wide
     ? availableHeight
-    : Math.min(availableHeight - previewChromeHeight - 1, Math.max(4, Math.ceil(availableHeight * 0.55)));
+    : Math.min(
+        materialHeight,
+        availableHeight - previewChromeHeight - 1,
+        Math.max(4, Math.ceil(availableHeight * 0.55)),
+      );
   const previewHeight = Math.max(1, availableHeight - (wide ? 0 : listHeight) - previewChromeHeight);
   return { wide, listWidth, previewWidth, availableHeight, listHeight, previewHeight };
 }
@@ -682,7 +687,8 @@ function maximumPreviewOffset(
   dimensions: { columns: number; rows: number },
 ): number {
   const footerLines = selectionFooterLines(model, selection, dimensions.columns);
-  const layout = selectionLayout(dimensions, footerLines.length, showPreviewHeading(focus));
+  const materialHeight = selectionMaterialLines(model, selection, focus).length;
+  const layout = selectionLayout(dimensions, footerLines.length, showPreviewHeading(focus), materialHeight);
   return Math.max(0, renderPreview(model, selection, focus, layout.previewWidth).length - layout.previewHeight);
 }
 
@@ -694,19 +700,17 @@ function focusMarker(focused: boolean): string {
   return focused ? '> ' : '  ';
 }
 
-function renderSelection(
+function selectionMaterialLines(
   model: GuidedPublishModel,
   selection: SelectionState,
   focus: FocusTarget | undefined,
-  dimensions: { columns: number; rows: number },
-  previewOffset: number,
-): string {
+): string[] {
   const summaryDetail =
     model.summary.state === 'empty' ? 'none' : model.summary.state === 'published' ? 'current' : model.summary.state;
   const notePending = model.note.content.trim().length > 0;
   const checkpointDue = model.checkpoint.state !== 'current';
 
-  const materialLines = [
+  return [
     'Review material',
     dimWhenDisabled(
       `${focusMarker(focus?.kind === 'finding-group')}${groupMarker(selection.findingIndexes.size, model.findings.length)} Findings — ${
@@ -752,9 +756,19 @@ function renderSelection(
       !checkpointDue,
     ),
   ];
+}
+
+function renderSelection(
+  model: GuidedPublishModel,
+  selection: SelectionState,
+  focus: FocusTarget | undefined,
+  dimensions: { columns: number; rows: number },
+  previewOffset: number,
+): string {
+  const materialLines = selectionMaterialLines(model, selection, focus);
   const footerLines = selectionFooterLines(model, selection, dimensions.columns);
   const previewHasHeading = showPreviewHeading(focus);
-  const layout = selectionLayout(dimensions, footerLines.length, previewHasHeading);
+  const layout = selectionLayout(dimensions, footerLines.length, previewHasHeading, materialLines.length);
   const previewLines = renderPreview(model, selection, focus, layout.previewWidth);
   const contentLines = layout.wide
     ? (() => {
@@ -774,12 +788,9 @@ function renderSelection(
         const constrainedLines = materialLines.map((line) => truncateColumn(line, dimensions.columns));
         const list = visibleListLines(constrainedLines, layout.listHeight);
         const offset = Math.min(Math.max(0, previewOffset), Math.max(0, previewLines.length - layout.previewHeight));
-        return [
-          ...list,
-          '',
-          ...(previewHasHeading ? ['Preview'] : []),
-          ...previewLines.slice(offset, offset + layout.previewHeight),
-        ];
+        const preview = previewLines.slice(offset, offset + layout.previewHeight);
+        const previewPadding = Array.from({ length: layout.previewHeight - preview.length }, () => '');
+        return [...list, '', ...(previewHasHeading ? ['Preview'] : []), ...preview, ...previewPadding];
       })();
 
   return [...contentLines, ...footerLines].join('\n');
