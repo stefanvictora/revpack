@@ -593,7 +593,7 @@ describe('guided publish TUI', () => {
       .at(-1)!
       .split('\n')
       .filter((line) => stripVTControlCharacters(line).includes('Warning:'));
-    expect(warnings).toHaveLength(2);
+    expect(warnings).toHaveLength(1);
     expect(warnings.every((line) => line.includes('\u001b[33mWarning:'))).toBe(true);
   });
 
