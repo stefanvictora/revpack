@@ -603,7 +603,6 @@ function renderPreview(
   if (focus?.kind === 'checkpoint') {
     const drafts = deferredDraftCount(model, selection);
     const documents = unpublishedDocuments(model, selection);
-    const warning = checkpointWarning(model, selection);
     const state =
       model.checkpoint.state === 'none'
         ? 'not recorded'
@@ -619,7 +618,6 @@ function renderPreview(
       ...wrapText(`Current state: ${state}`, width),
       ...wrapText(`Drafts remaining: ${drafts}`, width),
       ...(documents.length > 0 ? wrapText(`Unpublished documents: ${joinWithAnd(documents)}`, width) : []),
-      ...(warning ? ['', ...warningWrapped(warning, width)] : []),
     ];
   }
   return [];
@@ -674,7 +672,7 @@ function selectionLayout(
 }
 
 function showPreviewHeading(focus: FocusTarget | undefined): boolean {
-  return focus?.kind !== 'finding-group' && focus?.kind !== 'reply-group';
+  return focus?.kind !== 'finding-group' && focus?.kind !== 'reply-group' && focus?.kind !== 'checkpoint';
 }
 
 function maximumPreviewOffset(
