@@ -19,6 +19,7 @@ export type PublishTerminalKey =
   | 'enter'
   | 'escape'
   | 'interrupt'
+  | 'resize'
   | 'other';
 
 export interface PublishTerminal {
@@ -146,9 +147,19 @@ class NodePublishTerminal implements PublishTerminal {
 
   readKey(): Promise<PublishTerminalKey> {
     return new Promise((resolve) => {
-      this.input.once('keypress', (value: string | undefined, key: KeypressDetails | undefined) => {
-        resolve(decodeNodeKey(value, key));
-      });
+      const finish = (key: PublishTerminalKey): void => {
+        this.input.off('keypress', onKeypress);
+        this.output.off('resize', onResize);
+        resolve(key);
+      };
+      const onKeypress = (value: string | undefined, key: KeypressDetails | undefined): void => {
+        finish(decodeNodeKey(value, key));
+      };
+      const onResize = (): void => {
+        finish('resize');
+      };
+      this.input.once('keypress', onKeypress);
+      this.output.once('resize', onResize);
     });
   }
 
@@ -619,8 +630,7 @@ interface SelectionLayout {
   previewHeight: number;
 }
 
-const SELECTION_KEY_HELP =
-  '↑↓ navigate  Space toggle  a toggle group  PgUp/PgDn preview  Enter continue  Esc cancel  Ctrl+C cancel';
+const SELECTION_KEY_HELP = '↑↓ navigate  Space toggle  a toggle group  PgUp/PgDn preview  Enter continue  Esc cancel';
 
 function selectionFooterLines(model: GuidedPublishModel, selection: SelectionState, columns: number): string[] {
   const selectedCount =

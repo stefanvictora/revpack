@@ -11,6 +11,8 @@ import {
   type PublishTerminalKey,
 } from './publish-tui.js';
 
+type FakeTerminalInput = PublishTerminalKey | { key: PublishTerminalKey; size: { columns: number; rows: number } };
+
 class FakeTerminal implements PublishTerminal {
   interactive = true;
   frames: string[] = [];
@@ -18,7 +20,7 @@ class FakeTerminal implements PublishTerminal {
   stops = 0;
 
   constructor(
-    private readonly keys: PublishTerminalKey[],
+    private readonly keys: FakeTerminalInput[],
     private readonly size = { columns: 120, rows: 30 },
   ) {}
 
@@ -35,9 +37,11 @@ class FakeTerminal implements PublishTerminal {
   }
 
   readKey(): Promise<PublishTerminalKey> {
-    const key = this.keys.shift();
-    if (!key) return Promise.reject(new Error('Fake terminal ran out of keys.'));
-    return Promise.resolve(key);
+    const input = this.keys.shift();
+    if (!input) return Promise.reject(new Error('Fake terminal ran out of keys.'));
+    if (typeof input === 'string') return Promise.resolve(input);
+    Object.assign(this.size, input.size);
+    return Promise.resolve(input.key);
   }
 
   writeFrame(frame: string): void {
@@ -191,12 +195,23 @@ describe('guided publish TUI', () => {
     expect(selection?.checkpoint).toBe(false);
   });
 
-  it('advertises Ctrl+C cancellation in the selection footer', async () => {
+  it('advertises only Escape cancellation in the selection footer', async () => {
     const terminal = new FakeTerminal(['escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
-    expect(terminal.frames[0]).toContain('Ctrl+C cancel');
+    expect(terminal.frames[0]).toContain('Esc cancel');
+    expect(terminal.frames[0]).not.toContain('Ctrl+C');
+  });
+
+  it('rerenders immediately when the terminal is resized', async () => {
+    const terminal = new FakeTerminal([{ key: 'resize', size: { columns: 80, rows: 20 } }, 'escape']);
+
+    await runGuidedPublish(guidedModel(), terminal);
+
+    expect(terminal.frames).toHaveLength(2);
+    expect(terminal.frames[0]).toContain(' │ ');
+    expect(terminal.frames[1]).not.toContain(' │ ');
   });
 
   it('reserves cursor columns so labels do not move when focus changes', async () => {
@@ -818,12 +833,12 @@ describe('guided publish TUI', () => {
         return input;
       }),
     });
-    const output = {
+    const output = Object.assign(new EventEmitter(), {
       isTTY: true,
       columns: 100,
       rows: 24,
       write: vi.fn(() => true),
-    };
+    });
     const terminal = createNodePublishTerminal({
       input: input as unknown as NodeJS.ReadStream,
       output: output as unknown as NodeJS.WriteStream,
@@ -865,15 +880,33 @@ describe('guided publish TUI', () => {
     ['another control key', 'x', { name: 'x', ctrl: true }, 'other'],
   ] as const)('decodes the Node %s keypress', async (_label, value, details, expected) => {
     const input = Object.assign(new EventEmitter(), { isTTY: true });
+    const output = Object.assign(new EventEmitter(), { isTTY: true });
     const terminal = createNodePublishTerminal({
       input: input as unknown as NodeJS.ReadStream,
-      output: { isTTY: true } as NodeJS.WriteStream,
+      output: output as unknown as NodeJS.WriteStream,
     });
 
     const key = terminal.readKey();
     input.emit('keypress', value, details);
 
     await expect(key).resolves.toBe(expected);
+    expect(output.listenerCount('resize')).toBe(0);
+  });
+
+  it('reports terminal resizes and removes the pending keypress listener', async () => {
+    const input = Object.assign(new EventEmitter(), { isTTY: true });
+    const output = Object.assign(new EventEmitter(), { isTTY: true });
+    const terminal = createNodePublishTerminal({
+      input: input as unknown as NodeJS.ReadStream,
+      output: output as unknown as NodeJS.WriteStream,
+    });
+
+    const event = terminal.readKey();
+    output.emit('resize');
+
+    await expect(event).resolves.toBe('resize');
+    expect(input.listenerCount('keypress')).toBe(0);
+    expect(output.listenerCount('resize')).toBe(0);
   });
 
   it.each([
