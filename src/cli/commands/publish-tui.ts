@@ -477,6 +477,32 @@ function dimWrapped(text: string, width: number): string[] {
   return wrapText(text, width).map((line) => chalk.dim(line));
 }
 
+const REPLY_CONTEXT_MAX_CHARACTERS = 500;
+const REPLY_CONTEXT_MAX_LINES = 6;
+
+function compactReplyContext(text: string, width: number): string[] {
+  const normalized = text.trim();
+  let excerpt = normalized;
+  if (excerpt.length > REPLY_CONTEXT_MAX_CHARACTERS) {
+    const candidate = excerpt.slice(0, REPLY_CONTEXT_MAX_CHARACTERS - 1).trimEnd();
+    const lastWhitespace = Math.max(candidate.lastIndexOf(' '), candidate.lastIndexOf('\n'));
+    excerpt = `${
+      lastWhitespace >= Math.floor(REPLY_CONTEXT_MAX_CHARACTERS * 0.75)
+        ? candidate.slice(0, lastWhitespace).trimEnd()
+        : candidate
+    }…`;
+  }
+
+  const lines = wrapText(excerpt || '(empty comment)', Math.max(10, width - 2));
+  const visibleLines =
+    lines.length <= REPLY_CONTEXT_MAX_LINES ? lines : [...lines.slice(0, REPLY_CONTEXT_MAX_LINES - 1), '…'];
+  return visibleLines.map((line) => (line ? `> ${line}` : '>'));
+}
+
+function authorMention(author: string): string {
+  return author.startsWith('@') ? author : `@${author}`;
+}
+
 function renderPreview(
   model: GuidedPublishModel,
   selection: SelectionState,
@@ -486,7 +512,6 @@ function renderPreview(
   if (focus?.kind === 'finding') {
     const finding = model.findings.find(({ index }) => index === focus.index)?.value;
     if (!finding) return [];
-    const selected = selection.findingIndexes.has(focus.index);
     const context = model.findingContexts.get(focus.index);
     const positions = [
       finding.oldLine === undefined ? null : `old line ${finding.oldLine}`,
@@ -494,15 +519,10 @@ function renderPreview(
     ].filter((position): position is string => position !== null);
     const path = finding.oldPath === finding.newPath ? finding.newPath : `${finding.oldPath} → ${finding.newPath}`;
     return [
-      ...boldWrapped(
-        selected ? 'Finding — will be published as an inline review comment' : 'Finding — will remain a draft',
-        width,
-      ),
       ...severityHeading(finding.severity, finding.category, width),
       ...dimWrapped(`${path} · ${positions.join(', ') || 'position unavailable'}`, width),
-      ...(context ? ['', ...boldWrapped('Anchor context — not published', width), ...wrapText(context, width)] : []),
+      ...(context ? ['', ...wrapText(context, width)] : []),
       '',
-      ...boldWrapped(selected ? 'Finding body — will be published' : 'Finding body — will remain a draft', width),
       ...wrapText(finding.body, width),
     ];
   }
@@ -515,35 +535,7 @@ function renderPreview(
   if (focus?.kind === 'reply') {
     const reply = model.replies.find(({ index }) => index === focus.index)?.value;
     if (!reply) return [];
-    const selected = selection.replyIndexes.has(focus.index);
     const context = model.replyContexts.get(focus.index);
-    const contextLines: string[] = [];
-    if (context) {
-      contextLines.push(...dimWrapped(`Thread state: ${context.resolved ? 'resolved' : 'active'}`, width));
-      if (context.position) {
-        const contextPosition = context.position.newLine ?? context.position.oldLine;
-        contextLines.push(
-          ...dimWrapped(
-            `Position: ${context.position.filePath}${contextPosition === undefined ? '' : `:${contextPosition}`}`,
-            width,
-          ),
-        );
-      }
-      for (const comment of context.comments) {
-        const [first = '', ...rest] = comment.body.replace(/\r\n/g, '\n').split('\n');
-        contextLines.push(...wrapText(`${comment.author}: ${first}`, width));
-        if (rest.length > 0) contextLines.push(...wrapText(rest.join('\n'), width));
-        contextLines.push('');
-      }
-      if (contextLines.at(-1) === '') contextLines.pop();
-    } else {
-      contextLines.push(...wrapText(`No matching thread context was found for ${reply.threadId}.`, width));
-    }
-    const disposition = selected
-      ? reply.resolve
-        ? 'Publishing this reply will resolve the thread.'
-        : 'Publishing this reply will leave the thread unresolved.'
-      : 'This reply will remain as a draft; the thread will not be changed.';
     const contextPosition = context?.position
       ? `${context.position.filePath}${
           (context.position.newLine ?? context.position.oldLine) === undefined
@@ -551,24 +543,20 @@ function renderPreview(
             : `:${context.position.newLine ?? context.position.oldLine}`
         }`
       : null;
+    const originalComment = context?.comments[0];
     return [
-      ...boldWrapped(
-        selected ? `Reply ${reply.threadId} — will be published` : `Reply ${reply.threadId} — will remain a draft`,
-        width,
-      ),
-      ...dimWrapped(
-        contextPosition
-          ? `Replies to the existing review thread at ${contextPosition}.`
-          : 'Replies to the existing review thread.',
-        width,
-      ),
+      ...boldWrapped(`Reply ${reply.threadId}${reply.resolve ? ' · resolves thread' : ''}`, width),
+      ...(contextPosition ? dimWrapped(contextPosition, width) : []),
+      '',
+      ...(originalComment
+        ? [
+            ...dimWrapped(`In reply to ${authorMention(originalComment.author)}:`, width),
+            '',
+            ...compactReplyContext(originalComment.body, width),
+          ]
+        : dimWrapped(`Thread context unavailable for ${reply.threadId}.`, width)),
       '',
       ...wrapText(reply.body, width),
-      '',
-      ...wrapText(disposition, width),
-      '',
-      ...boldWrapped('Thread context — not published', width),
-      ...contextLines,
     ];
   }
   if (focus?.kind === 'reply-group') {
@@ -578,29 +566,21 @@ function renderPreview(
     ];
   }
   if (focus?.kind === 'summary') {
-    const selected = selection.summary;
     return [
-      ...boldWrapped(selected ? 'Summary — will be published' : 'Summary — will remain unpublished', width),
-      ...wrapText(
-        selected
-          ? 'Updates the managed PR/MR description section.'
-          : 'The managed PR/MR description section will not be updated.',
-        width,
-      ),
+      ...boldWrapped('Summary', width),
+      ...dimWrapped('Updates the managed PR/MR description section.', width),
       '',
       ...wrapText(model.summary.content, width),
     ];
   }
   if (focus?.kind === 'note') {
-    const selected = selection.note;
-    const delivery = selected
-      ? model.provider === 'github' && selection.findingIndexes.size > 0
-        ? 'Included in the GitHub review batch with selected findings.'
-        : 'Creates a target-level review note.'
-      : 'This review note will not be published.';
+    const delivery =
+      model.provider === 'github' && selection.findingIndexes.size > 0
+        ? 'Included in the GitHub review with selected findings.'
+        : 'Creates a target-level review note.';
     return [
-      ...boldWrapped(selected ? 'Review note — will be published' : 'Review note — will remain unpublished', width),
-      ...wrapText(delivery, width),
+      ...boldWrapped('Review note', width),
+      ...dimWrapped(delivery, width),
       '',
       ...wrapText(model.note.content, width),
     ];
@@ -609,23 +589,20 @@ function renderPreview(
     const drafts = deferredDraftCount(model, selection);
     const documents = unpublishedDocuments(model, selection);
     const warning = checkpointWarning(model, selection);
+    const state =
+      model.checkpoint.state === 'none'
+        ? 'not recorded'
+        : model.checkpoint.state === 'outdated'
+          ? 'needs update'
+          : model.checkpoint.state;
     return [
-      ...boldWrapped(
-        selection.checkpoint ? 'Checkpoint — will be recorded' : 'Checkpoint — will not be recorded',
-        width,
-      ),
-      ...wrapText(`Current checkpoint state: ${model.checkpoint.state}`, width),
+      ...boldWrapped('Checkpoint', width),
       ...wrapText(
         `Target head: ${model.checkpoint.targetHeadSha ? model.checkpoint.targetHeadSha.slice(0, 8) : '<unknown>'}`,
         width,
       ),
-      ...wrapText(
-        selection.checkpoint
-          ? 'Records the reviewed target head and current review state.'
-          : 'The current review state will not be recorded.',
-        width,
-      ),
-      ...wrapText(`Drafts that will remain: ${drafts}`, width),
+      ...wrapText(`Current state: ${state}`, width),
+      ...wrapText(`Drafts remaining: ${drafts}`, width),
       ...(documents.length > 0 ? wrapText(`Unpublished documents: ${joinWithAnd(documents)}`, width) : []),
       ...(warning ? ['', ...wrapText(warning, width)] : []),
     ];

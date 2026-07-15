@@ -339,31 +339,31 @@ describe('guided publish TUI', () => {
     expect(terminal.frames.at(-1)).toContain('Enter publish    Esc back');
   });
 
-  it('previews complete finding metadata and publishable body', async () => {
+  it('previews finding metadata, anchor, and body without explanatory labels', async () => {
     const terminal = new FakeTerminal(['escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
-    expect(terminal.frames[0]).toContain('Finding — will be published as an inline review comment');
     expect(terminal.frames[0]).toContain('HIGH · correctness');
     expect(terminal.frames[0]).toContain('src/old.ts → src/new.ts · new line 17');
-    expect(terminal.frames[0]).toContain('Anchor context — not published');
     expect(terminal.frames[0]).toContain('+    17 | replacement(); ◀');
-    expect(terminal.frames[0]).toContain('Finding body — will be published');
     expect(terminal.frames[0]).toContain('The complete finding body.');
-    expect(terminal.frames[0].indexOf('Anchor context — not published')).toBeLessThan(
-      terminal.frames[0].indexOf('Finding body — will be published'),
+    expect(terminal.frames[0]).not.toContain('Finding —');
+    expect(terminal.frames[0]).not.toContain('Anchor context');
+    expect(terminal.frames[0]).not.toContain('Finding body');
+    expect(terminal.frames[0].indexOf('+    17 | replacement(); ◀')).toBeLessThan(
+      terminal.frames[0].lastIndexOf('The complete finding body.'),
     );
   });
 
-  it('marks an unselected finding preview as deferred', async () => {
+  it('keeps an unselected finding preview independent of publish state', async () => {
     const terminal = new FakeTerminal(['space', 'escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
-    expect(terminal.frames.at(-1)).toContain('Finding — will remain a draft');
-    expect(terminal.frames.at(-1)).toContain('Finding body — will remain a draft');
-    expect(terminal.frames.at(-1)).not.toContain('Finding body — will be published');
+    expect(terminal.frames.at(-1)).toContain('The complete finding body.');
+    expect(terminal.frames.at(-1)).not.toContain('Finding — will remain a draft');
+    expect(terminal.frames.at(-1)).not.toContain('Finding body —');
   });
 
   it('does not repeat identical paths in a finding location', async () => {
@@ -376,7 +376,7 @@ describe('guided publish TUI', () => {
     expect(frame).not.toContain('src/other.ts → src/other.ts');
   });
 
-  it('separates resolved thread context from a reply and shows resolution intent', async () => {
+  it('shows compact original thread context before a reply and its resolution intent', async () => {
     const replyContexts = new Map([
       [
         3,
@@ -411,25 +411,80 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel({ replyContexts }), terminal);
 
     const frame = terminal.frames.at(-1)!;
-    expect(frame).toContain('Reply T-001 — will be published');
-    expect(frame).toContain('Replies to the existing review thread at src/reply.ts:21.');
-    expect(frame).toContain('Thread context — not published');
-    expect(frame).toContain('Thread state: resolved');
-    expect(frame).toContain('reviewer: Original reviewer context in full.');
+    expect(frame).toContain('Reply T-001 · resolves thread');
+    expect(frame).toContain('src/reply.ts:21');
+    expect(frame).toContain('In reply to @reviewer:');
+    expect(frame).toContain('> Original reviewer context in full.');
     expect(frame).toContain('The complete draft reply.');
-    expect(frame).toContain('Publishing this reply will resolve the thread.');
-    expect(frame.indexOf('The complete draft reply.')).toBeLessThan(frame.indexOf('Thread context — not published'));
+    expect(frame).not.toContain('Thread context — not published');
+    expect(frame).not.toContain('Thread state:');
+    expect(frame).not.toContain('will be published');
+    expect(frame.indexOf('> Original reviewer context in full.')).toBeLessThan(
+      frame.lastIndexOf('The complete draft reply.'),
+    );
   });
 
-  it('marks an unselected reply as deferred without promising a thread change', async () => {
+  it('keeps an unselected reply preview independent of publish state', async () => {
     const terminal = new FakeTerminal(['down', 'down', 'down', 'space', 'escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
     const frame = terminal.frames.at(-1)!;
-    expect(frame).toContain('Reply T-001 — will remain a draft');
-    expect(frame).toContain('This reply will remain as a draft; the thread will not be changed.');
-    expect(frame).not.toContain('Publishing this reply will resolve the thread.');
+    expect(frame).toContain('Reply T-001 · resolves thread');
+    expect(frame).toContain('Thread context unavailable for T-001.');
+    expect(frame).toContain('The complete draft reply.');
+    expect(frame).not.toContain('Reply T-001 — will remain a draft');
+    expect(frame).not.toContain('Publishing this reply');
+  });
+
+  it('limits reply context to the original comment and six visible lines', async () => {
+    const replyContexts = new Map([
+      [
+        3,
+        {
+          provider: 'gitlab' as const,
+          targetRef: {
+            provider: 'gitlab' as const,
+            repository: 'group/project',
+            targetType: 'merge_request' as const,
+            targetId: '42',
+          },
+          threadId: 'provider-thread-1',
+          resolved: false,
+          resolvable: true,
+          comments: [
+            {
+              id: 'comment-1',
+              body: Array.from({ length: 10 }, (_, index) => `context line ${index + 1}`).join('\n'),
+              author: 'reviewer',
+              createdAt: '2026-07-01T00:00:00Z',
+              updatedAt: '2026-07-01T00:00:00Z',
+              origin: 'human' as const,
+              system: false,
+            },
+            {
+              id: 'comment-2',
+              body: 'Later thread reply should not consume the preview.',
+              author: 'author',
+              createdAt: '2026-07-02T00:00:00Z',
+              updatedAt: '2026-07-02T00:00:00Z',
+              origin: 'human' as const,
+              system: false,
+            },
+          ],
+        },
+      ],
+    ]);
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'escape']);
+
+    await runGuidedPublish(guidedModel({ replyContexts }), terminal);
+
+    const frame = terminal.frames.at(-1)!;
+    expect(frame).toContain('> context line 1');
+    expect(frame).toContain('> context line 5');
+    expect(frame).toContain('> …');
+    expect(frame).not.toContain('context line 6');
+    expect(frame).not.toContain('Later thread reply should not consume the preview.');
   });
 
   it('previews the complete managed summary content', async () => {
@@ -447,38 +502,40 @@ describe('guided publish TUI', () => {
     expect(frame).toContain('```');
   });
 
-  it('marks an unselected summary preview as unpublished', async () => {
+  it('keeps an unselected summary preview independent of publish state', async () => {
     const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'space', 'escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
     const frame = terminal.frames.at(-1)!;
-    expect(frame).toContain('Summary — will remain unpublished');
-    expect(frame).toContain('The managed PR/MR description section will not be updated.');
-    expect(frame).not.toContain('Updates the managed PR/MR description section.');
+    expect(frame).toContain('Summary');
+    expect(frame).toContain('Updates the managed PR/MR description section.');
+    expect(frame).not.toContain('Summary — will remain unpublished');
+    expect(frame).not.toContain('will not be updated');
   });
 
-  it('previews a complete review note with GitHub batch delivery', async () => {
+  it('previews a complete review note with GitHub review delivery', async () => {
     const content = 'Complete target note.\n\nHandover: keep this final prompt.';
     const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'down', 'escape']);
 
     await runGuidedPublish(guidedModel({ provider: 'github', note: { content } }), terminal);
 
     const frame = terminal.frames.at(-1)!;
-    expect(frame).toContain('Included in the GitHub review batch with selected findings.');
+    expect(frame).toContain('Included in the GitHub review with selected findings.');
     expect(frame).toContain('Complete target note.');
     expect(frame).toContain('Handover: keep this final prompt.');
   });
 
-  it('does not promise GitHub batch delivery for an unselected review note', async () => {
+  it('keeps an unselected review note preview independent of publish state', async () => {
     const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'down', 'space', 'escape']);
 
     await runGuidedPublish(guidedModel({ provider: 'github' }), terminal);
 
     const frame = terminal.frames.at(-1)!;
-    expect(frame).toContain('Review note — will remain unpublished');
-    expect(frame).not.toContain('Included in the GitHub review batch');
-    expect(frame).not.toContain('Creates a target-level review note.');
+    expect(frame).toContain('Review note');
+    expect(frame).toContain('Included in the GitHub review with selected findings.');
+    expect(frame).not.toContain('Review note — will remain unpublished');
+    expect(frame).not.toContain('will not be published');
   });
 
   it('uses target-level note delivery when no GitHub findings are selected', async () => {
@@ -487,9 +544,9 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel({ provider: 'github', findings: [] }), terminal);
 
     const frame = terminal.frames.at(-1)!;
-    expect(frame).toContain('Review note — will be published');
+    expect(frame).toContain('Review note');
     expect(frame).toContain('Creates a target-level review note.');
-    expect(frame).not.toContain('Included in the GitHub review batch');
+    expect(frame).not.toContain('Included in the GitHub review with selected findings.');
   });
 
   it('previews checkpoint state, target head, recorded state, and deferred-draft warning', async () => {
@@ -498,22 +555,25 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel(), terminal);
 
     const frame = terminal.frames.at(-1)!;
-    expect(frame).toContain('Checkpoint — will be recorded');
-    expect(frame).toContain('Current checkpoint state: outdated');
+    expect(frame).toContain('Checkpoint');
     expect(frame).toContain('Target head: 12345678');
-    expect(frame).toContain('Records the reviewed target head and current review state.');
-    expect(frame).toContain('Drafts that will remain: 1');
+    expect(frame).toContain('Current state: needs update');
+    expect(frame).toContain('Drafts remaining: 1');
+    expect(frame).not.toContain('Checkpoint — will be recorded');
+    expect(frame).not.toContain('Records the reviewed target head');
     expect(frame).toContain('Warning: the checkpoint will be recorded while 1 draft remains unpublished.');
   });
 
-  it('describes an unselected checkpoint as not recorded', async () => {
+  it('keeps an unselected checkpoint preview independent of publish state', async () => {
     const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'down', 'down', 'space', 'escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
     const frame = terminal.frames.at(-1)!;
-    expect(frame).toContain('Checkpoint — will not be recorded');
-    expect(frame).toContain('The current review state will not be recorded.');
+    expect(frame).toContain('Checkpoint');
+    expect(frame).toContain('Current state: needs update');
+    expect(frame).not.toContain('Checkpoint — will not be recorded');
+    expect(frame).not.toContain('The current review state will not be recorded.');
   });
 
   it('neutralizes terminal control sequences in every preview source while preserving safe newlines', async () => {
@@ -593,7 +653,8 @@ describe('guided publish TUI', () => {
     expect(output).toContain('old-safe.ts → new-safe.ts · new line 17');
     expect(output).toContain('context safe ◀');
     expect(output).toContain('Reply T-safe');
-    expect(output).toContain('reviewer: context safe');
+    expect(output).toContain('In reply to @reviewer:');
+    expect(output).toContain('> context safe');
     expect(terminal.frames[3]).toContain('summary line one\nsummary line two');
     expect(terminal.frames[4]).toContain('note line one\nnote line two');
   });
