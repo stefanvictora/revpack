@@ -579,6 +579,24 @@ describe('guided publish TUI', () => {
     expect(frame).toContain('Warning: the checkpoint will be recorded while 1 draft remains unpublished.');
   });
 
+  it('colors checkpoint warnings yellow', async () => {
+    const previousLevel = chalk.level;
+    chalk.level = 1;
+    const terminal = new FakeTerminal(['space', 'down', 'down', 'down', 'down', 'down', 'down', 'space', 'escape']);
+    try {
+      await runGuidedPublish(guidedModel(), terminal);
+    } finally {
+      chalk.level = previousLevel;
+    }
+
+    const warnings = terminal.frames
+      .at(-1)!
+      .split('\n')
+      .filter((line) => stripVTControlCharacters(line).includes('Warning:'));
+    expect(warnings).toHaveLength(2);
+    expect(warnings.every((line) => line.includes('\u001b[33mWarning:'))).toBe(true);
+  });
+
   it('keeps an unselected checkpoint preview independent of publish state', async () => {
     const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'down', 'down', 'space', 'escape']);
 
@@ -690,8 +708,23 @@ describe('guided publish TUI', () => {
 
     const lines = terminal.frames[0].split('\n');
     expect(lines[0]).toBe('Review material');
-    expect(lines.indexOf('Preview')).toBeGreaterThan(lines.indexOf('Review state'));
+    const previewHeading = lines.indexOf('Preview');
+    expect(previewHeading).toBeGreaterThan(lines.indexOf('Review state'));
+    expect(lines[previewHeading - 1]).toBe('');
     expect(terminal.frames[0]).toContain('The complete finding body.');
+  });
+
+  it.each([
+    ['finding', ['up'] as PublishTerminalKey[], 'Findings'],
+    ['reply', ['down', 'down'] as PublishTerminalKey[], 'Replies'],
+  ])('uses the %s group heading instead of a redundant Preview heading', async (_group, keys, heading) => {
+    const terminal = new FakeTerminal([...keys, 'escape'], { columns: 120, rows: 30 });
+
+    await runGuidedPublish(guidedModel(), terminal);
+
+    const firstLine = stripVTControlCharacters(terminal.frames.at(-1)!.split('\n')[0]);
+    expect(firstLine).toMatch(new RegExp(`^Review material\\s+│ ${heading}$`));
+    expect(terminal.frames.at(-1)).not.toMatch(/│ Preview(?:\n|$)/);
   });
 
   it('keeps narrow physical lines within the terminal while retaining the complete scrollable preview', async () => {
