@@ -714,6 +714,16 @@ describe('guided publish TUI', () => {
     expect(terminal.frames[0]).toContain('The complete finding body.');
   });
 
+  it('keeps the narrow selection footer on the terminal bottom row', async () => {
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'escape'], { columns: 64, rows: 30 });
+
+    await runGuidedPublish(guidedModel(), terminal);
+
+    expect(terminal.frames.map((frame) => frame.split('\n').length)).toEqual([30, 30, 30, 30, 30]);
+    const initialLines = terminal.frames[0].split('\n');
+    expect(initialLines.indexOf('Preview')).toBe(initialLines.indexOf('Review state') + 3);
+  });
+
   it.each([
     ['finding', ['up'] as PublishTerminalKey[], 'Findings'],
     ['reply', ['down', 'down'] as PublishTerminalKey[], 'Replies'],
