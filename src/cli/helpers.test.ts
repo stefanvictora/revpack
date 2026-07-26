@@ -26,7 +26,7 @@ describe('cli helpers', () => {
   let cwdSpy: MockInstance<() => string>;
   let consoleErrorSpy: MockInstance<typeof console.error>;
   let debugEnv: string | undefined;
-  let previousExitCode: string | number | undefined;
+  let previousExitCode: string | number | null | undefined;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revpack-helpers-'));

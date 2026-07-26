@@ -3,14 +3,7 @@ import stringWidth from 'string-width';
 import { visibleText, wrapText } from '../terminal-text.js';
 
 type MarkdownInlineStyle =
-  | 'plain'
-  | 'bold'
-  | 'italic'
-  | 'code'
-  | 'bold-code'
-  | 'italic-code'
-  | 'link-label'
-  | 'link-url';
+  'plain' | 'bold' | 'italic' | 'code' | 'bold-code' | 'italic-code' | 'link-label' | 'link-url';
 type MarkdownBlockStyle = 'plain' | 'heading' | 'quote' | 'code';
 
 interface MarkdownSpan {
