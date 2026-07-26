@@ -506,7 +506,7 @@ describe('guided publish TUI', () => {
           comments: [
             {
               id: 'comment-1',
-              body: 'Original reviewer context in full.',
+              body: '- **Original** reviewer context with `inline code`.',
               author: 'reviewer',
               createdAt: '2026-07-01T00:00:00Z',
               updatedAt: '2026-07-01T00:00:00Z',
@@ -525,12 +525,14 @@ describe('guided publish TUI', () => {
     expect(frame).toContain('Reply T-001 · resolves thread');
     expect(frame).toContain('src/reply.ts:21');
     expect(frame).toContain('In reply to @reviewer:');
-    expect(frame).toContain('> Original reviewer context in full.');
+    expect(stripVTControlCharacters(frame)).toContain('> • Original reviewer context with inline code.');
+    expect(frame).not.toContain('**Original**');
+    expect(frame).not.toContain('`inline code`');
     expect(frame).toContain('The complete draft reply.');
     expect(frame).not.toContain('Thread context — not published');
     expect(frame).not.toContain('Thread state:');
     expect(frame).not.toContain('will be published');
-    expect(frame.indexOf('> Original reviewer context in full.')).toBeLessThan(
+    expect(stripVTControlCharacters(frame).indexOf('> • Original reviewer context with inline code.')).toBeLessThan(
       frame.lastIndexOf('The complete draft reply.'),
     );
   });

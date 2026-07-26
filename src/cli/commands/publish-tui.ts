@@ -461,7 +461,7 @@ function compactReplyContext(text: string, width: number): string[] {
     }…`;
   }
 
-  const lines = wrapText(excerpt || '(empty comment)', Math.max(10, width - 2));
+  const lines = renderMarkdownPreview(excerpt || '(empty comment)', Math.max(10, width - 2));
   const visibleLines =
     lines.length <= REPLY_CONTEXT_MAX_LINES ? lines : [...lines.slice(0, REPLY_CONTEXT_MAX_LINES - 1), '…'];
   return visibleLines.map((line) => (line ? `> ${line}` : '>'));

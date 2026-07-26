@@ -2,7 +2,15 @@ import chalk from 'chalk';
 import stringWidth from 'string-width';
 import { visibleText, wrapText } from '../terminal-text.js';
 
-type MarkdownInlineStyle = 'plain' | 'bold' | 'italic' | 'code' | 'link-label' | 'link-url';
+type MarkdownInlineStyle =
+  | 'plain'
+  | 'bold'
+  | 'italic'
+  | 'code'
+  | 'bold-code'
+  | 'italic-code'
+  | 'link-label'
+  | 'link-url';
 type MarkdownBlockStyle = 'plain' | 'heading' | 'quote' | 'code';
 
 interface MarkdownSpan {
@@ -24,6 +32,33 @@ function appendMarkdownSpan(spans: MarkdownSpan[], text: string, style: Markdown
   } else {
     spans.push({ text, style });
   }
+}
+
+function emphasisMarkdownSpans(content: string, style: 'bold' | 'italic'): MarkdownSpan[] | null {
+  if (
+    content === '' ||
+    content.trim() !== content ||
+    [...content].some((character) => ['*', '_', '[', ']'].includes(character))
+  ) {
+    return null;
+  }
+
+  const spans: MarkdownSpan[] = [];
+  let offset = 0;
+  while (offset < content.length) {
+    const opening = content.indexOf('`', offset);
+    if (opening < 0) {
+      appendMarkdownSpan(spans, content.slice(offset), style);
+      break;
+    }
+
+    const closing = content.indexOf('`', opening + 1);
+    if (closing <= opening + 1) return null;
+    appendMarkdownSpan(spans, content.slice(offset, opening), style);
+    appendMarkdownSpan(spans, content.slice(opening + 1, closing), style === 'bold' ? 'bold-code' : 'italic-code');
+    offset = closing + 1;
+  }
+  return spans;
 }
 
 function inlineMarkdownMatch(value: string, start: number): { length: number; spans: MarkdownSpan[] } | null {
@@ -65,10 +100,11 @@ function inlineMarkdownMatch(value: string, start: number): { length: number; sp
     if (!remaining.startsWith(marker)) continue;
     const closing = remaining.indexOf(marker, marker.length);
     const content = closing < 0 ? '' : remaining.slice(marker.length, closing);
-    if (content && !/[*_`[\]]/.test(content) && content.trim() === content) {
+    const spans = emphasisMarkdownSpans(content, 'bold');
+    if (spans) {
       return {
         length: closing + marker.length,
-        spans: [{ text: content, style: 'bold' }],
+        spans,
       };
     }
     const length = closing < 0 ? remaining.length : closing + marker.length;
@@ -85,15 +121,11 @@ function inlineMarkdownMatch(value: string, start: number): { length: number; sp
     const closing = remaining.indexOf(marker, 1);
     const content = closing < 0 ? '' : remaining.slice(1, closing);
     const after = closing < 0 ? undefined : remaining[closing + 1];
-    if (
-      content &&
-      !/[*_`[\]]/.test(content) &&
-      content.trim() === content &&
-      !(marker === '_' && after !== undefined && /[\p{L}\p{N}]/u.test(after))
-    ) {
+    const spans = emphasisMarkdownSpans(content, 'italic');
+    if (spans && !(marker === '_' && after !== undefined && /[\p{L}\p{N}]/u.test(after))) {
       return {
         length: closing + 1,
-        spans: [{ text: content, style: 'italic' }],
+        spans,
       };
     }
     const length = closing < 0 ? remaining.length : closing + 1;
@@ -140,6 +172,10 @@ function styleMarkdownText(value: string, inlineStyle: MarkdownInlineStyle, bloc
       return chalk.italic(styled);
     case 'code':
       return chalk.cyan(styled);
+    case 'bold-code':
+      return chalk.bold.cyan(styled);
+    case 'italic-code':
+      return chalk.italic.cyan(styled);
     case 'link-label':
       return chalk.underline(styled);
     case 'link-url':
