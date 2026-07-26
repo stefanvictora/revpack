@@ -201,7 +201,6 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
         }
       }
 
-      const threadIds = batchResult.threadIds ?? [];
       for (let index = 0; index < findings.length; index++) {
         const finding = findings[index];
         const published = annotated[index];
@@ -210,10 +209,8 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
         const item = { kind: 'finding' as const, index: finding.index, label: `${displayPath}:${line}` };
         const itemErrors = findingsCleanupError ? [findingsCleanupError] : [];
         try {
-          const providerThreadId = threadIds[index];
           const tracked = await orchestrator.workspace.appendPublishedAction({
             type: 'finding',
-            ...(typeof providerThreadId === 'string' ? { providerThreadId } : {}),
             location: {
               oldPath: published.oldPath,
               newPath: published.newPath,

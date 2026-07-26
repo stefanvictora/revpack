@@ -476,10 +476,7 @@ describe('shared publish plan', () => {
     const material = await loadPublishMaterial(workingDir);
     const orchestrator = {
       workspace: { appendPublishedAction: vi.fn().mockResolvedValue(true) },
-      publishReviewBatch: vi.fn().mockResolvedValue({
-        created: true,
-        threadIds: ['provider-thread-first', 'provider-thread-last'],
-      }),
+      publishReviewBatch: vi.fn().mockResolvedValue({ created: true }),
       publishReview: vi.fn(),
     };
 
@@ -506,14 +503,12 @@ describe('shared publish plan', () => {
     ]);
     expect(reviewBody).toBe('Selected review note');
     expect(orchestrator.publishReview).not.toHaveBeenCalled();
-    expect(orchestrator.workspace.appendPublishedAction).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ type: 'finding', providerThreadId: 'provider-thread-first' }),
-    );
-    expect(orchestrator.workspace.appendPublishedAction).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ type: 'finding', providerThreadId: 'provider-thread-last' }),
-    );
+    const firstTrackedFinding = orchestrator.workspace.appendPublishedAction.mock.calls[0][0];
+    const lastTrackedFinding = orchestrator.workspace.appendPublishedAction.mock.calls[1][0];
+    expect(firstTrackedFinding).toMatchObject({ type: 'finding' });
+    expect(firstTrackedFinding).not.toHaveProperty('providerThreadId');
+    expect(lastTrackedFinding).toMatchObject({ type: 'finding' });
+    expect(lastTrackedFinding).not.toHaveProperty('providerThreadId');
     await expect(fs.readFile(findingsPath, 'utf-8').then(JSON.parse)).resolves.toEqual([findings[1]]);
     await expect(fs.access(notePath)).rejects.toThrow();
     expect(result.successes).toMatchObject([
@@ -578,7 +573,7 @@ describe('shared publish plan', () => {
     const material = await loadPublishMaterial(workingDir);
     const orchestrator = {
       workspace: { appendPublishedAction: vi.fn().mockResolvedValue(false) },
-      publishReviewBatch: vi.fn().mockResolvedValue({ created: true, threadIds: ['provider-thread-1'] }),
+      publishReviewBatch: vi.fn().mockResolvedValue({ created: true }),
       publishReview: vi.fn(),
     };
 
