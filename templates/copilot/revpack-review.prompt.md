@@ -2,7 +2,7 @@
 agent: agent
 name: revpack-review
 argument-hint: '[optional bundle path or review instruction]'
-description: 'Review a prepared MR/PR workspace by following its revpack CONTEXT.md'
+description: 'Perform a formal revpack review and produce revpack Agent Output'
 ---
 
 # Revpack Review

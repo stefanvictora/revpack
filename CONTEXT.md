@@ -19,8 +19,16 @@ The action of making a review target available in the local repository and prepa
 _Avoid_: Clone, switch, fetch
 
 **Review Bundle**:
-A disposable local package of review context created for a review target so an agent can review with the relevant diff, review threads, and instructions.
+A disposable local package of review context created for a review target so an agent can use the relevant diff, review threads, and instructions for a revpack review or another developer-directed task.
 _Avoid_: Context folder, workspace, review package
+
+**Revpack Review**:
+An explicitly requested agent task that evaluates a review target under the review contract and produces agent output for later inspection and publishing.
+_Avoid_: Bundle context use, any task that merely reads a review bundle
+
+**Bundle Context Use**:
+The use of a review bundle as supporting context for a developer-directed task without activating the review contract. Merely reading a review bundle does not make the task a revpack review.
+_Avoid_: Review mode, informal review
 
 **Publish**:
 The intentional action of applying agent output back to the review target through its provider.
@@ -123,8 +131,12 @@ The mandatory review rules an agent must follow while producing agent output for
 _Avoid_: Guidance, checklist, prompt
 
 **Agent Instruction**:
-A project-level artifact that tells a specific agent how to start and perform a revpack review.
-_Avoid_: Harness, adapter, integration, prompt
+Provider-neutral guidance that tells an agent how to use a review bundle for a supported task. Agent Instructions are exposed through harness-specific Agent Adapters.
+_Avoid_: Harness, integration, prompt
+
+**Agent Adapter**:
+A generated, harness-specific artifact that makes Agent Instructions available to a supported coding agent.
+_Avoid_: Agent Instruction, provider adapter, integration
 
 **Per-run Instruction Burden**:
 The amount of agent instruction content required for a particular review run, evaluated primarily by token usage and clarity.

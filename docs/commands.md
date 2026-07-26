@@ -129,22 +129,25 @@ revpack setup agent claude
 revpack setup agent codex
 revpack setup agent cursor
 revpack setup agent copilot
+revpack setup agent codex --force
 revpack setup --prompts
 revpack setup --dry-run
 ```
 
 `revpack setup` creates only `REVIEW.md`.
-`revpack setup --agent <target>` creates `REVIEW.md` when missing and installs one agent adapter.
-`revpack setup agent <target>` writes project-level instruction files for one agent target and does not create `REVIEW.md`.
+`revpack setup --agent <target>` creates `REVIEW.md` when missing and installs the target's `revpack-review` and `revpack-context` adapters.
+`revpack setup agent <target>` installs both adapters for one agent target and does not create `REVIEW.md`.
 
-`--prompts` is kept as a deprecated compatibility flag. It creates `REVIEW.md` and installs the Copilot `/revpack-review` prompt.
+Generated adapters carry a content hash. Setup automatically refreshes unmodified generated adapters and preserves customized files. Use `--force` to replace customized adapters with the current templates. `REVIEW.md` is developer-owned and is never refreshed or replaced.
 
-Generated harness files:
+`--prompts` is kept as a deprecated compatibility flag. It creates `REVIEW.md` and installs the Copilot `/revpack-review` and `/revpack-context` prompts.
 
-- `agent claude`: `.claude/skills/revpack-review/SKILL.md`
-- `agent codex`: `.agents/skills/revpack-review/SKILL.md`
-- `agent copilot`: `.github/prompts/revpack-review.prompt.md`
-- `agent cursor`: `.cursor/commands/revpack-review.md`
+Generated harness directories:
+
+- `agent claude`: `.claude/skills/revpack-review/` and `.claude/skills/revpack-context/`
+- `agent codex`: `.agents/skills/revpack-review/` and `.agents/skills/revpack-context/`
+- `agent copilot`: `.github/prompts/revpack-review.prompt.md` and `.github/prompts/revpack-context.prompt.md`
+- `agent cursor`: `.cursor/commands/revpack-review.md` and `.cursor/commands/revpack-context.md`
 
 ## `auth`
 

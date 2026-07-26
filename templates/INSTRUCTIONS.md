@@ -2,7 +2,7 @@
 
 This file is the catalog for detailed task-specific instruction files. It does not define the run-specific reading order.
 
-Start from `.revpack/CONTEXT.md`. It is the run-specific entry point, contains the review contract, and its **Required Instructions for This Run** section is authoritative.
+Start from `.revpack/CONTEXT.md`. It is the neutral bundle entry point and explains how to choose between bundle context use and a formal revpack review.
 
 Use this index only when you need to understand what an instruction file covers or inspect the wider instruction set.
 
@@ -10,6 +10,7 @@ Use this index only when you need to understand what an instruction file covers 
 
 | File                                   | Fresh review | Incremental code review | Thread follow-up | Outputs-only follow-up | Purpose                                                                      |
 | -------------------------------------- | ------------ | ----------------------- | ---------------- | ---------------------- | ---------------------------------------------------------------------------- |
+| `00-review-contract.md`                | Yes          | Yes                     | Yes              | Yes                    | Mandatory safety and output rules for an explicitly requested revpack review |
 | `01-review-workflow-and-outputs.md`    | Yes          | Yes                     | Yes              | Yes                    | Review goal, execution model, required outputs, validation, input-file order |
 | `02-thread-replies.md`                 | If threads   | If threads              | Yes              | No                     | Deciding whether to reply, writing `outputs/replies.json`                    |
 | `03-new-findings-and-anchors.md`       | Yes          | Yes                     | No               | No                     | Quality bar, diff navigation, positional anchors, severity, categories       |
