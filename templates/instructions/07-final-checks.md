@@ -12,7 +12,7 @@ Check from your current work that:
 - any JSON output files you wrote are valid JSON arrays
 - every finding has `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one line field
 - every finding is anchored to a record in the corresponding per-file Anchor Map listed in `.revpack/diffs/files.json`
-- there are no duplicate findings from existing threads or Previous Actions
+- no finding duplicates an active review thread, a continuously applicable issue in a relevant resolved thread, a Previous Action, or another finding
 - findings are concise, concrete, and actionable
 - in incremental mode, no valid finding was removed solely because it is outside the checkpoint delta; remove it only if it is not MR/PR-caused, is already covered, is not concrete/actionable, or has no valid positional anchor
 - `summary.md` describes MR/PR changes, not review findings

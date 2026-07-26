@@ -37,10 +37,10 @@ Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the fu
 10. Do not derive old or new line numbers from the checked-out workspace or by manually counting patch lines.
 11. Create new findings only for concrete, actionable issues introduced, exposed, or made worse by the MR/PR.
 12. In incremental mode, focus review effort on the checkpoint delta, but do not discard a valid, non-duplicate issue introduced, exposed, or made worse by the current MR/PR merely because it is outside the checkpoint delta.
-13. Do not duplicate existing unresolved threads, previous actions, or other new findings.
+13. Do not duplicate existing active review threads, continuously applicable issues found by consulting relevant resolved threads on demand, previous actions, or other new findings.
 14. Put concrete line-level issues in `new-findings.json`, not in `review.md`.
 15. Put useful replies to existing threads in `replies.json`; otherwise omit the file.
-16. Resolve only threads created by revpack itself (`SELF` threads).
+16. Set resolution intent only when the proposed reply conclusively completes the discussion.
 17. `summary.md` describes what the MR/PR changes, not what the reviewer found.
 18. `review.md` is optional MR/PR-level synthesis, not a second findings file or review report.
 19. Do not reference internal bundle files such as `.revpack/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `anchor-maps/` in public output.
@@ -104,7 +104,7 @@ Report a finding when all of these are true:
 
 1. The issue is introduced, exposed, or made worse by the current MR/PR as a whole.
 2. The issue is concrete and actionable.
-3. The issue is not already covered by an unresolved thread, Previous Action, or another new finding.
+3. The issue is not already covered by an active review thread, Previous Action, or another new finding.
 4. The issue can be anchored to a valid current MR/PR diff position.
 
 Do not remove or suppress a valid finding solely because the relevant line is outside `.revpack/diffs/incremental.patch`.
@@ -160,9 +160,8 @@ Treat commit messages as intent context only. They may explain why the change wa
 {{#if hasCommitList}}
 | `.revpack/commits.md` | Commit messages for the reviewed non-merge commits; intent context only |
 {{/if}}
-{{#if hasThreadFiles}}
-| `.revpack/threads/` | {{threadFileCount}} thread(s) — read the `.md` files |
-{{/if}}
+| `.revpack/threads/` | {{activeThreadCount}} active review thread(s) — current review work and duplicate-check context |
+| `.revpack/resolved-threads/` | {{resolvedThreadCount}} resolved review thread(s) — consult relevant `.md` files on demand for suspected duplicates and draft reply reconciliation |
 | `.revpack/diffs/latest.patch` | Canonical full unified diff for the whole MR/PR |
 | `.revpack/diffs/files.json` | Changed-file index with file status, counts, binary flag, and authoritative per-file patch and Anchor Map paths |
 | `.revpack/diffs/patches/by-file/` | Derived per-file unified diffs in standard patch format; resolve file paths through `files.json` |
@@ -216,27 +215,19 @@ This table is a derived orientation summary of the checkpoint delta.
 {{/each}}
 
 {{/if}}
-{{#if unresolvedThreads}}
+{{#if activeThreads}}
 {{#if incremental}}
-## Unresolved Threads Requiring Attention
+## Active Review Threads Requiring Attention
 
-These unresolved threads may need replies or resolution.
+These active review threads may need replies or resolution.
 {{else}}
-## Unresolved Threads
+## Active Review Threads
 {{/if}}
 
 | Thread | Flags | Author | Location | Summary |
 |---|---|---|---|---|
-{{#each unresolvedThreads}}
+{{#each activeThreads}}
 | {{shortId}} | {{flags}} | @{{author}} | {{location}} | {{summary}} |
-{{/each}}
-
-{{/if}}
-{{#if generalComments}}
-## General Comments
-
-{{#each generalComments}}
-- **{{shortId}}** (@{{author}}): {{summary}}
 {{/each}}
 
 {{/if}}

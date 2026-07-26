@@ -66,7 +66,7 @@ export function registerPrepareCommand(program: Command): void {
           console.log(`  ${chalk.dim('Branch:')}   ${target.sourceBranch} → ${target.targetBranch}`);
           console.log(`  ${chalk.dim(`Updated:`)}  ${formatDate(target.updatedAt)}`);
           console.log(`  ${chalk.dim('Files:')}    ${bundle.diffs.length} changed`);
-          console.log(`  ${chalk.dim('Threads:')}  ${bundle.threads.length} unresolved`);
+          console.log(`  ${chalk.dim('Threads:')}  ${bundle.threads.length} active`);
           console.log('');
 
           // Prepare summary — changes
@@ -87,7 +87,7 @@ export function registerPrepareCommand(program: Command): void {
 
             // Focus guidance
             if (result.targetCodeChanged) {
-              console.log(`  ${chalk.dim('Focus:')}   updated diff and unresolved thread updates`);
+              console.log(`  ${chalk.dim('Focus:')}   updated diff and active review thread updates`);
             } else if (result.threadsChanged) {
               console.log(`  ${chalk.dim('Focus:')}   updated threads/replies and pending outputs`);
             } else {
