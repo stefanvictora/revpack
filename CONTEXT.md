@@ -113,3 +113,7 @@ _Avoid_: Guidance, checklist, prompt
 **Agent Instruction**:
 A project-level artifact that tells a specific agent how to start and perform a revpack review.
 _Avoid_: Harness, adapter, integration, prompt
+
+**Per-run Instruction Burden**:
+The amount of agent instruction content required for a particular review run, evaluated primarily by token usage and clarity.
+_Avoid_: Template size, source line count, instruction file count

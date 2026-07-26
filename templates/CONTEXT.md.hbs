@@ -37,7 +37,7 @@ Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the fu
 10. Do not derive old or new line numbers from the checked-out workspace or by manually counting patch lines.
 11. Create new findings only for concrete, actionable issues introduced, exposed, or made worse by the MR/PR.
 12. In incremental mode, focus review effort on the checkpoint delta, but do not discard a valid, non-duplicate issue introduced, exposed, or made worse by the current MR/PR merely because it is outside the checkpoint delta.
-13. Do not duplicate existing unresolved threads, previous actions, or other new findings.
+13. Do not duplicate existing unresolved threads, continuously applicable issues found by consulting relevant resolved threads on demand, previous actions, or other new findings.
 14. Put concrete line-level issues in `new-findings.json`, not in `review.md`.
 15. Put useful replies to existing threads in `replies.json`; otherwise omit the file.
 16. Resolve only threads created by revpack itself (`SELF` threads).
@@ -160,9 +160,8 @@ Treat commit messages as intent context only. They may explain why the change wa
 {{#if hasCommitList}}
 | `.revpack/commits.md` | Commit messages for the reviewed non-merge commits; intent context only |
 {{/if}}
-{{#if hasThreadFiles}}
-| `.revpack/threads/` | {{threadFileCount}} thread(s) — read the `.md` files |
-{{/if}}
+| `.revpack/threads/` | {{activeThreadCount}} active/general review thread(s) — unresolved threads and general comments used for current thread work and duplicate checks |
+| `.revpack/resolved-threads/` | {{resolvedThreadCount}} resolved review thread(s) — consult relevant `.md` files on demand for suspected duplicates and draft reply reconciliation |
 | `.revpack/diffs/latest.patch` | Canonical full unified diff for the whole MR/PR |
 | `.revpack/diffs/files.json` | Changed-file index with file status, counts, binary flag, and authoritative per-file patch and Anchor Map paths |
 | `.revpack/diffs/patches/by-file/` | Derived per-file unified diffs in standard patch format; resolve file paths through `files.json` |

@@ -81,6 +81,8 @@ A line in the workspace but not in a per-file Anchor Map is not valid for a find
 
 Before creating a finding, check existing unresolved threads, Previous Actions in CONTEXT.md, and your other new findings. Same root cause = duplicate, even on a nearby line. One root cause across nearby lines → one finding at the clearest changed line.
 
+When a prospective finding appears to repeat earlier feedback, consult relevant files in `.revpack/resolved-threads/` on demand. Treat a resolved thread as duplicate coverage only when the same issue remained continuously applicable. If the issue was fixed and later reintroduced, it may be reported as a new finding.
+
 ## `outputs/new-findings.json`
 
 JSON array. Create this file only when you have at least one finding. Required fields: `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one of `oldLine`/`newLine`. For non-renamed files, paths are usually identical.

@@ -85,8 +85,8 @@ interface ContextTemplateView {
   readingOrder: string[];
   requiredInstructions: string[];
   skippedInstructions: Array<{ path: string; reason: string }>;
-  threadFileCount: number;
-  hasThreadFiles: boolean;
+  activeThreadCount: number;
+  resolvedThreadCount: number;
   changedFilesTitle: string;
   changedFilesIntro?: string;
   changedFiles: Array<{ path: string; status: string; added: string; removed: string }>;
@@ -695,6 +695,8 @@ export class WorkspaceManager {
     const generalComments = threads.filter((t) => !t.resolvable && !isSystemOnlyThread(t));
     const isIncrementalCodeReview = options?.prepareSummary?.comparison.targetCodeChangedSinceCheckpoint === true;
     const hasCommitList = options?.hasCommitList ?? false;
+    const allThreads = options?.allThreads ?? threads;
+    const resolvedThreads = allThreads.filter((t) => t.resolvable && t.resolved && !isSystemOnlyThread(t));
 
     const tableCell = (value: string): string => value.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
 
@@ -833,12 +835,13 @@ export class WorkspaceManager {
     }
 
     const instructionRoute = buildInstructionRoute(ps, unresolvedThreads.length > 0);
+    const activeThreadCount = unresolvedThreads.length + generalComments.length;
     const readingOrder = this.buildContextReadingOrder(
       isIncrementalCodeReview,
       instructionRoute.proactiveReview,
       hasCommitList,
+      activeThreadCount > 0,
     );
-    const threadFileCount = unresolvedThreads.length + generalComments.length;
     const incrementalChangedFiles = isIncrementalCodeReview ? await incrementalFiles() : [];
 
     const changedThreads = this.buildChangedThreadsForContext(
@@ -872,8 +875,8 @@ export class WorkspaceManager {
       readingOrder,
       requiredInstructions: instructionRoute.required,
       skippedInstructions: instructionRoute.skipped,
-      threadFileCount,
-      hasThreadFiles: threadFileCount > 0,
+      activeThreadCount,
+      resolvedThreadCount: resolvedThreads.length,
       changedFilesTitle: isIncrementalCodeReview ? 'Files Changed in Current MR/PR' : 'Changed Files',
       changedFilesIntro: isIncrementalCodeReview
         ? 'These files are part of the full MR/PR diff. Use them for context, anchoring, duplicate checks, and verification when needed. This is a derived orientation summary; `.revpack/diffs/files.json` is the authoritative changed-file index.'
@@ -933,6 +936,7 @@ export class WorkspaceManager {
     isIncrementalCodeReview: boolean,
     proactiveReview: boolean,
     hasCommitList: boolean,
+    hasActiveThreads: boolean,
   ): string[] {
     if (isIncrementalCodeReview) {
       return [
@@ -942,7 +946,7 @@ export class WorkspaceManager {
         'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
         ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
         'Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.',
-        'Read relevant changed or unresolved thread files in `.revpack/threads/`.',
+        ...(hasActiveThreads ? ['Read relevant changed or unresolved thread files in `.revpack/threads/`.'] : []),
         'Use `.revpack/diffs/latest.patch` only for full MR/PR context when needed.',
         'Use `.revpack/diffs/files.json` to locate relevant per-file patch paths for the incremental change, thread updates, or a concrete concern you are verifying.',
         'Use the per-file Anchor Maps listed in `.revpack/diffs/files.json` to choose valid review anchors before creating findings.',
@@ -956,7 +960,9 @@ export class WorkspaceManager {
       'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
       'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
       ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
-      'Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.',
+      ...(hasActiveThreads
+        ? ['Read relevant unresolved thread files in `.revpack/threads/` when the current run requires thread work.']
+        : []),
       'Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
     ];
 

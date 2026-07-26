@@ -799,6 +799,71 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('src/app.ts');
     });
 
+    it('lists active and resolved thread directories with independent logical-thread counts', async () => {
+      const activeThread = makeThread();
+      const generalComment: ReviewThread = {
+        ...makeThread(),
+        threadId: 'general-comment',
+        resolvable: false,
+        position: undefined,
+      };
+      const resolvedThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'resolved-thread',
+        resolved: true,
+      };
+      const activeThreads = [activeThread, generalComment];
+      const allThreads = [...activeThreads, resolvedThread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
+      await manager.createBundle(makeTarget(), activeThreads, [], [], threadIndex, {
+        resolvedThreads: [resolvedThread],
+      });
+
+      const contextPath = await manager.writeContext(makeTarget(), activeThreads, [], threadIndex, { allThreads });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain(
+        '| `.revpack/threads/` | 2 active/general review thread(s) — unresolved threads and general comments used for current thread work and duplicate checks |',
+      );
+      expect(content).toContain(
+        '| `.revpack/resolved-threads/` | 1 resolved review thread(s) — consult relevant `.md` files on demand for suspected duplicates and draft reply reconciliation |',
+      );
+      expect(content).toContain('Read relevant unresolved thread files in `.revpack/threads/`');
+    });
+
+    it('lists empty thread directories and omits active-thread reading when no thread files exist', async () => {
+      const { threadIndex } = await createBundle(manager, makeTarget(), []);
+
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex, { allThreads: [] });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('| `.revpack/threads/` | 0 active/general review thread(s)');
+      expect(content).toContain('| `.revpack/resolved-threads/` | 0 resolved review thread(s)');
+      expect(content).not.toContain('Read relevant unresolved thread files in `.revpack/threads/`');
+      expect(content).not.toContain('Read relevant changed or unresolved thread files in `.revpack/threads/`');
+    });
+
+    it('lists resolved-only thread context without adding an active-thread reading step', async () => {
+      const resolvedThread: ReviewThread = {
+        ...makeThread(),
+        threadId: 'resolved-thread',
+        resolved: true,
+      };
+      const allThreads = [resolvedThread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
+      await manager.createBundle(makeTarget(), [], [], [], threadIndex, {
+        resolvedThreads: allThreads,
+      });
+
+      const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex, { allThreads });
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      expect(content).toContain('| `.revpack/threads/` | 0 active/general review thread(s)');
+      expect(content).toContain('| `.revpack/resolved-threads/` | 1 resolved review thread(s)');
+      expect(content).not.toContain('Read relevant unresolved thread files in `.revpack/threads/`');
+      expect(content).not.toContain('Read relevant changed or unresolved thread files in `.revpack/threads/`');
+    });
+
     it('includes changed files list', async () => {
       const newFileDiff: ReviewDiff = {
         ...makeDiff(),
@@ -1207,6 +1272,21 @@ describe('WorkspaceManager', () => {
       expect(workflowInstructions).toContain(
         'Existing `replies.json`, `new-findings.json`, and `review.md` are pending, revisable drafts.',
       );
+      expect(workflowInstructions).toContain(
+        'a referenced `T-NNN` thread may be in `.revpack/threads/` or `.revpack/resolved-threads/`',
+      );
+      expect(workflowInstructions).toContain(
+        "A thread's current resolved state does not by itself invalidate a pending draft reply",
+      );
+
+      const findingsInstructions = await fs.readFile(
+        path.join(tmpDir, '.revpack', 'instructions', '03-new-findings-and-anchors.md'),
+        'utf-8',
+      );
+      expect(findingsInstructions).toContain('consult relevant files in `.revpack/resolved-threads/` on demand');
+      expect(findingsInstructions).toContain(
+        'If the issue was fixed and later reintroduced, it may be reported as a new finding.',
+      );
       expect(content).toContain('`.revpack/instructions/03-new-findings-and-anchors.md`');
     });
 
@@ -1606,21 +1686,21 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('description.md');
     });
 
-    it('shows threads directory entry only when threads exist', async () => {
-      // No threads → no threads count entry in file map
+    it('always shows thread directory entries', async () => {
       const { threadIndex: ti0 } = await createBundle(manager, makeTarget(), []);
       const ctx0 = await manager.writeContext(makeTarget(), [], [makeDiff()], ti0);
       const content0 = await fs.readFile(ctx0, 'utf-8');
-      expect(content0).not.toContain('thread(s)');
+      expect(content0).toContain('| `.revpack/threads/` | 0 active/general review thread(s)');
+      expect(content0).toContain('| `.revpack/resolved-threads/` | 0 resolved review thread(s)');
 
-      // With a resolvable thread + a general comment → shows total count
       const thread: ReviewThread = { ...makeThread(), resolvable: true, resolved: false };
       const general: ReviewThread = { ...makeThread(), threadId: 'gen-1', resolvable: false };
       const threads = [thread, general];
       const { threadIndex: ti1 } = await createBundle(manager, makeTarget(), threads);
       const ctx1 = await manager.writeContext(makeTarget(), threads, [], ti1);
       const content1 = await fs.readFile(ctx1, 'utf-8');
-      expect(content1).toContain('2 thread(s)');
+      expect(content1).toContain('| `.revpack/threads/` | 2 active/general review thread(s)');
+      expect(content1).toContain('| `.revpack/resolved-threads/` | 0 resolved review thread(s)');
     });
 
     it('excludes resolved threads from Unresolved Threads section', async () => {
