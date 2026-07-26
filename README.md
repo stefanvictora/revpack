@@ -122,8 +122,10 @@ Guided Publish will not publish from a stale bundle. It offers to refresh the bu
 
 Bare `revpack publish` requires interactive input and output terminals. On Windows, Guided Publish refuses to start
 inside JetBrains terminals because their terminal emulator can terminate the PowerShell session when the TUI closes;
-run it in Windows Terminal instead. Explicit publish subcommands remain available in JetBrains terminals. Use the
-explicit commands below in scripts, CI, and other non-interactive environments.
+run it in Windows Terminal instead. The
+[investigation record](docs/troubleshooting/jetbrains-windows-guided-publish.md) preserves the reproduction and
+removal criteria. Explicit publish subcommands remain available in JetBrains terminals. Use the explicit commands
+below in scripts, CI, and other non-interactive environments.
 
 | Output                       | Command                      |
 | ---------------------------- | ---------------------------- |

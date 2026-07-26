@@ -539,6 +539,7 @@ function requireInteractiveTerminal(
   const platform = runtime.platform ?? process.platform;
   const terminalEmulator = runtime.terminalEmulator ?? process.env.TERMINAL_EMULATOR;
   if (platform === 'win32' && terminalEmulator === 'JetBrains-JediTerm') {
+    // See docs/troubleshooting/jetbrains-windows-guided-publish.md before changing or removing this guard.
     throw new Error(
       'Guided Publish is disabled in JetBrains terminals on Windows because the terminal emulator can terminate ' +
         'the PowerShell session when the TUI closes.\n' +
