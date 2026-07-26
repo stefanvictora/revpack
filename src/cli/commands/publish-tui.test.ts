@@ -279,12 +279,11 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel(), terminal);
 
     for (const label of ['New findings —', 'Thread replies —', 'Overview —', 'Review state —'] as const) {
-      const rows = terminal.frames.map(
-        (frame) =>
-          stripVTControlCharacters(frame)
-            .split('\n')
-            .map((line) => line.split('│')[0])
-            .find((line) => line.includes(label))!,
+      const rows = terminal.frames.map((frame) =>
+        stripVTControlCharacters(frame)
+          .split('\n')
+          .map((line) => line.split('│')[0])
+          .find((line) => line.includes(label))!,
       );
       expect(new Set(rows.map((line) => line.indexOf(label)))).toEqual(new Set([0]));
       expect(rows.every((line) => !line.includes('>'))).toBe(true);
@@ -307,12 +306,11 @@ describe('guided publish TUI', () => {
       );
       expect(new Set(columns)).toEqual(new Set([expectedColumn]));
 
-      const rows = terminal.frames.map(
-        (frame) =>
-          stripVTControlCharacters(frame)
-            .split('\n')
-            .map((line) => line.split('│')[0])
-            .find((line) => line.includes(label))!,
+      const rows = terminal.frames.map((frame) =>
+        stripVTControlCharacters(frame)
+          .split('\n')
+          .map((line) => line.split('│')[0])
+          .find((line) => line.includes(label))!,
       );
       expect(rows.some((line) => line.includes('>'))).toBe(true);
       expect(rows.some((line) => !line.includes('>'))).toBe(true);
