@@ -390,7 +390,7 @@ export class WorkspaceManager {
       publishedActions: previousActions ?? [],
       paths: {
         context: '.revpack/CONTEXT.md',
-        contract: '.revpack/CONTEXT.md',
+        contract: '.revpack/instructions/00-review-contract.md',
         instructions: '.revpack/INSTRUCTIONS.md',
         instructionsDir: '.revpack/instructions/',
         description: '.revpack/description.md',

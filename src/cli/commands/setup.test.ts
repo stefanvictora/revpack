@@ -102,6 +102,8 @@ describe('runSetup', () => {
     expect(contextContent).toContain('# Revpack Context');
     expect(contextContent).toContain('without performing a formal code review');
     expect(contextContent).toContain('fix or address active review threads');
+    expect(contextContent).toContain('treat it as authoritative');
+    expect(contextContent).toContain('Do not fall back to candidate discovery');
     expect(contextContent).not.toContain('Write only under');
     expect(contextContent).not.toContain('{{revpack-context-instructions}}');
     expect(contextContent).toContain('<!-- revpack-managed: sha256:');
@@ -172,6 +174,17 @@ describe('runSetup', () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Skipped (customized):'));
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('revpack setup agent codex --force'));
     await expect(fileExists(path.join('.agents', 'skills', 'revpack-context', 'SKILL.md'))).resolves.toBe(true);
+  });
+
+  it('prints refresh hints only for the target with customized adapters', async () => {
+    const promptPath = path.join(cwd, '.github', 'prompts', 'revpack-review.prompt.md');
+    await fs.mkdir(path.dirname(promptPath), { recursive: true });
+    await fs.writeFile(promptPath, '# My custom Copilot workflow\n', 'utf-8');
+
+    await runSetup({ cwd, agent: 'codex', prompts: true });
+
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('revpack setup agent codex --force'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('revpack setup agent copilot --force'));
   });
 
   it('replaces customized adapters with --force without replacing REVIEW.md', async () => {

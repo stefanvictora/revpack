@@ -4,7 +4,7 @@ Use the bundle as supporting context for the developer's request. Do not perform
 
 ## Locate the bundle
 
-If the developer provided a bundle path, check it first.
+If the developer provided a bundle path, treat it as authoritative. Use it only if it is a directory named exactly `.revpack` containing `CONTEXT.md` and `diffs/`; otherwise stop and report that the provided path is not a valid review bundle. Do not fall back to candidate discovery.
 
 Otherwise collect candidates from:
 

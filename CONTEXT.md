@@ -131,8 +131,12 @@ The mandatory review rules an agent must follow while producing agent output for
 _Avoid_: Guidance, checklist, prompt
 
 **Agent Instruction**:
-A project-level artifact that tells a specific agent how to use a review bundle for a supported task.
-_Avoid_: Harness, adapter, integration, prompt
+Provider-neutral guidance that tells an agent how to use a review bundle for a supported task. Agent Instructions are exposed through harness-specific Agent Adapters.
+_Avoid_: Harness, integration, prompt
+
+**Agent Adapter**:
+A generated, harness-specific artifact that makes Agent Instructions available to a supported coding agent.
+_Avoid_: Agent Instruction, provider adapter, integration
 
 **Per-run Instruction Burden**:
 The amount of agent instruction content required for a particular review run, evaluated primarily by token usage and clarity.

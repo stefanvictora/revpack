@@ -2375,6 +2375,13 @@ describe('WorkspaceManager', () => {
       expect(state.paths.incrementalPatch).toBe('.revpack/diffs/incremental.patch');
     });
 
+    it('points the legacy contract path at the formal review contract', () => {
+      const state = manager.buildBundleState(makeTarget(), [], [], new Map(), makePrepareSummary(), makeLocal());
+      expect(state.paths.contract).toBe('.revpack/instructions/00-review-contract.md');
+      expect(state.paths.instructions).toBe('.revpack/INSTRUCTIONS.md');
+      expect(state.paths.instructionsDir).toBe('.revpack/instructions/');
+    });
+
     it('uses previousActions and previousOutputs when provided', () => {
       const actions = [
         { type: 'reply' as const, providerThreadId: 'x', title: 'T', publishedAt: '2026-01-01T00:00:00Z' },

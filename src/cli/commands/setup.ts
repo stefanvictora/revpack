@@ -327,7 +327,11 @@ function printAgentUsage(target: AgentTarget): void {
 }
 
 function printRefreshHint(results: SetupResult[], target: AgentTarget): void {
-  if (!results.some((result) => result.status === 'skipped-customized')) return;
+  const targetPaths = new Set(AGENT_FILES[target].map((file) => file.target));
+  const hasCustomized = results.some(
+    (result) => result.status === 'skipped-customized' && targetPaths.has(result.target),
+  );
+  if (!hasCustomized) return;
   console.log('');
   console.log(
     formatGuidanceLine(`Customized agent adapters were preserved. Replace them with current templates using:`),
