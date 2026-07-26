@@ -120,7 +120,10 @@ Pending material starts selected. If you leave out a finding or reply, it remain
 
 Guided Publish will not publish from a stale bundle. It offers to refresh the bundle, preserving pending drafts, or cancel. If freshness cannot be determined, publishing stops rather than proceeding with potentially outdated previews.
 
-Bare `revpack publish` requires interactive input and output terminals. Use the explicit commands below in scripts, CI, and other non-interactive environments.
+Bare `revpack publish` requires interactive input and output terminals. On Windows, Guided Publish refuses to start
+inside JetBrains terminals because their terminal emulator can terminate the PowerShell session when the TUI closes;
+run it in Windows Terminal instead. Explicit publish subcommands remain available in JetBrains terminals. Use the
+explicit commands below in scripts, CI, and other non-interactive environments.
 
 | Output                       | Command                      |
 | ---------------------------- | ---------------------------- |

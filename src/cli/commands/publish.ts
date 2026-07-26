@@ -520,12 +520,32 @@ interface GuidedPublishDependencies {
   runStalePrompt?: typeof runStalePublishPrompt;
 }
 
-function requireInteractiveTerminal(terminal: Pick<PublishTerminal, 'interactive'>): void {
-  if (terminal.interactive) return;
-  throw new Error(
-    'Interactive publishing requires a terminal.\n' +
-      'Use `revpack publish all` or a specific `revpack publish <command>` in scripts.',
-  );
+interface InteractiveTerminalRuntime {
+  platform?: NodeJS.Platform;
+  terminalEmulator?: string;
+}
+
+function requireInteractiveTerminal(
+  terminal: Pick<PublishTerminal, 'interactive'>,
+  runtime: InteractiveTerminalRuntime = {},
+): void {
+  if (!terminal.interactive) {
+    throw new Error(
+      'Interactive publishing requires a terminal.\n' +
+        'Use `revpack publish all` or a specific `revpack publish <command>` in scripts.',
+    );
+  }
+
+  const platform = runtime.platform ?? process.platform;
+  const terminalEmulator = runtime.terminalEmulator ?? process.env.TERMINAL_EMULATOR;
+  if (platform === 'win32' && terminalEmulator === 'JetBrains-JediTerm') {
+    throw new Error(
+      'Guided Publish is disabled in JetBrains terminals on Windows because the terminal emulator can terminate ' +
+        'the PowerShell session when the TUI closes.\n' +
+        'Run `revpack publish` in Windows Terminal instead. Explicit `revpack publish <command>` subcommands remain ' +
+        'available here.',
+    );
+  }
 }
 
 async function determineBundleFreshness(

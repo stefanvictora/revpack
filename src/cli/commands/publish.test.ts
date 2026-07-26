@@ -352,6 +352,29 @@ describe('publish command internals', () => {
     );
   });
 
+  it('rejects guided publishing in JetBrains terminals on Windows', () => {
+    expect(() =>
+      __testing.requireInteractiveTerminal(
+        { interactive: true },
+        { platform: 'win32', terminalEmulator: 'JetBrains-JediTerm' },
+      ),
+    ).toThrow(
+      'Guided Publish is disabled in JetBrains terminals on Windows because the terminal emulator can terminate ' +
+        'the PowerShell session when the TUI closes.\n' +
+        'Run `revpack publish` in Windows Terminal instead. Explicit `revpack publish <command>` subcommands remain ' +
+        'available here.',
+    );
+  });
+
+  it.each([
+    ['linux', 'JetBrains-JediTerm'],
+    ['win32', 'Windows Terminal'],
+  ] as const)('allows guided publishing on %s with %s', (platform, terminalEmulator) => {
+    expect(() =>
+      __testing.requireInteractiveTerminal({ interactive: true }, { platform, terminalEmulator }),
+    ).not.toThrow();
+  });
+
   it('checks terminal interactivity before reading the active bundle', async () => {
     const loadMaterial = vi.fn();
 
