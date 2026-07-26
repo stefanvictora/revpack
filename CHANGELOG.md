@@ -17,7 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Changed review-note publishing to use primary `revpack publish note` and `.revpack/outputs/note.md`, while retaining `publish review` as a hidden compatibility alias; legacy `review.md` drafts are not published, and explicit output discard removes them.
+- Changed review-note publishing to use primary `revpack publish note` and `.revpack/outputs/note.md`, while retaining `publish review` as a hidden compatibility alias; explicit `revpack publish note` and `revpack publish review` no longer publish stored `.revpack/outputs/review.md` drafts, and explicit output discard removes them. Guided Publish publishes review-note material only when it is explicitly selected.
 - Replaced the global `.revpack/diffs/line-map.ndjson` and `change-blocks.json` artifacts with compact per-file Anchor Maps indexed by `files.json`; existing installed agent instructions that name the removed artifacts must be deleted and recreated with `revpack setup agent <target>` after upgrading.
 - Clarified rerun semantics for prepared review bundles: existing conditional outputs are pending drafts that agents reconcile or remove, bundles are single-writer.
 - Improved generated `CONTEXT.md` changed-file summaries with added and removed line counts, binary-file handling, and an explicit pointer to `diffs/files.json` as the authoritative changed-file index.

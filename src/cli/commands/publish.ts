@@ -467,8 +467,11 @@ async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty
     filePath = opts.from;
     try {
       content = await fs.readFile(workspacePath(filePath), 'utf-8');
-    } catch {
-      throw new Error(`No review note found at ${filePath}.`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(`No review note found at ${filePath}.`, { cause: error });
+      }
+      throw error;
     }
   } else {
     const defaultNote = await loadDefaultReviewNote();

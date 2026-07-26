@@ -348,6 +348,23 @@ describe('publish command internals', () => {
     await expect(fs.readFile(customPath, 'utf-8')).resolves.toBe('Custom review body');
   });
 
+  it('reports a missing custom review note as absent', async () => {
+    const customPath = path.join(tmpDir, 'missing-review.md');
+
+    await expect(__testing.publishReviewCmd({ from: customPath })).rejects.toThrow(
+      `No review note found at ${customPath}.`,
+    );
+    expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
+  it('preserves non-missing custom review note read failures', async () => {
+    const customPath = path.join(tmpDir, 'review-directory');
+    await fs.mkdir(customPath);
+
+    await expect(__testing.publishReviewCmd({ from: customPath })).rejects.toMatchObject({ code: 'EISDIR' });
+    expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
   it('does not publish review.md when note.md is absent', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await writeBundleState();
