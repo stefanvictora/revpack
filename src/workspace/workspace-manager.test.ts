@@ -794,7 +794,7 @@ describe('WorkspaceManager', () => {
       const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Unresolved Threads');
+      expect(content).toContain('## Active Review Threads');
       expect(content).toContain('T-001');
       expect(content).toContain('src/app.ts');
     });
@@ -823,12 +823,12 @@ describe('WorkspaceManager', () => {
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain(
-        '| `.revpack/threads/` | 2 active/general review thread(s) — unresolved threads and general comments used for current thread work and duplicate checks |',
+        '| `.revpack/threads/` | 2 active review thread(s) — current review work and duplicate-check context |',
       );
       expect(content).toContain(
         '| `.revpack/resolved-threads/` | 1 resolved review thread(s) — consult relevant `.md` files on demand for suspected duplicates and draft reply reconciliation |',
       );
-      expect(content).toContain('Read relevant unresolved thread files in `.revpack/threads/`');
+      expect(content).toContain('Read relevant active review thread files in `.revpack/threads/`');
     });
 
     it('lists empty thread directories and omits active-thread reading when no thread files exist', async () => {
@@ -837,10 +837,10 @@ describe('WorkspaceManager', () => {
       const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex, { allThreads: [] });
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('| `.revpack/threads/` | 0 active/general review thread(s)');
+      expect(content).toContain('| `.revpack/threads/` | 0 active review thread(s)');
       expect(content).toContain('| `.revpack/resolved-threads/` | 0 resolved review thread(s)');
-      expect(content).not.toContain('Read relevant unresolved thread files in `.revpack/threads/`');
-      expect(content).not.toContain('Read relevant changed or unresolved thread files in `.revpack/threads/`');
+      expect(content).not.toContain('Read relevant active review thread files in `.revpack/threads/`');
+      expect(content).not.toContain('Read relevant changed or active review thread files in `.revpack/threads/`');
     });
 
     it('lists resolved-only thread context without adding an active-thread reading step', async () => {
@@ -858,10 +858,10 @@ describe('WorkspaceManager', () => {
       const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex, { allThreads });
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('| `.revpack/threads/` | 0 active/general review thread(s)');
+      expect(content).toContain('| `.revpack/threads/` | 0 active review thread(s)');
       expect(content).toContain('| `.revpack/resolved-threads/` | 1 resolved review thread(s)');
-      expect(content).not.toContain('Read relevant unresolved thread files in `.revpack/threads/`');
-      expect(content).not.toContain('Read relevant changed or unresolved thread files in `.revpack/threads/`');
+      expect(content).not.toContain('Read relevant active review thread files in `.revpack/threads/`');
+      expect(content).not.toContain('Read relevant changed or active review thread files in `.revpack/threads/`');
     });
 
     it('includes changed files list', async () => {
@@ -1179,7 +1179,7 @@ describe('WorkspaceManager', () => {
       expect(incrementalIndex).toBeGreaterThan(commitsIndex);
     });
 
-    it('distinguishes incremental thread updates from unresolved threads requiring attention', async () => {
+    it('distinguishes incremental thread updates from active review threads requiring attention', async () => {
       const activeThread = makeThread();
       const resolvedThread: ReviewThread = {
         ...makeThread(),
@@ -1229,8 +1229,8 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).not.toContain('## Thread Updates Since Last Checkpoint');
       expect(content).not.toContain('| T-002 | resolved |');
-      expect(content).toContain('## Unresolved Threads Requiring Attention');
-      expect(content).toContain('These unresolved threads may need replies or resolution.');
+      expect(content).toContain('## Active Review Threads Requiring Attention');
+      expect(content).toContain('These active review threads may need replies or resolution.');
     });
 
     it('includes workflow instructions', async () => {
@@ -1251,7 +1251,7 @@ describe('WorkspaceManager', () => {
       expect(content).not.toContain('Read `.revpack/AGENT_CONTRACT.md`');
     });
 
-    it('includes Required Instructions section skipping thread-replies when no unresolved threads', async () => {
+    it('includes Required Instructions section skipping thread-replies when no active review threads exist', async () => {
       const { threadIndex } = await createBundle(manager, makeTarget(), []);
 
       const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex);
@@ -1260,7 +1260,7 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('## Required Instructions for This Run');
       expect(content).toContain('`.revpack/instructions/01-review-workflow-and-outputs.md`');
       expect(content).toContain('Skipped this run:');
-      expect(content).toContain('`.revpack/instructions/02-thread-replies.md` — skip, no unresolved threads');
+      expect(content).toContain('`.revpack/instructions/02-thread-replies.md` — skip, no active review threads');
       // Fresh review (no prepareSummary) → proactive review instructions required
       expect(content).not.toContain('03-new-findings-and-anchors.md` — skip');
 
@@ -1290,7 +1290,7 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('`.revpack/instructions/03-new-findings-and-anchors.md`');
     });
 
-    it('includes thread-replies instruction when unresolved threads exist', async () => {
+    it('includes thread-replies instruction when active review threads exist', async () => {
       const threads = [makeThread()];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads);
 
@@ -1298,7 +1298,7 @@ describe('WorkspaceManager', () => {
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Required Instructions for This Run');
-      expect(content).not.toContain('skip, no unresolved threads');
+      expect(content).not.toContain('skip, no active review threads');
       // 02 is required, not skipped
       expect(content).not.toContain('02-thread-replies.md` — skip');
       expect(content).toContain('`.revpack/instructions/02-thread-replies.md`');
@@ -1345,19 +1345,19 @@ describe('WorkspaceManager', () => {
       expect(content).not.toContain('choose valid review anchors before creating findings');
       // Checkpoint-specific guidance for thread-only refresh
       expect(content).toContain('threads or replies have been updated');
-      expect(content).toContain('Focus on updated unresolved threads');
+      expect(content).toContain('Focus on updated active review threads');
       // All proactive instructions are skipped with specific reasons
       expect(content).toContain('skip, no new findings pass is expected');
       expect(content).toContain('skip, no MR/PR-level synthesis pass is expected');
       expect(content).toContain('skip, no code-change summary update is expected');
     });
 
-    it('shows general comments section for non-resolvable human threads', async () => {
-      const resolvableThread = makeThread();
-      const generalComment: ReviewThread = {
+    it('routes a non-resolvable target-level thread through the active review workflow', async () => {
+      const targetLevelThread: ReviewThread = {
         ...makeThread(),
-        threadId: 'general-1',
+        threadId: 'target-level-1',
         resolvable: false,
+        position: undefined,
         comments: [
           {
             id: 'gen-1',
@@ -1371,19 +1371,30 @@ describe('WorkspaceManager', () => {
         ],
       };
 
-      const allThreads = [resolvableThread, generalComment];
-      const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
-      await manager.createBundle(makeTarget(), allThreads, [], [], threadIndex);
+      const threads = [targetLevelThread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(threads);
+      await manager.createBundle(makeTarget(), threads, [], [], threadIndex);
 
-      const contextPath = await manager.writeContext(makeTarget(), allThreads, [], threadIndex);
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Unresolved Threads');
+      expect(content).toContain('## Active Review Threads');
       expect(content).toContain('T-001');
-      expect(content).toContain('## General Comments');
-      expect(content).toContain('T-002');
+      expect(content).toContain('| target |');
       expect(content).toContain('@reviewer');
       expect(content).toContain('Great work on this MR overall!');
+      expect(content).toContain('`.revpack/instructions/02-thread-replies.md`');
+
+      const replyInstructions = await fs.readFile(
+        path.join(tmpDir, '.revpack', 'instructions', '02-thread-replies.md'),
+        'utf-8',
+      );
+      expect(replyInstructions).toContain(
+        'a provider reporting the thread as non-resolvable before the reply does not prevent you from expressing resolution intent',
+      );
+      expect(replyInstructions).toContain(
+        'Set `"resolve": true` when your reply conclusively completes the discussion.',
+      );
     });
 
     it('shows Previous Actions section when publishedActions are provided', async () => {
@@ -1690,7 +1701,7 @@ describe('WorkspaceManager', () => {
       const { threadIndex: ti0 } = await createBundle(manager, makeTarget(), []);
       const ctx0 = await manager.writeContext(makeTarget(), [], [makeDiff()], ti0);
       const content0 = await fs.readFile(ctx0, 'utf-8');
-      expect(content0).toContain('| `.revpack/threads/` | 0 active/general review thread(s)');
+      expect(content0).toContain('| `.revpack/threads/` | 0 active review thread(s)');
       expect(content0).toContain('| `.revpack/resolved-threads/` | 0 resolved review thread(s)');
 
       const thread: ReviewThread = { ...makeThread(), resolvable: true, resolved: false };
@@ -1699,32 +1710,32 @@ describe('WorkspaceManager', () => {
       const { threadIndex: ti1 } = await createBundle(manager, makeTarget(), threads);
       const ctx1 = await manager.writeContext(makeTarget(), threads, [], ti1);
       const content1 = await fs.readFile(ctx1, 'utf-8');
-      expect(content1).toContain('| `.revpack/threads/` | 2 active/general review thread(s)');
+      expect(content1).toContain('| `.revpack/threads/` | 2 active review thread(s)');
       expect(content1).toContain('| `.revpack/resolved-threads/` | 0 resolved review thread(s)');
     });
 
-    it('excludes resolved threads from Unresolved Threads section', async () => {
+    it('excludes resolved threads from the Active Review Threads section', async () => {
       const resolved: ReviewThread = { ...makeThread(), threadId: 'res-1', resolved: true, resolvable: true };
       const unresolved: ReviewThread = { ...makeThread(), threadId: 'unres-1', resolved: false, resolvable: true };
       const threads = [resolved, unresolved];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads);
       const ctx = await manager.writeContext(makeTarget(), threads, [], threadIndex);
       const content = await fs.readFile(ctx, 'utf-8');
-      const unresolvedSection = content.split('## Unresolved Threads')[1]?.split('##')[0] ?? '';
-      expect(unresolvedSection).toContain('T-002');
-      expect(unresolvedSection).not.toContain('T-001');
+      const activeSection = content.split('## Active Review Threads')[1]?.split('##')[0] ?? '';
+      expect(activeSection).toContain('T-002');
+      expect(activeSection).not.toContain('T-001');
     });
 
-    it('excludes non-resolvable threads from Unresolved Threads section', async () => {
+    it('includes non-resolvable threads in the Active Review Threads section', async () => {
       const nonResolvable: ReviewThread = { ...makeThread(), threadId: 'nr-1', resolved: false, resolvable: false };
       const resolvable: ReviewThread = { ...makeThread(), threadId: 'r-1', resolved: false, resolvable: true };
       const threads = [nonResolvable, resolvable];
       const { threadIndex } = await createBundle(manager, makeTarget(), threads);
       const ctx = await manager.writeContext(makeTarget(), threads, [], threadIndex);
       const content = await fs.readFile(ctx, 'utf-8');
-      const unresolvedSection = content.split('## Unresolved Threads')[1]?.split('##')[0] ?? '';
-      expect(unresolvedSection).toContain('T-002');
-      expect(unresolvedSection).not.toContain('T-001');
+      const activeSection = content.split('## Active Review Threads')[1]?.split('##')[0] ?? '';
+      expect(activeSection).toContain('T-001');
+      expect(activeSection).toContain('T-002');
     });
 
     it('does not flag SELF or REPLIED on threads with only human comments', async () => {
@@ -1762,15 +1773,15 @@ describe('WorkspaceManager', () => {
       expect(row).not.toContain('REPLIED');
     });
 
-    it('omits Unresolved Threads section when all threads are resolved', async () => {
+    it('omits Active Review Threads section when all threads are resolved', async () => {
       const resolved: ReviewThread = { ...makeThread(), resolved: true, resolvable: true };
       const { threadIndex } = await createBundle(manager, makeTarget(), [resolved]);
       const ctx = await manager.writeContext(makeTarget(), [resolved], [], threadIndex);
       const content = await fs.readFile(ctx, 'utf-8');
-      expect(content).not.toContain('## Unresolved Threads');
+      expect(content).not.toContain('## Active Review Threads');
     });
 
-    it('omits General Comments section when no non-resolvable threads', async () => {
+    it('does not render a separate General Comments section', async () => {
       const resolvable: ReviewThread = { ...makeThread(), resolvable: true, resolved: false };
       const { threadIndex } = await createBundle(manager, makeTarget(), [resolvable]);
       const ctx = await manager.writeContext(makeTarget(), [resolvable], [], threadIndex);
@@ -1800,7 +1811,7 @@ describe('WorkspaceManager', () => {
       const ctx = await manager.writeContext(makeTarget(), [systemOnly], [], threadIndex);
       const content = await fs.readFile(ctx, 'utf-8');
       // Should render without crashing, with fallback values
-      expect(content).toContain('## Unresolved Threads');
+      expect(content).toContain('## Active Review Threads');
       expect(content).toContain('T-001');
     });
   });
@@ -2616,7 +2627,7 @@ describe('WorkspaceManager', () => {
       expect(md).not.toContain('## Diff Context');
     });
 
-    it('renders resolved status and resolvable flag in header', async () => {
+    it('renders resolved status without exposing provider resolvability in the agent-facing header', async () => {
       const thread: ReviewThread = {
         ...makeThread(),
         resolved: true,
@@ -2627,10 +2638,10 @@ describe('WorkspaceManager', () => {
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       expect(md).toContain('- **Status**: Resolved');
-      expect(md).toContain('- **Resolvable**: false');
+      expect(md).not.toContain('**Resolvable**');
     });
 
-    it('renders unresolved status and resolvable true in header', async () => {
+    it('renders unresolved status without exposing provider resolvability in the agent-facing header', async () => {
       const thread: ReviewThread = {
         ...makeThread(),
         resolved: false,
@@ -2641,7 +2652,7 @@ describe('WorkspaceManager', () => {
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       expect(md).toContain('- **Status**: Unresolved');
-      expect(md).toContain('- **Resolvable**: true');
+      expect(md).not.toContain('**Resolvable**');
     });
 
     it('renders GitHub outdated status and warning when present', async () => {
@@ -3187,7 +3198,7 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('`src/old.ts`:7');
     });
 
-    it('shows general for threads without position', async () => {
+    it('shows target for threads without position', async () => {
       const thread: ReviewThread = {
         ...makeThread(),
         position: undefined,
@@ -3195,7 +3206,7 @@ describe('WorkspaceManager', () => {
       const { threadIndex } = await createBundle(manager, makeTarget(), [thread]);
       const contextPath = await manager.writeContext(makeTarget(), [thread], [], threadIndex);
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('| general |');
+      expect(content).toContain('| target |');
     });
   });
 
@@ -3441,7 +3452,7 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       // All non-empty lines are badge patterns - meaningful is undefined, returns ''
       // The table row should have empty snippet cell
-      const threadTable = content.split('## Unresolved Threads')[1]?.split('##')[0] ?? '';
+      const threadTable = content.split('## Active Review Threads')[1]?.split('##')[0] ?? '';
       const dataRows = threadTable.split('\n').filter((l) => l.startsWith('|') && !l.includes('---'));
       // Last cell should be empty (just spaces between pipes)
       const lastRow = dataRows[dataRows.length - 1] ?? '';

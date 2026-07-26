@@ -92,7 +92,7 @@ Merge related changes aggressively:
 
 - review findings, suspected bugs, approval status, or quality judgments
 - speculative risks or open questions unless explicitly present in the existing MR/PR description, commit messages, or `REVIEW.md`
-- unresolved thread information
+- active review thread information
 - internal bundle file references
 - version headings, dates, or `Unreleased` headings
 - empty categories

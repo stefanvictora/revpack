@@ -64,16 +64,28 @@ _Avoid_: Line map, annotated diff
 An agent-proposed, publishable response to an existing review thread.
 _Avoid_: Response, answer, follow-up comment
 
+**Resolution Intent**:
+An agent-proposed decision to resolve a review thread after its reply is published. It expresses whether the reply completes the discussion, independently of whether the provider reports the thread as resolvable before that reply.
+_Avoid_: Resolve flag, resolvable state
+
 **Review Thread**:
-A provider discussion attached to the review target, usually anchored to a changed line but sometimes general. Some providers represent a review thread as a top-level comment with replies.
-_Avoid_: Discussion, conversation, comment thread
+A provider-neutral, addressable review conversation containing one or more comments and attached to the review target, a file, or a line. It can receive replies; its placement and support for resolution are independent properties.
+_Avoid_: Discussion, conversation, comment thread, review item
+
+**Active Review Thread**:
+A review thread containing authored feedback that remains part of the current review work because it has not been resolved. Provider system events alone do not create an active review thread.
+_Avoid_: Active/general thread, unresolved thread as an umbrella term, general comment
 
 **Resolved Review Thread**:
 A review thread whose provider state says the discussion has been resolved, while still remaining valid context and a possible target for later replies.
 _Avoid_: Closed thread, archived thread
 
+**Provider System Event**:
+Provider-generated activity metadata attached to a review thread rather than authored review feedback.
+_Avoid_: System comment, bot comment
+
 **Review Note**:
-A visible target-level review comment that is not anchored to a specific line or existing thread.
+A standalone target-level comment proposed in agent output rather than attached to a specific line or existing review thread.
 _Avoid_: General comment, review body
 
 **Commit List**:

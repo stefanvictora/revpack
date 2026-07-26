@@ -33,10 +33,10 @@ Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the fu
 10. Do not derive old or new line numbers from the checked-out workspace or by manually counting patch lines.
 11. Create new findings only for concrete, actionable issues introduced, exposed, or made worse by the MR/PR.
 12. In incremental mode, focus review effort on the checkpoint delta, but do not discard a valid, non-duplicate issue introduced, exposed, or made worse by the current MR/PR merely because it is outside the checkpoint delta.
-13. Do not duplicate existing unresolved threads, previous actions, or other new findings.
+13. Do not duplicate existing active review threads, previous actions, or other new findings.
 14. Put concrete line-level issues in `new-findings.json`, not in `review.md`.
 15. Put useful replies to existing threads in `replies.json`; otherwise omit the file.
-16. Resolve only threads created by revpack itself (`SELF` threads).
+16. Set resolution intent only when the proposed reply conclusively completes the discussion.
 17. `summary.md` describes what the MR/PR changes, not what the reviewer found.
 18. `review.md` is optional MR/PR-level synthesis, not a second findings file or review report.
 19. Do not reference internal bundle files such as `.revpack/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `anchor-maps/` in public output.
@@ -44,10 +44,10 @@ Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the fu
 
 ## Current Run Mode
 
-| Field        | Value                                                                               |
-| ------------ | ----------------------------------------------------------------------------------- |
-| Mode         | Fresh review                                                                        |
-| Primary work | Review the MR/PR changes, address unresolved threads, and write the review outputs. |
+| Field        | Value                                                                                  |
+| ------------ | -------------------------------------------------------------------------------------- |
+| Mode         | Fresh review                                                                           |
+| Primary work | Review the MR/PR changes, address active review threads, and write the review outputs. |
 
 ## Required Instructions for This Run
 
@@ -63,13 +63,13 @@ Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the fu
 
 | Path                          | Description                                                 |
 | ----------------------------- | ----------------------------------------------------------- |
-| `.revpack/threads/`           | unresolved review threads                                   |
+| `.revpack/threads/`           | active review threads                                       |
 | `.revpack/diffs/latest.patch` | canonical full unified diff                                 |
 | `.revpack/diffs/files.json`   | changed-file index with per-file patch and Anchor Map paths |
 | `.revpack/diffs/anchor-maps/` | compact per-file maps of valid positional review anchors    |
 | `.revpack/outputs/`           | agent output files                                          |
 
-## Unresolved Threads
+## Active Review Threads
 
 | Thread | Flags | Author      | Location           | Summary                                             |
 | ------ | ----- | ----------- | ------------------ | --------------------------------------------------- |

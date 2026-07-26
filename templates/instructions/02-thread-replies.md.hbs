@@ -1,10 +1,10 @@
 # Thread replies
 
-Use `.revpack/threads/` and the unresolved thread overview in `.revpack/CONTEXT.md`.
+Use `.revpack/threads/` and the active review thread overview in `.revpack/CONTEXT.md`.
 
 ## When to reply
 
-Only write a reply when it adds useful information for a human reviewer or the author. An unresolved thread does not require a reply just because it exists.
+Only write a reply when it adds useful information for a human reviewer or the author. An active review thread does not require a reply just because it exists.
 
 Reply when:
 
@@ -12,14 +12,16 @@ Reply when:
 - the thread reports an issue and you can confirm it is fixed (no human has already confirmed)
 - you can provide a fix suggestion or disagree with a clear technical reason
 - follow-up discussion needs clarification
-- a **SELF** thread's issue is now fixed and you can resolve it
+- the thread's issue is now fixed and your reply can conclusively close the discussion
 
 Do not reply to acknowledgements, placeholder comments, general notes without a code concern, or threads where your only response would be "acknowledged" / "no action needed". If a human already confirmed the issue as fixed and the code agrees, omit the thread.
 
 Skip **SELF** threads unless they have new follow-up or you are resolving them.
 Skip **REPLIED** threads unless you have new information.
 
-Set `"resolve": true` only for **SELF** threads. Do not resolve threads created by other reviewers.
+Set `"resolve": true` when your reply conclusively completes the discussion. Publishing posts the reply before attempting resolution, so a provider reporting the thread as non-resolvable before the reply does not prevent you from expressing resolution intent.
+
+Keep `"resolve": false` for questions, partial fixes, suggested future work, or any reply that should continue the discussion.
 
 ## System events
 
