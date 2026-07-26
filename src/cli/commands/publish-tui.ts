@@ -8,7 +8,8 @@ import type {
 } from '../../core/types.js';
 import chalk from 'chalk';
 import { emitKeypressEvents } from 'node:readline';
-import stringWidth from 'string-width';
+import { fitColumn, truncateColumn, visibleText, wrapText } from '../terminal-text.js';
+import { renderMarkdownPreview, renderMarkdownPreviewLabel } from './publish-tui-markdown.js';
 
 export type PublishTerminalKey =
   | 'up'
@@ -412,70 +413,6 @@ function checkpointWarning(model: GuidedPublishModel, selection: SelectionState)
   } unpublished.`;
 }
 
-const GRAPHEME_SEGMENTER = new Intl.Segmenter();
-
-function sliceByDisplayWidth(value: string, width: number): string {
-  let result = '';
-  let usedWidth = 0;
-  for (const { segment } of GRAPHEME_SEGMENTER.segment(value)) {
-    const segmentWidth = stringWidth(segment);
-    if (usedWidth + segmentWidth > width) break;
-    result += segment;
-    usedWidth += segmentWidth;
-  }
-  return result;
-}
-
-function splitAtDisplayWidth(value: string, width: number): { line: string; remaining: string } {
-  const candidate = sliceByDisplayWidth(value, width + 1);
-  const breakAt = candidate.lastIndexOf(' ');
-  if (breakAt > 0) {
-    return {
-      line: value.slice(0, breakAt),
-      remaining: value.slice(breakAt + 1).trimStart(),
-    };
-  }
-  const line = sliceByDisplayWidth(value, width);
-  return {
-    line,
-    remaining: value.slice(line.length),
-  };
-}
-
-function wrapText(text: string, width: number): string[] {
-  const safeWidth = Math.max(10, width);
-  const result: string[] = [];
-  for (const sourceLine of text.replace(/\r\n/g, '\n').split('\n')) {
-    let remaining = sourceLine;
-    while (stringWidth(remaining) > safeWidth) {
-      const split = splitAtDisplayWidth(remaining, safeWidth);
-      result.push(split.line);
-      remaining = split.remaining;
-    }
-    result.push(remaining);
-  }
-  return result;
-}
-
-const ANSI_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'g');
-
-function visibleText(value: string): string {
-  return value.replace(ANSI_PATTERN, '');
-}
-
-function fitColumn(value: string, width: number): string {
-  const visible = visibleText(value);
-  const visibleWidth = stringWidth(visible);
-  if (visibleWidth > width) return sliceByDisplayWidth(visible, Math.max(0, width - 1)) + (width > 0 ? '…' : '');
-  return value + ' '.repeat(width - visibleWidth);
-}
-
-function truncateColumn(value: string, width: number): string {
-  const visible = visibleText(value);
-  if (stringWidth(visible) <= width) return value;
-  return sliceByDisplayWidth(visible, Math.max(0, width - 1)) + (width > 0 ? '…' : '');
-}
-
 function focusedLineIndex(lines: readonly string[]): number {
   return lines.findIndex((line) => /^\s*> /.test(visibleText(line)) || /^\s{2}> /.test(visibleText(line)));
 }
@@ -563,7 +500,7 @@ function renderPreview(
       ...dimWrapped(`${path} · ${positions.join(', ') || 'position unavailable'}`, width),
       ...(context ? ['', ...wrapText(context, width)] : []),
       '',
-      ...wrapText(finding.body, width),
+      ...renderMarkdownPreview(finding.body, width),
     ];
   }
   if (focus?.kind === 'finding-group') {
@@ -596,7 +533,7 @@ function renderPreview(
           ]
         : dimWrapped(`Thread context unavailable for ${reply.threadId}.`, width)),
       '',
-      ...wrapText(reply.body, width),
+      ...renderMarkdownPreview(reply.body, width),
     ];
   }
   if (focus?.kind === 'reply-group') {
@@ -610,7 +547,7 @@ function renderPreview(
       ...boldWrapped('Summary', width),
       ...dimWrapped('Updates the managed PR/MR description section.', width),
       '',
-      ...wrapText(model.summary.content, width),
+      ...renderMarkdownPreview(model.summary.content, width),
     ];
   }
   if (focus?.kind === 'note') {
@@ -622,7 +559,7 @@ function renderPreview(
       ...boldWrapped('Review note', width),
       ...dimWrapped(delivery, width),
       '',
-      ...wrapText(model.note.content, width),
+      ...renderMarkdownPreview(model.note.content, width),
     ];
   }
   if (focus?.kind === 'checkpoint') {
@@ -746,7 +683,7 @@ function selectionMaterialLines(
     ...model.findings.map(({ index, value }) => {
       const position = value.newLine ?? value.oldLine ?? '?';
       const displayPath = value.newPath || value.oldPath;
-      const label = value.body.split('\n')[0] || '(untitled finding)';
+      const label = renderMarkdownPreviewLabel(value.body, '(untitled finding)');
       return `  ${focusMarker(focus?.kind === 'finding' && focus.index === index)}${
         selection.findingIndexes.has(index) ? '[x]' : '[ ]'
       } ${displayPath}:${position} ${label}`;
@@ -761,7 +698,7 @@ function selectionMaterialLines(
       ({ index, value }) =>
         `  ${focusMarker(focus?.kind === 'reply' && focus.index === index)}${
           selection.replyIndexes.has(index) ? '[x]' : '[ ]'
-        } ${value.threadId} ${value.body.split('\n')[0] || '(empty reply)'}`,
+        } ${value.threadId} ${renderMarkdownPreviewLabel(value.body, '(empty reply)')}`,
     ),
     '',
     'Documents',
@@ -1008,11 +945,3 @@ export async function runStalePublishPrompt(
     await terminal.stop();
   }
 }
-
-export const __testing = {
-  fitColumn,
-  sliceByDisplayWidth,
-  splitAtDisplayWidth,
-  truncateColumn,
-  wrapText,
-};

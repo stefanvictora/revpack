@@ -42,6 +42,10 @@ _Avoid_: Post, submit, send, upload
 An interactive publish flow that summarizes publishable review material before asking which items to publish.
 _Avoid_: Publish all, auto-publish
 
+**Publish Preview**:
+A read-only, scan-oriented presentation of focused review material during Guided Publish. It helps a person inspect content but does not promise to reproduce the provider's final rendering.
+_Avoid_: Provider preview, rendered review
+
 **Checkpoint**:
 A published marker of the review target state that future prepares use to decide what changed since the last intentional review.
 _Avoid_: Baseline, snapshot, save point

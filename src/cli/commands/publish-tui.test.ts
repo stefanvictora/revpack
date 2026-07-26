@@ -4,7 +4,6 @@ import { stripVTControlCharacters } from 'node:util';
 import chalk from 'chalk';
 import stringWidth from 'string-width';
 import {
-  __testing,
   createNodePublishTerminal,
   runGuidedPublish,
   runStalePublishPrompt,
@@ -106,33 +105,6 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
 }
 
 describe('guided publish TUI', () => {
-  it('measures and slices complete graphemes by terminal display width', () => {
-    expect(__testing.sliceByDisplayWidth('A👩‍💻界B', 0)).toBe('');
-    expect(__testing.sliceByDisplayWidth('A👩‍💻界B', 1)).toBe('A');
-    expect(__testing.sliceByDisplayWidth('A👩‍💻界B', 3)).toBe('A👩‍💻');
-    expect(__testing.sliceByDisplayWidth('A👩‍💻界B', 5)).toBe('A👩‍💻界');
-  });
-
-  it('wraps on usable word boundaries and hard-wraps complete wide graphemes', () => {
-    expect(__testing.splitAtDisplayWidth('alpha  beta', 5)).toEqual({ line: 'alpha', remaining: 'beta' });
-    expect(__testing.splitAtDisplayWidth('alpha beta', 7)).toEqual({ line: 'alpha', remaining: 'beta' });
-    expect(__testing.splitAtDisplayWidth(' alpha beta', 5)).toEqual({ line: ' alph', remaining: 'a beta' });
-    expect(__testing.wrapText('alpha beta gamma', 10)).toEqual(['alpha beta', 'gamma']);
-    expect(__testing.wrapText('1234567890', 10)).toEqual(['1234567890']);
-    expect(__testing.wrapText('12345678901', 10)).toEqual(['1234567890', '1']);
-    expect(__testing.wrapText('審査対象確認', 10)).toEqual(['審査対象確', '認']);
-  });
-
-  it('fits and truncates columns by display width', () => {
-    expect(__testing.fitColumn('界', 0)).toBe('');
-    expect(__testing.fitColumn('界', 4)).toBe('界  ');
-    expect(__testing.fitColumn('界', 2)).toBe('界');
-    expect(__testing.fitColumn('界界', 3)).toBe('界…');
-    expect(__testing.truncateColumn('界', 0)).toBe('');
-    expect(__testing.truncateColumn('👩‍💻x', 2)).toBe('…');
-    expect(__testing.truncateColumn('👩‍💻x', 3)).toBe('👩‍💻x');
-  });
-
   it('starts with every pending item and a due checkpoint selected', async () => {
     const terminal = new FakeTerminal(['enter', 'enter']);
 
@@ -539,11 +511,38 @@ describe('guided publish TUI', () => {
 
     const frame = terminal.frames.at(-1)!;
     expect(frame).toContain('Updates the managed PR/MR description section.');
-    expect(frame).toContain('# Review summary');
+    expect(frame).toContain('Review summary');
     expect(frame).toContain('Complete summary details.');
-    expect(frame).toContain('```ts');
+    expect(frame).toContain('[ts]');
     expect(frame).toContain('const kept = true;');
-    expect(frame).toContain('```');
+    expect(frame).not.toContain('# Review summary');
+    expect(frame).not.toContain('```');
+  });
+
+  it('styles only outgoing review material and leaves contextual Markdown literal', async () => {
+    const baseFinding = guidedModel().findings[0];
+    const terminal = new FakeTerminal(['escape']);
+
+    await runGuidedPublish(
+      guidedModel({
+        findings: [
+          {
+            ...baseFinding,
+            value: {
+              ...baseFinding.value,
+              body: '**Outgoing finding** with `code`.',
+            },
+          },
+        ],
+        findingContexts: new Map([[4, '+   17 | **context remains literal** ◀']]),
+      }),
+      terminal,
+    );
+
+    const frame = stripVTControlCharacters(terminal.frames[0]);
+    expect(frame).toContain('Outgoing finding with code.');
+    expect(frame).not.toContain('**Outgoing finding**');
+    expect(frame).toContain('**context remains literal**');
   });
 
   it('keeps an unselected summary preview independent of publish state', async () => {
