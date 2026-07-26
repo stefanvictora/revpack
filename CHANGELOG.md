@@ -8,43 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Added first-class Bitbucket Cloud support for configuring provider profiles, preparing and checking out pull request review bundles, reading pull request discussions, showing status, and publishing revpack outputs.
-- Added primary provider authentication commands and help: `revpack auth setup`, `revpack auth doctor`, `revpack auth show`, top-level `revpack doctor`, `revpack setup --agent <target>`, a concise top-level workflow, and checkout target examples.
-- Added distinct active and resolved review-thread context to prepared bundles: active threads include replyable target-level discussions regardless of their pre-reply provider resolvability, while resolved threads remain available on demand for duplicate checks and draft reply reconciliation.
-- Added `.revpack/commits.md` to prepared review bundles when non-merge commit messages are available, making commit intent visible as review context.
-- Added Bundle Context Use through generated `revpack-context` agent adapters and a neutral `.revpack/CONTEXT.md` task router, allowing agents to inspect, discuss, challenge, or fix active review threads without activating the formal Review Contract; fixing threads also drafts useful publishable replies.
-- Added TTY-only Guided Publish for bare `revpack publish`, with keyboard navigation, complete item previews, Markdown-formatted reply drafts and quoted thread context (including code nested in bold or italic emphasis), individual and section-wide finding/reply selection, final confirmation, preserved deferred drafts, and mandatory refresh before publishing a stale bundle. Malformed inputs and unexpected review-note read failures remain visible, Windows JetBrains terminals are rejected with guidance to use Windows Terminal, explicit subcommands stay non-interactive for scripts and CI, publishing uses the active bundle repository, and progress reports distinguish successes, failures, remaining drafts, checkpoints, and refresh outcomes.
+- Added first-class Bitbucket Cloud support across configuration, checkout, bundle preparation, status, discussions, and publishing.
+- Added Guided Publish: running bare `revpack publish` in a supported terminal now lets you preview and select draft findings, replies, and review notes before confirming. Deferred drafts are preserved, stale bundles must be refreshed, and explicit publish subcommands remain non-interactive for scripts and CI.
+- Added `revpack auth setup`, `revpack auth doctor`, and `revpack auth show`, plus top-level `revpack doctor`, for guided provider authentication and diagnostics.
+- Added `revpack setup --agent <target>` for one-step project and agent setup. It installs `revpack-review` plus the new `revpack-context` adapter, which lets agents inspect changes, discuss or address review threads, and draft replies without starting a formal review.
+- Prepared bundles now include commit messages when available and keep active and resolved review threads as separate context.
 
 ### Changed
 
-- Changed review-note publishing to use primary `revpack publish note` and `.revpack/outputs/note.md`, while retaining `publish review` as a hidden compatibility alias; explicit `revpack publish note` and `revpack publish review` no longer publish stored `.revpack/outputs/review.md` drafts, and explicit output discard removes them. Guided Publish publishes review-note material only when it is explicitly selected.
-- Replaced the global `.revpack/diffs/line-map.ndjson` and `change-blocks.json` artifacts with compact per-file Anchor Maps indexed by `files.json`; existing installed agent instructions that name the removed artifacts must be deleted and recreated with `revpack setup agent <target>` after upgrading.
-- Clarified rerun semantics for prepared review bundles: existing conditional outputs are pending drafts that agents reconcile or remove, bundles are single-writer.
-- Improved generated `CONTEXT.md` changed-file summaries with added and removed line counts, binary-file handling, and an explicit pointer to `diffs/files.json` as the authoritative changed-file index.
-- Changed prepared review bundles so revpack-owned schema references live under read-only `.revpack/schemas/`, while `.revpack/outputs/` contains only agent-created drafts; agents create output files only when they have draft material, and missing default queue outputs are treated as empty.
-- Changed prepared review bundle instructions so `.revpack/CONTEXT.md` remains the agent-neutral entry point while the formal Review Contract lives in a review-specific instruction loaded only for explicitly requested revpack reviews.
-- Changed agent setup to install both `revpack-review` and `revpack-context`, automatically refresh recognized unmodified adapters using managed content hashes, preserve customized adapters with a clear hint, and support explicit replacement through `--force`.
-- Relaxed finding category validation so `revpack publish findings` accepts any non-empty category while still recommending the standard category set.
-- Changed bare `revpack config` to print profile-oriented help instead of acting as an alias for `revpack config show`, with clearer inspect/edit and manage sections for profile workflows.
-- Improved `revpack auth setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.
-- Changed `revpack auth setup` so inferred provider URLs skip the provider selection prompt while ambiguous URLs still ask for the provider.
+- **Upgrade action — recreate generated agent skills and adapters.** Review bundles now use per-file Anchor Maps instead of `.revpack/diffs/line-map.ndjson` and `change-blocks.json`. Existing generated instructions that reference those removed files will not work with new bundles; delete them and run `revpack setup agent <target>` after upgrading.
+- Agent setup now installs both `revpack-review` and `revpack-context`. Future setup runs automatically refresh unmodified generated adapters, preserve customized adapters, and offer `--force` when you intentionally want to replace customizations.
+- Review notes now use `revpack publish note` and `.revpack/outputs/note.md`. `revpack publish review` remains as a compatibility alias but does not publish legacy `.revpack/outputs/review.md` drafts.
+- Prepared bundles now have a clearer task and file layout: `.revpack/CONTEXT.md` is the neutral entry point, review-only instructions are loaded only for formal reviews, schemas are separate from agent drafts, and output files exist only when there is pending material.
+- `revpack config` now shows profile-oriented help. Authentication setup validates and normalizes provider URLs earlier, infers providers when possible, and detects existing token environment variables.
+- `revpack publish findings` now accepts any non-empty category while continuing to recommend the standard categories.
 
 ### Fixed
 
-- Fixed prepared `bundle.json` files leaking the absolute local repository path in `local.repositoryRoot`.
-- Fixed `revpack prepare` leaving stale per-file patch files in `.revpack/diffs/patches/by-file/` across repeated prepare runs.
-- Fixed generated review instructions so non-GitLab review bundles use plain suggestion fences while GitLab bundles keep range-offset suggestion fences.
-- Fixed GitLab fallback checkout for deleted MR source branches, including follow-up bundle commands run from the fallback branch and fork fallback fetches.
-- Fixed review summary instructions so incremental MR/PR updates keep newly introduced capabilities under `Added` instead of `Changed`.
-- Fixed `revpack status` showing stale target metadata, such as an open state with merged/closed coloring, when a prepared PR/MR bundle still exists after the target changed remotely.
-- Fixed `revpack status` next-step guidance when the local checkout is ahead of the latest PR/MR head.
-- Fixed `revpack status` for GitLab branch auto-detection so authentication failures are no longer reported as "no open MR found".
-- Fixed CLI error handling on Windows to avoid a trailing libuv assertion after provider errors.
-- Fixed review-note publishing leaving the default note output populated after publishing, which could republish the same review note during later incremental reviews.
-- Fixed `revpack prepare` pruning pending replies when their target thread had been resolved but still existed on the provider.
-- Fixed `revpack publish all` updating the PR/MR description summary again when `revpack status` already reported the summary as published.
-- Fixed `revpack publish all` so real summary publishing failures stop before checkpointing and non-GitHub finding setup failures report partial-success warnings after earlier provider actions.
-- Fixed debug error logging repeating the user-facing error message before the stack frames.
+- Prepared bundles no longer expose the absolute local repository path or retain stale per-file patches after repeated preparation.
+- GitLab checkout now handles deleted MR source branches, including forked repositories and later bundle commands from the fallback branch.
+- `revpack status` now reports remote target state, authentication failures, and ahead-of-head guidance accurately.
+- Publishing no longer republishes completed review notes or summaries, preserves pending replies to resolved threads, and handles partial failures and checkpoints more safely.
+- Generated suggestions now use the correct provider-specific Markdown syntax.
+- Windows provider errors no longer end with an unrelated libuv assertion, and debug logging no longer repeats the user-facing error.
 
 ## [0.4.0] - 2026-06-07
 
