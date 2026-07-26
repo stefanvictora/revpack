@@ -2268,9 +2268,7 @@ describe('WorkspaceManager', () => {
       await manager.discardOutputs();
       await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'summary.md'))).rejects.toThrow();
       await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'note.md'))).rejects.toThrow();
-      await expect(fs.readFile(path.join(tmpDir, '.revpack', 'outputs', 'review.md'), 'utf-8')).resolves.toBe(
-        '# Unrecognized legacy content',
-      );
+      await expect(fs.access(path.join(tmpDir, '.revpack', 'outputs', 'review.md'))).rejects.toThrow();
     });
 
     it('removes queue draft output files', async () => {

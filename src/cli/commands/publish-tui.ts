@@ -8,6 +8,7 @@ import type {
 } from '../../core/types.js';
 import chalk from 'chalk';
 import { emitKeypressEvents } from 'node:readline';
+import stringWidth from 'string-width';
 
 export type PublishTerminalKey =
   | 'up'
@@ -71,7 +72,7 @@ class NodePublishTerminal implements PublishTerminal {
     private readonly input: NodeJS.ReadStream,
     private readonly output: NodeJS.WriteStream,
   ) {
-    this.interactive = input.isTTY === true && output.isTTY === true;
+    this.interactive = input.isTTY && output.isTTY;
   }
 
   dimensions(): { columns: number; rows: number } {
@@ -83,7 +84,7 @@ class NodePublishTerminal implements PublishTerminal {
 
   start(): void {
     if (this.started) return;
-    this.wasRaw = this.input.isRaw === true;
+    this.wasRaw = this.input.isRaw;
     this.shouldPauseOnStop = this.input.readableFlowing !== true;
     this.started = true;
     try {
@@ -411,21 +412,45 @@ function checkpointWarning(model: GuidedPublishModel, selection: SelectionState)
   } unpublished.`;
 }
 
+const GRAPHEME_SEGMENTER = new Intl.Segmenter();
+
+function sliceByDisplayWidth(value: string, width: number): string {
+  let result = '';
+  let usedWidth = 0;
+  for (const { segment } of GRAPHEME_SEGMENTER.segment(value)) {
+    const segmentWidth = stringWidth(segment);
+    if (usedWidth + segmentWidth > width) break;
+    result += segment;
+    usedWidth += segmentWidth;
+  }
+  return result;
+}
+
+function splitAtDisplayWidth(value: string, width: number): { line: string; remaining: string } {
+  const candidate = sliceByDisplayWidth(value, width + 1);
+  const breakAt = candidate.lastIndexOf(' ');
+  if (breakAt > 0) {
+    return {
+      line: value.slice(0, breakAt),
+      remaining: value.slice(breakAt + 1).trimStart(),
+    };
+  }
+  const line = sliceByDisplayWidth(value, width);
+  return {
+    line,
+    remaining: value.slice(line.length),
+  };
+}
+
 function wrapText(text: string, width: number): string[] {
   const safeWidth = Math.max(10, width);
   const result: string[] = [];
   for (const sourceLine of text.replace(/\r\n/g, '\n').split('\n')) {
-    if (sourceLine.length <= safeWidth) {
-      result.push(sourceLine);
-      continue;
-    }
     let remaining = sourceLine;
-    while (remaining.length > safeWidth) {
-      const candidate = remaining.slice(0, safeWidth + 1);
-      const breakAt = candidate.lastIndexOf(' ');
-      const end = breakAt > 0 ? breakAt : safeWidth;
-      result.push(remaining.slice(0, end));
-      remaining = remaining.slice(end).replace(/^ /, '');
+    while (stringWidth(remaining) > safeWidth) {
+      const split = splitAtDisplayWidth(remaining, safeWidth);
+      result.push(split.line);
+      remaining = split.remaining;
     }
     result.push(remaining);
   }
@@ -440,14 +465,15 @@ function visibleText(value: string): string {
 
 function fitColumn(value: string, width: number): string {
   const visible = visibleText(value);
-  if (visible.length > width) return visible.slice(0, Math.max(0, width - 1)) + (width > 0 ? '…' : '');
-  return value + ' '.repeat(width - visible.length);
+  const visibleWidth = stringWidth(visible);
+  if (visibleWidth > width) return sliceByDisplayWidth(visible, Math.max(0, width - 1)) + (width > 0 ? '…' : '');
+  return value + ' '.repeat(width - visibleWidth);
 }
 
 function truncateColumn(value: string, width: number): string {
   const visible = visibleText(value);
-  if (visible.length <= width) return value;
-  return visible.slice(0, Math.max(0, width - 1)) + (width > 0 ? '…' : '');
+  if (stringWidth(visible) <= width) return value;
+  return sliceByDisplayWidth(visible, Math.max(0, width - 1)) + (width > 0 ? '…' : '');
 }
 
 function focusedLineIndex(lines: readonly string[]): number {
@@ -496,8 +522,7 @@ const REPLY_CONTEXT_MAX_CHARACTERS = 500;
 const REPLY_CONTEXT_MAX_LINES = 6;
 
 function compactReplyContext(text: string, width: number): string[] {
-  const normalized = text.trim();
-  let excerpt = normalized;
+  let excerpt = text.trim();
   if (excerpt.length > REPLY_CONTEXT_MAX_CHARACTERS) {
     const candidate = excerpt.slice(0, REPLY_CONTEXT_MAX_CHARACTERS - 1).trimEnd();
     const lastWhitespace = Math.max(candidate.lastIndexOf(' '), candidate.lastIndexOf('\n'));
@@ -720,10 +745,11 @@ function selectionMaterialLines(
     ),
     ...model.findings.map(({ index, value }) => {
       const position = value.newLine ?? value.oldLine ?? '?';
+      const displayPath = value.newPath || value.oldPath;
       const label = value.body.split('\n')[0] || '(untitled finding)';
       return `  ${focusMarker(focus?.kind === 'finding' && focus.index === index)}${
         selection.findingIndexes.has(index) ? '[x]' : '[ ]'
-      } ${value.newPath}:${position} ${label}`;
+      } ${displayPath}:${position} ${label}`;
     }),
     dimWhenDisabled(
       `${focusMarker(focus?.kind === 'reply-group')}${groupMarker(selection.replyIndexes.size, model.replies.length)} Replies — ${
@@ -982,3 +1008,11 @@ export async function runStalePublishPrompt(
     await terminal.stop();
   }
 }
+
+export const __testing = {
+  fitColumn,
+  sliceByDisplayWidth,
+  splitAtDisplayWidth,
+  truncateColumn,
+  wrapText,
+};

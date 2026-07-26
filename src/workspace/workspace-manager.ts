@@ -40,7 +40,7 @@ import { sanitizeDescriptionForAgent } from './checkpoint.js';
  */
 export type ThreadIndex = Map<string, string>;
 
-const OUTPUT_FILENAMES = ['replies.json', 'new-findings.json', 'summary.md', 'note.md'] as const;
+const OUTPUT_FILENAMES = ['replies.json', 'new-findings.json', 'summary.md', 'note.md', 'review.md'] as const;
 const DEFAULT_REVIEW_NOTE_PATH = '.revpack/outputs/note.md';
 
 const OUTPUT_STATE_KEYS = {

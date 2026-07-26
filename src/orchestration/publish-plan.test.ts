@@ -137,44 +137,6 @@ describe('shared publish plan', () => {
     expect(result).toMatchObject({ checkpoint: 'published', refresh: 'succeeded', failures: [] });
   });
 
-  it('preserves a reply queue edited while a provider action is publishing', async () => {
-    const replies = [
-      { threadId: 'T-001', body: 'Selected reply', resolve: false },
-      { threadId: 'T-002', body: 'Deferred reply', resolve: false },
-    ];
-    const repliesPath = path.join(workingDir, '.revpack', 'outputs', 'replies.json');
-    await fs.writeFile(repliesPath, JSON.stringify(replies), 'utf-8');
-    const material = await loadPublishMaterial(workingDir);
-    const editedReplies = [{ ...replies[0], body: 'Edited while publishing' }, replies[1]];
-    const orchestrator = {
-      workspace: { appendPublishedAction: vi.fn() },
-      publishReply: vi.fn().mockImplementation(async () => {
-        await fs.writeFile(repliesPath, JSON.stringify(editedReplies), 'utf-8');
-      }),
-      publishCheckpoint: vi.fn(),
-    };
-
-    const result = await executePublishPlan({
-      material,
-      selection: {
-        replyIndexes: [0],
-        findingIndexes: [],
-        summary: false,
-        note: false,
-        checkpoint: true,
-      },
-      orchestrator: orchestrator as never,
-      repository: 'group/project',
-      refresh: false,
-    });
-
-    await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual(editedReplies);
-    expect(result.failures).toMatchObject([{ kind: 'reply', index: 0, error: expect.stringContaining('changed') }]);
-    expect(result.successes).not.toContainEqual(expect.objectContaining({ kind: 'reply', index: 0 }));
-    expect(result).toMatchObject({ checkpoint: 'blocked', remainingReplies: 2 });
-    expect(orchestrator.publishCheckpoint).not.toHaveBeenCalled();
-  });
-
   it('stops before provider actions when selected material changed after preflight', async () => {
     const repliesPath = path.join(workingDir, '.revpack', 'outputs', 'replies.json');
     await fs.writeFile(
@@ -210,7 +172,7 @@ describe('shared publish plan', () => {
     await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual(newerReplies);
   });
 
-  it('advances the expected reply queue after each successful selective cleanup', async () => {
+  it('removes multiple selected replies while preserving deferred entries', async () => {
     const replies = [
       { threadId: 'T-001', body: 'First selected reply', resolve: false },
       { threadId: 'T-002', body: 'Second selected reply', resolve: false },
@@ -419,58 +381,7 @@ describe('shared publish plan', () => {
     expect(result.remainingFindings).toBe(1);
   });
 
-  it('preserves a findings queue edited while an individual provider action is publishing', async () => {
-    const findings = [
-      {
-        oldPath: 'src/app.ts',
-        newPath: 'src/app.ts',
-        newLine: 2,
-        body: 'Selected finding',
-        severity: 'high',
-        category: 'correctness',
-      },
-      {
-        oldPath: 'src/app.ts',
-        newPath: 'src/app.ts',
-        oldLine: 1,
-        newLine: 1,
-        body: 'Deferred finding',
-        severity: 'medium',
-        category: 'testing',
-      },
-    ];
-    const findingsPath = await writeFindings(findings);
-    const material = await loadPublishMaterial(workingDir);
-    const editedFindings = [{ ...findings[0], body: 'Edited while publishing' }, findings[1]];
-    const orchestrator = {
-      workspace: { appendPublishedAction: vi.fn() },
-      publishFinding: vi.fn().mockImplementation(async () => {
-        await fs.writeFile(findingsPath, JSON.stringify(editedFindings), 'utf-8');
-        return 'provider-thread-1';
-      }),
-    };
-
-    const result = await executePublishPlan({
-      material,
-      selection: {
-        replyIndexes: [],
-        findingIndexes: [0],
-        summary: false,
-        note: false,
-        checkpoint: false,
-      },
-      orchestrator: orchestrator as never,
-      repository: 'group/project',
-      refresh: false,
-    });
-
-    await expect(fs.readFile(findingsPath, 'utf-8').then(JSON.parse)).resolves.toEqual(editedFindings);
-    expect(result.failures).toMatchObject([{ kind: 'finding', index: 0, error: expect.stringContaining('changed') }]);
-    expect(result.successes).not.toContainEqual(expect.objectContaining({ kind: 'finding', index: 0 }));
-    expect(result.remainingFindings).toBe(2);
-  });
-
-  it('advances the expected findings queue after each successful selective cleanup', async () => {
+  it('removes multiple selected findings while preserving deferred entries', async () => {
     const findings = [
       {
         oldPath: 'src/app.ts',
@@ -691,55 +602,6 @@ describe('shared publish plan', () => {
     expect(result.failures).toMatchObject([{ kind: 'finding', index: 0 }]);
     expect(result.failures).not.toContainEqual(expect.objectContaining({ kind: 'note' }));
     expect(result.successes).toContainEqual(expect.objectContaining({ kind: 'note' }));
-  });
-
-  it('preserves a review note edited while a successful GitHub batch is publishing', async () => {
-    const bundlePath = path.join(workingDir, '.revpack', 'bundle.json');
-    const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
-    bundle.target.provider = 'github';
-    await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
-    const findingsPath = await writeFindings([
-      {
-        oldPath: 'src/app.ts',
-        newPath: 'src/app.ts',
-        newLine: 2,
-        body: 'Published finding',
-        severity: 'high',
-        category: 'correctness',
-      },
-    ]);
-    const notePath = path.join(workingDir, '.revpack', 'outputs', 'note.md');
-    await fs.writeFile(notePath, 'Original selected note', 'utf-8');
-    const material = await loadPublishMaterial(workingDir);
-    const orchestrator = {
-      workspace: { appendPublishedAction: vi.fn().mockResolvedValue(true) },
-      publishReviewBatch: vi.fn().mockImplementation(async () => {
-        await fs.writeFile(notePath, 'Newer note written during publish', 'utf-8');
-        return { created: true, threadIds: ['provider-thread-1'] };
-      }),
-      publishReview: vi.fn(),
-    };
-
-    const result = await executePublishPlan({
-      material,
-      selection: {
-        replyIndexes: [],
-        findingIndexes: [0],
-        summary: false,
-        note: true,
-        checkpoint: false,
-      },
-      orchestrator: orchestrator as never,
-      repository: 'group/project',
-      refresh: false,
-    });
-
-    await expect(fs.access(findingsPath)).rejects.toThrow();
-    await expect(fs.readFile(notePath, 'utf-8')).resolves.toBe('Newer note written during publish');
-    expect(orchestrator.publishReviewBatch).toHaveBeenCalledTimes(1);
-    expect(orchestrator.publishReview).not.toHaveBeenCalled();
-    expect(result.failures).toContainEqual(expect.objectContaining({ kind: 'note' }));
-    expect(result.successes).not.toContainEqual(expect.objectContaining({ kind: 'note' }));
   });
 
   it('submits selected GitHub findings with an empty body and preserves an unselected note', async () => {

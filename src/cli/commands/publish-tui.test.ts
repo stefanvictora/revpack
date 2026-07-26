@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { stripVTControlCharacters } from 'node:util';
 import chalk from 'chalk';
+import stringWidth from 'string-width';
 import {
+  __testing,
   createNodePublishTerminal,
   runGuidedPublish,
   runStalePublishPrompt,
@@ -104,6 +106,33 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
 }
 
 describe('guided publish TUI', () => {
+  it('measures and slices complete graphemes by terminal display width', () => {
+    expect(__testing.sliceByDisplayWidth('A👩‍💻界B', 0)).toBe('');
+    expect(__testing.sliceByDisplayWidth('A👩‍💻界B', 1)).toBe('A');
+    expect(__testing.sliceByDisplayWidth('A👩‍💻界B', 3)).toBe('A👩‍💻');
+    expect(__testing.sliceByDisplayWidth('A👩‍💻界B', 5)).toBe('A👩‍💻界');
+  });
+
+  it('wraps on usable word boundaries and hard-wraps complete wide graphemes', () => {
+    expect(__testing.splitAtDisplayWidth('alpha  beta', 5)).toEqual({ line: 'alpha', remaining: 'beta' });
+    expect(__testing.splitAtDisplayWidth('alpha beta', 7)).toEqual({ line: 'alpha', remaining: 'beta' });
+    expect(__testing.splitAtDisplayWidth(' alpha beta', 5)).toEqual({ line: ' alph', remaining: 'a beta' });
+    expect(__testing.wrapText('alpha beta gamma', 10)).toEqual(['alpha beta', 'gamma']);
+    expect(__testing.wrapText('1234567890', 10)).toEqual(['1234567890']);
+    expect(__testing.wrapText('12345678901', 10)).toEqual(['1234567890', '1']);
+    expect(__testing.wrapText('審査対象確認', 10)).toEqual(['審査対象確', '認']);
+  });
+
+  it('fits and truncates columns by display width', () => {
+    expect(__testing.fitColumn('界', 0)).toBe('');
+    expect(__testing.fitColumn('界', 4)).toBe('界  ');
+    expect(__testing.fitColumn('界', 2)).toBe('界');
+    expect(__testing.fitColumn('界界', 3)).toBe('界…');
+    expect(__testing.truncateColumn('界', 0)).toBe('');
+    expect(__testing.truncateColumn('👩‍💻x', 2)).toBe('…');
+    expect(__testing.truncateColumn('👩‍💻x', 3)).toBe('👩‍💻x');
+  });
+
   it('starts with every pending item and a due checkpoint selected', async () => {
     const terminal = new FakeTerminal(['enter', 'enter']);
 
@@ -764,11 +793,67 @@ describe('guided publish TUI', () => {
 
     for (const frame of terminal.frames) {
       for (const line of frame.split('\n')) {
-        expect(stripVTControlCharacters(line).length).toBeLessThanOrEqual(36);
+        expect(stringWidth(stripVTControlCharacters(line))).toBeLessThanOrEqual(36);
       }
     }
     expect(terminal.frames[0]).not.toContain('TAIL_OF_COMPLETE_PREVIEW');
     expect(terminal.frames.at(-1)).toContain('TAIL_OF_COMPLETE_PREVIEW');
+  });
+
+  it('wraps emoji and CJK content without splitting graphemes or exceeding the terminal width', async () => {
+    const baseFinding = guidedModel().findings[0];
+    const terminal = new FakeTerminal(['escape'], { columns: 36, rows: 24 });
+
+    await runGuidedPublish(
+      guidedModel({
+        findings: [
+          {
+            ...baseFinding,
+            value: {
+              ...baseFinding.value,
+              oldPath: 'src/審査対象.ts',
+              newPath: 'src/審査対象.ts',
+              category: '正確性',
+              body: '審査 👩‍💻 修正内容を確認してください 👩‍💻 完了',
+            },
+          },
+        ],
+      }),
+      terminal,
+    );
+
+    for (const line of terminal.frames[0].split('\n')) {
+      expect(stringWidth(stripVTControlCharacters(line))).toBeLessThanOrEqual(36);
+    }
+    expect(terminal.frames[0]).toContain('👩‍💻');
+    expect(terminal.frames[0]).not.toContain('👩\n‍💻');
+    expect(terminal.frames[0]).not.toContain('👩‍\n💻');
+    expect(terminal.frames[0]).not.toContain('�');
+  });
+
+  it('shows the old path for findings on deleted files', async () => {
+    const baseFinding = guidedModel().findings[0];
+    const terminal = new FakeTerminal(['escape']);
+
+    await runGuidedPublish(
+      guidedModel({
+        findings: [
+          {
+            ...baseFinding,
+            value: {
+              ...baseFinding.value,
+              oldPath: 'src/deleted.ts',
+              newPath: '',
+              oldLine: 17,
+              newLine: undefined,
+            },
+          },
+        ],
+      }),
+      terminal,
+    );
+
+    expect(terminal.frames[0]).toContain('src/deleted.ts:17');
   });
 
   it('scrolls a long list while keeping the highlighted item visible', async () => {

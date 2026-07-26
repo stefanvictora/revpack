@@ -38,7 +38,7 @@ describe('publish command internals', () => {
       path.join(tmpDir, '.revpack', 'bundle.json'),
       JSON.stringify(
         {
-          target: { provider, diffRefs: { headSha: 'head-sha' } },
+          target: { provider, repository: 'group/project', diffRefs: { headSha: 'head-sha' } },
           prepare: {
             checkpoint: null,
             comparison: {
@@ -254,6 +254,13 @@ describe('publish command internals', () => {
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), ' \n\t', 'utf-8');
 
     await expect(__testing.publishReviewCmd({})).rejects.toThrow('note.md is empty');
+    expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
+  it('surfaces unexpected default review-note read failures', async () => {
+    await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), { recursive: true });
+
+    await expect(__testing.publishReviewCmd({})).rejects.toThrow('Could not read .revpack/outputs/note.md.');
     expect(createOrchestrator).not.toHaveBeenCalled();
   });
 
@@ -499,23 +506,24 @@ describe('publish command internals', () => {
     expect(runSelector).not.toHaveBeenCalled();
   });
 
-  it('blocks guided publishing when no repository can be determined', async () => {
+  it('uses the active bundle repository without inspecting Git remotes', async () => {
     await writeBundleState('gitlab');
-    const orchestrator = { publishReply: vi.fn() };
+    vi.mocked(getRepoFromGit).mockResolvedValue('wrong/project');
+    const orchestrator = {
+      open: vi.fn().mockResolvedValue({ diffRefs: { headSha: 'head-sha' } }),
+    };
 
-    await expect(
-      __testing.guidedPublish(
-        { refresh: false },
-        {
-          terminal: makeTerminal(),
-          createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
-          getRepository: vi.fn().mockResolvedValue(undefined),
-          runSelector: vi.fn(),
-        },
-      ),
-    ).rejects.toThrow('Could not determine the repository for publishing.');
+    await __testing.guidedPublish(
+      { refresh: false },
+      {
+        terminal: makeTerminal(),
+        createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
+        runSelector: vi.fn().mockResolvedValue(null),
+      },
+    );
 
-    expect(orchestrator.publishReply).not.toHaveBeenCalled();
+    expect(orchestrator.open).toHaveBeenCalledWith(undefined, 'group/project');
+    expect(getRepoFromGit).not.toHaveBeenCalled();
   });
 
   it('offers only cancellation or refresh for a stale bundle and cancellation preserves drafts', async () => {
@@ -536,7 +544,6 @@ describe('publish command internals', () => {
       {
         terminal: makeTerminal(),
         createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
-        getRepository: vi.fn().mockResolvedValue('group/project'),
         runStalePrompt,
         runSelector,
       },
@@ -570,7 +577,6 @@ describe('publish command internals', () => {
       {
         terminal: makeTerminal(),
         createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
-        getRepository: vi.fn().mockResolvedValue('group/project'),
         runStalePrompt: vi.fn().mockResolvedValue('refresh'),
         runSelector,
       },
@@ -612,7 +618,6 @@ describe('publish command internals', () => {
       {
         terminal: makeTerminal(),
         createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
-        getRepository: vi.fn().mockResolvedValue('group/project'),
         runSelector: vi.fn().mockResolvedValue({
           replyIndexes: [0],
           findingIndexes: [],
@@ -669,7 +674,6 @@ describe('publish command internals', () => {
       {
         terminal: makeTerminal(),
         createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
-        getRepository: vi.fn().mockResolvedValue('group/project'),
         runSelector,
         runStalePrompt: vi.fn().mockResolvedValue('refresh'),
       },
@@ -705,7 +709,6 @@ describe('publish command internals', () => {
         {
           terminal: makeTerminal(),
           createOrchestrator: vi.fn().mockResolvedValue(orchestrator as never),
-          getRepository: vi.fn().mockResolvedValue('group/project'),
           runStalePrompt: vi.fn().mockResolvedValue('refresh'),
           runSelector,
         },
@@ -732,7 +735,6 @@ describe('publish command internals', () => {
       {
         terminal: makeTerminal(),
         createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
-        getRepository: vi.fn().mockResolvedValue('group/project'),
         runSelector: vi.fn().mockResolvedValue(null),
       },
     );
@@ -762,7 +764,6 @@ describe('publish command internals', () => {
       {
         terminal: makeTerminal(),
         createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
-        getRepository: vi.fn().mockResolvedValue('group/project'),
         runSelector: vi.fn().mockResolvedValue({
           replyIndexes: [0],
           findingIndexes: [],
@@ -798,7 +799,6 @@ describe('publish command internals', () => {
     await __testing.guidedPublish(undefined, {
       terminal: makeTerminal(),
       createOrchestrator: vi.fn().mockResolvedValue(orchestrator),
-      getRepository: vi.fn().mockResolvedValue('group/project'),
       runSelector: vi.fn().mockResolvedValue({
         replyIndexes: [0],
         findingIndexes: [],
@@ -833,7 +833,6 @@ describe('publish command internals', () => {
         createOrchestrator: vi.fn().mockResolvedValue({
           open: vi.fn().mockResolvedValue({ diffRefs: { headSha: 'head-sha' } }),
         }),
-        getRepository: vi.fn().mockResolvedValue('group/project'),
         runSelector,
       },
     );
@@ -998,6 +997,7 @@ describe('publish command internals', () => {
 
     await expect(__testing.publishAllPending({ refresh: false })).resolves.toBeUndefined();
 
+    expect(getRepoFromGit).not.toHaveBeenCalled();
     expect(orchestrator.publishReply).toHaveBeenCalledWith(undefined, '100', 'Reply body', 'group/project');
     expect(orchestrator.publishFinding).toHaveBeenCalledTimes(1);
     expect(orchestrator.publishReviewBatch).not.toHaveBeenCalled();

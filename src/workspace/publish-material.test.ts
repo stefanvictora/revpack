@@ -2,12 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import {
-  assertPublishMaterialUnchanged,
-  clearPublishedDocument,
-  loadPublishMaterial,
-  removePublishedDrafts,
-} from './publish-material.js';
+import { assertPublishMaterialUnchanged, loadPublishMaterial, removePublishedDrafts } from './publish-material.js';
 
 describe('publish material workspace model', () => {
   let workingDir: string;
@@ -52,37 +47,49 @@ describe('publish material workspace model', () => {
     expect(material.checkpointState).toBe('current');
   });
 
-  it.each(['summary', 'review'] as const)(
-    'rejects an absolute bundle-controlled %s output path before reading it',
-    async (output) => {
-      const outsidePath = path.join(workingDir, `${output}-outside.md`);
-      await fs.writeFile(outsidePath, 'must not be read or removed', 'utf-8');
-      const bundlePath = path.join(workingDir, '.revpack', 'bundle.json');
-      const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
-      bundle.outputs[output].path = outsidePath;
-      await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+  it('ignores a legacy review.md path recorded by an older bundle', async () => {
+    const outputsDir = path.join(workingDir, '.revpack', 'outputs');
+    await fs.mkdir(outputsDir, { recursive: true });
+    await fs.writeFile(path.join(outputsDir, 'review.md'), 'Legacy review body', 'utf-8');
+    const bundlePath = path.join(workingDir, '.revpack', 'bundle.json');
+    const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+    bundle.outputs.review.path = '.revpack/outputs/review.md';
+    await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
 
-      await expect(loadPublishMaterial(workingDir)).rejects.toThrow(
-        /must be a relative path under \.revpack[\\/]outputs/,
-      );
-      await expect(fs.readFile(outsidePath, 'utf-8')).resolves.toBe('must not be read or removed');
-    },
-  );
+    const material = await loadPublishMaterial(workingDir);
 
-  it.each(['summary', 'review'] as const)(
-    'rejects a traversing bundle-controlled %s output path before reading it',
-    async (output) => {
-      const outsidePath = path.join(workingDir, 'outside.md');
-      await fs.writeFile(outsidePath, 'must remain outside the bundle', 'utf-8');
-      const bundlePath = path.join(workingDir, '.revpack', 'bundle.json');
-      const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
-      bundle.outputs[output].path = '.revpack/outputs/../../outside.md';
-      await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+    expect(material.note).toMatchObject({
+      path: path.join(outputsDir, 'note.md'),
+      state: 'empty',
+      content: '',
+    });
+  });
 
-      await expect(loadPublishMaterial(workingDir)).rejects.toThrow(/must not contain parent-directory traversal/);
-      await expect(fs.readFile(outsidePath, 'utf-8')).resolves.toBe('must remain outside the bundle');
-    },
-  );
+  it('rejects an absolute bundle-controlled summary output path before reading it', async () => {
+    const outsidePath = path.join(workingDir, 'summary-outside.md');
+    await fs.writeFile(outsidePath, 'must not be read or removed', 'utf-8');
+    const bundlePath = path.join(workingDir, '.revpack', 'bundle.json');
+    const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+    bundle.outputs.summary.path = outsidePath;
+    await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+
+    await expect(loadPublishMaterial(workingDir)).rejects.toThrow(
+      /must be a relative path under \.revpack[\\/]outputs/,
+    );
+    await expect(fs.readFile(outsidePath, 'utf-8')).resolves.toBe('must not be read or removed');
+  });
+
+  it('rejects a traversing bundle-controlled summary output path before reading it', async () => {
+    const outsidePath = path.join(workingDir, 'outside.md');
+    await fs.writeFile(outsidePath, 'must remain outside the bundle', 'utf-8');
+    const bundlePath = path.join(workingDir, '.revpack', 'bundle.json');
+    const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
+    bundle.outputs.summary.path = '.revpack/outputs/../../outside.md';
+    await fs.writeFile(bundlePath, JSON.stringify(bundle), 'utf-8');
+
+    await expect(loadPublishMaterial(workingDir)).rejects.toThrow(/must not contain parent-directory traversal/);
+    await expect(fs.readFile(outsidePath, 'utf-8')).resolves.toBe('must remain outside the bundle');
+  });
 
   it('rejects an output path that escapes through an existing symlink before reading it', async () => {
     const outputsDir = path.join(workingDir, '.revpack', 'outputs');
@@ -223,42 +230,6 @@ describe('publish material workspace model', () => {
 
     await expect(fs.readFile(repliesPath, 'utf-8')).resolves.toBe(original);
     await expect(fs.readdir(outputsDir)).resolves.toEqual(['replies.json']);
-  });
-
-  it('does not rewrite a queue that changed after its expected entries were loaded', async () => {
-    const outputsDir = path.join(workingDir, '.revpack', 'outputs');
-    const replies = [
-      { threadId: 'T-001', body: 'Deferred reply', resolve: false },
-      { threadId: 'T-002', body: 'Selected reply', resolve: true },
-    ];
-    await fs.mkdir(outputsDir, { recursive: true });
-    const repliesPath = path.join(outputsDir, 'replies.json');
-    await fs.writeFile(repliesPath, JSON.stringify(replies), 'utf-8');
-    const material = await loadPublishMaterial(workingDir);
-    const newerReplies = [...replies, { threadId: 'T-003', body: 'New concurrent draft', resolve: false }];
-    await fs.writeFile(repliesPath, JSON.stringify(newerReplies), 'utf-8');
-
-    await expect(
-      removePublishedDrafts(material.repliesPath, material.replies, new Set([1]), {
-        deleteWhenEmpty: true,
-        expectedEntries: material.replies.map((draft) => draft.raw),
-      }),
-    ).rejects.toThrow(/replies\.json changed after publish material was loaded/);
-    await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual(newerReplies);
-  });
-
-  it('does not clear a document whose content changed after it was loaded', async () => {
-    const outputsDir = path.join(workingDir, '.revpack', 'outputs');
-    await fs.mkdir(outputsDir, { recursive: true });
-    const notePath = path.join(outputsDir, 'note.md');
-    await fs.writeFile(notePath, 'Selected review note', 'utf-8');
-    const material = await loadPublishMaterial(workingDir);
-    await fs.writeFile(notePath, 'New concurrent review note', 'utf-8');
-
-    await expect(clearPublishedDocument(notePath, material.note.content)).rejects.toThrow(
-      /note\.md changed after publish material was loaded/,
-    );
-    await expect(fs.readFile(notePath, 'utf-8')).resolves.toBe('New concurrent review note');
   });
 
   it('rejects a changed selected queue when publish material is checked after confirmation', async () => {

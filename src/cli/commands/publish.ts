@@ -310,8 +310,11 @@ async function clearDefaultReviewOutput(clearDefaultOutput = true): Promise<void
 async function readOptionalTextFile(filePath: string): Promise<{ exists: boolean; content: string }> {
   try {
     return { exists: true, content: await fs.readFile(workspacePath(filePath), 'utf-8') };
-  } catch {
-    return { exists: false, content: '' };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { exists: false, content: '' };
+    }
+    throw new Error(`Could not read ${filePath}.`, { cause: error });
   }
 }
 
@@ -513,7 +516,6 @@ interface GuidedPublishDependencies {
   terminal?: PublishTerminal;
   loadMaterial?: typeof loadPublishMaterial;
   createOrchestrator?: typeof createOrchestrator;
-  getRepository?: typeof getRepoFromGit;
   runSelector?: typeof runGuidedPublish;
   runStalePrompt?: typeof runStalePublishPrompt;
 }
@@ -524,11 +526,6 @@ function requireInteractiveTerminal(terminal: Pick<PublishTerminal, 'interactive
     'Interactive publishing requires a terminal.\n' +
       'Use `revpack publish all` or a specific `revpack publish <command>` in scripts.',
   );
-}
-
-function requirePublishRepository(repository: string | undefined): string {
-  if (repository) return repository;
-  throw new Error('Could not determine the repository for publishing.');
 }
 
 async function determineBundleFreshness(
@@ -685,13 +682,12 @@ async function guidedPublish(
 
   const loadMaterial = dependencies.loadMaterial ?? loadPublishMaterial;
   const createPublishOrchestrator = dependencies.createOrchestrator ?? createOrchestrator;
-  const getRepository = dependencies.getRepository ?? getRepoFromGit;
   const runSelector = dependencies.runSelector ?? runGuidedPublish;
   const runStalePrompt = dependencies.runStalePrompt ?? runStalePublishPrompt;
 
   let material = await loadMaterial(process.cwd());
   const orchestrator = await createPublishOrchestrator();
-  const repository = requirePublishRepository((await getRepository()) ?? material.bundleState.target.repository);
+  const repository = material.bundleState.target.repository;
 
   const refreshStaleBundle = async (): Promise<boolean> => {
     const staleChoice = await runStalePrompt(terminal);
@@ -752,7 +748,7 @@ async function guidedPublish(
 async function publishAllPending(opts: { refresh?: boolean } = {}): Promise<void> {
   const material = await loadPublishMaterial(process.cwd());
   const orchestrator = await createOrchestrator();
-  const repository = requirePublishRepository((await getRepoFromGit()) ?? material.bundleState.target.repository);
+  const repository = material.bundleState.target.repository;
   await executePreparedPublishPlan(
     material,
     selectAllPublishMaterial(material),

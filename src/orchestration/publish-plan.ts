@@ -98,8 +98,6 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
   const failures: PublishPlanFailure[] = [];
   const publishedReplyIndexes = new Set<number>();
   const publishedFindingIndexes = new Set<number>();
-  let expectedReplyEntries = material.replies.map((draft) => draft.raw);
-  let expectedFindingEntries = material.findings.map((draft) => draft.raw);
 
   if (selectedReplies.size > 0) onProgress?.({ type: 'section', section: 'replies' });
   for (const reply of material.replies) {
@@ -110,12 +108,8 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
       const nextPublishedIndexes = new Set(publishedReplyIndexes).add(reply.index);
       await removePublishedDrafts(material.repliesPath, material.replies, nextPublishedIndexes, {
         deleteWhenEmpty: true,
-        expectedEntries: expectedReplyEntries,
       });
       publishedReplyIndexes.add(reply.index);
-      expectedReplyEntries = material.replies
-        .filter((draft) => !nextPublishedIndexes.has(draft.index))
-        .map((draft) => draft.raw);
       const tracked = await orchestrator.workspace.appendPublishedAction({
         type: 'reply',
         providerThreadId: reply.value.threadId,
@@ -192,12 +186,8 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
       try {
         await removePublishedDrafts(material.findingsPath, material.findings, selectedFindings, {
           deleteWhenEmpty: true,
-          expectedEntries: expectedFindingEntries,
         });
         for (const finding of findings) publishedFindingIndexes.add(finding.index);
-        expectedFindingEntries = material.findings
-          .filter((draft) => !selectedFindings.has(draft.index))
-          .map((draft) => draft.raw);
       } catch (error) {
         findingsCleanupError = errorMessage(error);
       }
@@ -205,7 +195,7 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
       let noteCleanupError: string | undefined;
       if (selection.note) {
         try {
-          await clearPublishedDocument(material.note.path, material.note.content);
+          await clearPublishedDocument(material.note.path);
         } catch (error) {
           noteCleanupError = errorMessage(error);
         }
@@ -274,12 +264,8 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
         const nextPublishedIndexes = new Set(publishedFindingIndexes).add(finding.index);
         await removePublishedDrafts(material.findingsPath, material.findings, nextPublishedIndexes, {
           deleteWhenEmpty: true,
-          expectedEntries: expectedFindingEntries,
         });
         publishedFindingIndexes.add(finding.index);
-        expectedFindingEntries = material.findings
-          .filter((draft) => !nextPublishedIndexes.has(draft.index))
-          .map((draft) => draft.raw);
         const tracked = await orchestrator.workspace.appendPublishedAction({
           type: 'finding',
           providerThreadId: createdThreadId,
@@ -335,7 +321,7 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
     try {
       const result = await orchestrator.publishReview(material.note.content, repository);
       if (!result.created) throw new Error('The provider did not create the selected review note.');
-      await clearPublishedDocument(material.note.path, material.note.content);
+      await clearPublishedDocument(material.note.path);
       successes.push(item);
       onProgress?.({ type: 'success', ...item });
     } catch (error) {

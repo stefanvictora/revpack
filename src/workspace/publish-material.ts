@@ -51,11 +51,6 @@ export interface PublishMaterial {
   checkpointState: CheckpointPublishState;
 }
 
-export interface RemovePublishedDraftsOptions {
-  deleteWhenEmpty?: boolean;
-  expectedEntries?: ReadonlyArray<unknown>;
-}
-
 async function writeJsonArrayAtomically(filePath: string, entries: ReadonlyArray<unknown>): Promise<void> {
   const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
   let renamed = false;
@@ -78,16 +73,10 @@ export async function removePublishedDrafts<T>(
   filePath: string,
   drafts: ReadonlyArray<IndexedDraft<T>>,
   publishedIndexes: ReadonlySet<number>,
-  options?: RemovePublishedDraftsOptions,
+  options?: { deleteWhenEmpty?: boolean },
 ): Promise<boolean> {
   const retained = drafts.filter((draft) => !publishedIndexes.has(draft.index));
   if (retained.length === drafts.length) return false;
-  if (options?.expectedEntries !== undefined) {
-    const currentEntries = await readOptionalJsonArray(filePath, 'draft objects');
-    if (!isDeepStrictEqual(currentEntries, options.expectedEntries)) {
-      throw new Error(`${filePath} changed after publish material was loaded; the newer queue was left unchanged.`);
-    }
-  }
   if (retained.length === 0 && options?.deleteWhenEmpty) {
     await fs.rm(filePath, { force: true });
     return true;
@@ -99,13 +88,7 @@ export async function removePublishedDrafts<T>(
   return true;
 }
 
-export async function clearPublishedDocument(filePath: string, expectedContent?: string): Promise<void> {
-  if (expectedContent !== undefined) {
-    const currentContent = await readOptionalFile(filePath);
-    if (currentContent !== expectedContent) {
-      throw new Error(`${filePath} changed after publish material was loaded; the newer document was left unchanged.`);
-    }
-  }
+export async function clearPublishedDocument(filePath: string): Promise<void> {
   await fs.rm(filePath, { force: true });
 }
 
@@ -372,7 +355,7 @@ export async function loadPublishMaterial(workingDir: string): Promise<PublishMa
   const bundleState = await loadBundleState(workingDir);
   const [summaryPath, notePath] = await Promise.all([
     resolveBundleOutputPath(workingDir, bundleState.outputs?.summary?.path, 'Summary'),
-    resolveBundleOutputPath(workingDir, bundleState.outputs?.review?.path, 'Review note'),
+    resolveBundleOutputPath(workingDir, DEFAULT_PUBLISH_PATHS.note, 'Review note'),
   ]);
   const repliesPath = resolveWorkspacePath(workingDir, DEFAULT_PUBLISH_PATHS.replies);
   const findingsPath = resolveWorkspacePath(workingDir, DEFAULT_PUBLISH_PATHS.findings);

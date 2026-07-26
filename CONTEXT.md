@@ -22,6 +22,10 @@ _Avoid_: Clone, switch, fetch
 A disposable local package of review context created for a review target so an agent can use the relevant diff, review threads, and instructions for a revpack review or another developer-directed task.
 _Avoid_: Context folder, workspace, review package
 
+**Single-Writer Review Bundle**:
+A Review Bundle whose Agent Output is authored or changed by one person or agent at a time. Concurrent output writers are outside revpack's supported workflow.
+_Avoid_: Locked bundle, concurrent workspace
+
 **Revpack Review**:
 An explicitly requested agent task that evaluates a review target under the review contract and produces agent output for later inspection and publishing.
 _Avoid_: Bundle context use, any task that merely reads a review bundle
