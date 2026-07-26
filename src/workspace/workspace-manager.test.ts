@@ -209,18 +209,23 @@ describe('WorkspaceManager', () => {
 
     // Verify instruction sub-files
     const instrEntries = await fs.readdir(path.join(bundleDir, 'instructions'));
+    expect(instrEntries).toContain('00-review-contract.md');
     expect(instrEntries).toContain('01-review-workflow-and-outputs.md');
     expect(instrEntries).toContain('02-thread-replies.md');
     expect(instrEntries).toContain('07-final-checks.md');
 
     const context = await fs.readFile(path.join(bundleDir, 'CONTEXT.md'), 'utf-8');
+    const reviewContract = await fs.readFile(path.join(bundleDir, 'instructions', '00-review-contract.md'), 'utf-8');
     const findingsInstructions = await fs.readFile(
       path.join(bundleDir, 'instructions', '03-new-findings-and-anchors.md'),
       'utf-8',
     );
     const finalChecks = await fs.readFile(path.join(bundleDir, 'instructions', '07-final-checks.md'), 'utf-8');
-    expect(context).toContain('## Review Contract');
-    expect(context).toContain('do not discard a valid, non-duplicate issue');
+    expect(context).toContain('## Choose a task');
+    expect(context).toContain('### Use the bundle as context');
+    expect(context).toContain('### Perform a formal revpack review');
+    expect(context).not.toContain('## Review Contract');
+    expect(reviewContract).toContain('do not discard a valid, non-duplicate issue');
     expect(findingsInstructions).toContain('## Incremental review scope');
     expect(findingsInstructions).toContain('Looking up that record is a required input step');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
@@ -1239,11 +1244,12 @@ describe('WorkspaceManager', () => {
       const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Current Run Mode');
+      expect(content).toContain('## Formal Review Run Mode');
       expect(content).toContain('| Mode | Fresh review |');
-      expect(content).toContain('## Review Contract');
-      expect(content).toContain('## Suggested Reading Order');
+      expect(content).not.toContain('## Review Contract');
+      expect(content).toContain('## Suggested Formal Review Reading Order');
       expect(content).toContain('REVIEW.md');
+      expect(content).toContain('The review contract and formal-review instructions do not apply');
       expect(content).toContain(
         'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
       );
@@ -1257,7 +1263,8 @@ describe('WorkspaceManager', () => {
       const contextPath = await manager.writeContext(makeTarget(), [], [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Required Instructions for This Run');
+      expect(content).toContain('## Required Formal Review Instructions for This Run');
+      expect(content).toContain('`.revpack/instructions/00-review-contract.md`');
       expect(content).toContain('`.revpack/instructions/01-review-workflow-and-outputs.md`');
       expect(content).toContain('Skipped this run:');
       expect(content).toContain('`.revpack/instructions/02-thread-replies.md` — skip, no active review threads');
@@ -1297,7 +1304,7 @@ describe('WorkspaceManager', () => {
       const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
 
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('## Required Instructions for This Run');
+      expect(content).toContain('## Required Formal Review Instructions for This Run');
       expect(content).not.toContain('skip, no active review threads');
       // 02 is required, not skipped
       expect(content).not.toContain('02-thread-replies.md` — skip');
@@ -2895,7 +2902,8 @@ describe('WorkspaceManager', () => {
       // All instructions required → no "Skipped" section
       expect(content).not.toContain('Skipped this run');
       // Instructions numbered starting from 1
-      expect(content).toMatch(/^1\. `\.revpack\/instructions\/01-review-workflow/m);
+      expect(content).toMatch(/^1\. `\.revpack\/instructions\/00-review-contract\.md`/m);
+      expect(content).toMatch(/^2\. `\.revpack\/instructions\/01-review-workflow/m);
       // Proactive review guidance includes per-file patches resolved through files.json
       expect(content).toContain(
         'Use `.revpack/diffs/latest.patch`, per-file patch paths listed in `.revpack/diffs/files.json`',

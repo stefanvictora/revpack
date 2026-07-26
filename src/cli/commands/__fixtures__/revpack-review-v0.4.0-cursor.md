@@ -1,8 +1,10 @@
+# Revpack Review
+
 A prepared `.revpack` review bundle is available in this workspace.
 
 The bundle may be at the workspace root or in one immediate child project, especially in multi-project or monorepo workspaces.
 
-Locate the bundle, read its `CONTEXT.md`, and follow its formal revpack review route.
+Locate the bundle, read its `CONTEXT.md`, and follow the referenced revpack contract and instruction files.
 
 ## Optional user input
 
@@ -51,16 +53,14 @@ After selecting the bundle:
 - Resolve changed source-file paths against the reviewed project root.
 - Write only under `BUNDLE_ROOT/outputs/`.
 
-For positional findings, use paths from `BUNDLE_ROOT/diffs/files.json` and line numbers from its corresponding per-file `anchorMapFile`.
+For positional findings, use paths and line numbers exactly as provided by `BUNDLE_ROOT/diffs/line-map.ndjson`.
 
 ## Start the review
 
 Read `BUNDLE_ROOT/CONTEXT.md` first.
 
-Then follow **Perform a formal revpack review**, including the review contract and required formal-review instructions for the current run.
+Then follow the files it references for the current run.
 
-Do not implement fixes or publish anything while performing the formal review.
-
-If the developer later asks to implement fixes, treat that as a new bundle context task. Follow the **Use the bundle as context** route; the formal review contract does not govern that later task.
+Do not implement fixes or publish anything unless the developer explicitly asks.
 
 At the end, briefly summarize the review result and list the files under `BUNDLE_ROOT/outputs/` that you wrote or updated.

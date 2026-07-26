@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added primary provider authentication commands and help: `revpack auth setup`, `revpack auth doctor`, `revpack auth show`, top-level `revpack doctor`, `revpack setup --agent <target>`, a concise top-level workflow, and checkout target examples.
 - Added distinct active and resolved review-thread context to prepared bundles: active threads include replyable target-level discussions regardless of their pre-reply provider resolvability, while resolved threads remain available on demand for duplicate checks and draft reply reconciliation.
 - Added `.revpack/commits.md` to prepared review bundles when non-merge commit messages are available, making commit intent visible as review context.
+- Added Bundle Context Use through generated `revpack-context` agent adapters and a neutral `.revpack/CONTEXT.md` task router, allowing agents to inspect, discuss, challenge, or fix active review threads without activating the formal Review Contract; fixing threads also drafts useful publishable replies.
 
 ### Changed
 
@@ -19,7 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Clarified rerun semantics for prepared review bundles: existing conditional outputs are pending drafts that agents reconcile or remove, bundles are single-writer.
 - Improved generated `CONTEXT.md` changed-file summaries with added and removed line counts, binary-file handling, and an explicit pointer to `diffs/files.json` as the authoritative changed-file index.
 - Changed prepared review bundles so revpack-owned schema references live under read-only `.revpack/schemas/`, while `.revpack/outputs/` contains only agent-created drafts; agents create output files only when they have draft material, and missing default queue outputs are treated as empty.
-- Changed prepared review bundle instructions so `.revpack/CONTEXT.md` is the single entry point and contains the short review contract, while `.revpack/INSTRUCTIONS.md` is only a catalog.
+- Changed prepared review bundle instructions so `.revpack/CONTEXT.md` remains the agent-neutral entry point while the formal Review Contract lives in a review-specific instruction loaded only for explicitly requested revpack reviews.
+- Changed agent setup to install both `revpack-review` and `revpack-context`, automatically refresh recognized unmodified adapters using managed content hashes, preserve customized adapters with a clear hint, and support explicit replacement through `--force`.
 - Relaxed finding category validation so `revpack publish findings` accepts any non-empty category while still recommending the standard category set.
 - Changed bare `revpack config` to print profile-oriented help instead of acting as an alias for `revpack config show`, with clearer inspect/edit and manage sections for profile workflows.
 - Improved `revpack auth setup` prompts so provider URLs are entered before provider selection, invalid URLs fail immediately, provider URLs are stored as HTTP(S) origins, GitHub Enterprise-style hosts can be inferred from the URL, existing token environment variables are detected after creation, and invalid provider choices fail before later prompts.

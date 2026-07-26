@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 
-const COMMAND_LINE_PATTERN = /^\s*(?:revpack\b|cd\b|export\b|\/revpack-review\b|\$revpack-review)/u;
+const COMMAND_LINE_PATTERN =
+  /^\s*(?:revpack\b|cd\b|export\b|\/revpack-review\b|\/revpack-context\b|\$revpack-review|\$revpack-context)/u;
 const INLINE_CODE_PATTERN = /`([^`\r\n]+)`/gu;
 
 export function formatGuidanceLine(line: string): string {

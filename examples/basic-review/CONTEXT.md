@@ -12,52 +12,35 @@
 | Target branch | `main`                   |
 | State         | open                     |
 
-This file is the run-specific entry point.
+This file is the neutral entry point for the prepared review bundle.
 
-1. Read the **Review Contract** below.
-2. Read the files listed in **Required Instructions for This Run**.
+## Choose a task
 
-Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the full instruction set.
+### Use the bundle as context
 
-## Review Contract
+Read only the artifacts relevant to the developer's task. The formal Review Contract does not apply. Fixing or addressing active threads also drafts useful replies in `.revpack/outputs/replies.json`.
 
-1. Do not modify source files directly.
-2. Only write files under `.revpack/outputs/`.
-3. Create output files only when you have draft material for them.
-4. Write `.revpack/outputs/summary.md` for fresh and incremental code review runs.
-5. Omit `replies.json`, `new-findings.json`, and `review.md` when there is nothing useful for them.
-6. Do not write filler such as "No new findings", "Nothing to report", "Reviewed without comments", or "Looks good".
-7. Do not run build, test, lint, format, package-manager, migration, Docker, application-startup, Git-hook, publishing, or repository-audit commands.
-8. Use patch files to understand the code change.
-9. Use the per-file Anchor Maps listed in `.revpack/diffs/files.json` as the source of truth for positional anchors.
-10. Do not derive old or new line numbers from the checked-out workspace or by manually counting patch lines.
-11. Create new findings only for concrete, actionable issues introduced, exposed, or made worse by the MR/PR.
-12. In incremental mode, focus review effort on the checkpoint delta, but do not discard a valid, non-duplicate issue introduced, exposed, or made worse by the current MR/PR merely because it is outside the checkpoint delta.
-13. Do not duplicate existing active review threads, previous actions, or other new findings.
-14. Put concrete line-level issues in `new-findings.json`, not in `review.md`.
-15. Put useful replies to existing threads in `replies.json`; otherwise omit the file.
-16. Set resolution intent only when the proposed reply conclusively completes the discussion.
-17. `summary.md` describes what the MR/PR changes, not what the reviewer found.
-18. `review.md` is optional MR/PR-level synthesis, not a second findings file or review report.
-19. Do not reference internal bundle files such as `.revpack/`, `CONTEXT.md`, `threads/`, `outputs/`, `latest.patch`, or `anchor-maps/` in public output.
-20. If you accidentally modify files outside `.revpack/outputs/`, stop and report it in your final response. Do not attempt broad cleanup commands.
+### Perform a formal revpack review
 
-## Current Run Mode
+Read `.revpack/instructions/00-review-contract.md`, then the required formal-review instructions below.
+
+## Formal Review Run Mode
 
 | Field        | Value                                                                                  |
 | ------------ | -------------------------------------------------------------------------------------- |
 | Mode         | Fresh review                                                                           |
 | Primary work | Review the MR/PR changes, address active review threads, and write the review outputs. |
 
-## Required Instructions for This Run
+## Required Formal Review Instructions for This Run
 
-1. `.revpack/instructions/01-review-workflow-and-outputs.md`
-2. `.revpack/instructions/02-thread-replies.md`
-3. `.revpack/instructions/03-new-findings-and-anchors.md`
-4. `.revpack/instructions/04-suggestions-and-agent-handover.md`
-5. `.revpack/instructions/05-review-note.md`
-6. `.revpack/instructions/06-summary.md`
-7. `.revpack/instructions/07-final-checks.md`
+1. `.revpack/instructions/00-review-contract.md`
+2. `.revpack/instructions/01-review-workflow-and-outputs.md`
+3. `.revpack/instructions/02-thread-replies.md`
+4. `.revpack/instructions/03-new-findings-and-anchors.md`
+5. `.revpack/instructions/04-suggestions-and-agent-handover.md`
+6. `.revpack/instructions/05-review-note.md`
+7. `.revpack/instructions/06-summary.md`
+8. `.revpack/instructions/07-final-checks.md`
 
 ## Bundle Contents
 

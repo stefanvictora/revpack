@@ -10,7 +10,7 @@
 
 `revpack` turns a GitHub PR, GitLab MR, Bitbucket Cloud PR, or local branch range into a local review bundle for coding agents. The bundle contains the diff, commit messages, unresolved review discussions, previous review state, and valid line-comment positions.
 
-Your agent reviews that local bundle and writes proposed outputs: findings, thread replies, summaries, and review notes. Nothing is posted to the provider until you publish it.
+Your agent can perform a formal review or use the bundle as context for another task, such as discussing or fixing existing review threads. Formal reviews write proposed findings, replies, summaries, and review notes. Nothing is posted to the provider until you publish it.
 
 ```text
 prepare review context → run your agent → inspect pending output → publish intentionally
@@ -55,14 +55,21 @@ This creates `REVIEW.md` when missing and writes project-level instruction files
 
 Use `--dry-run` to preview generated files before writing them.
 
-Prepare, review, inspect, and publish:
+Rerunning setup refreshes unmodified generated adapters. Customized adapters are preserved with a command hint; use `--force` when you intentionally want to replace them. Setup never replaces `REVIEW.md`.
+
+Prepare, use the context, review, inspect, and publish:
 
 ```bash
 revpack prepare
-# Start the review in your agent:
+# Perform a formal review:
 # Claude, Copilot, or Cursor: /revpack-review
 # Codex: $revpack-review
 # Or ask any agent to perform a revpack review.
+#
+# Use the bundle for another task:
+# Claude, Copilot, or Cursor: /revpack-context
+# Codex: $revpack-context
+# For example: "Fix the active review threads."
 revpack status
 revpack publish all
 ```
@@ -96,7 +103,7 @@ The bundle gives the agent the review context it needs:
 
 The bundle is local and disposable. Use `revpack clean` to remove it, then run `revpack prepare` to recreate it. Published checkpoints are stored with the PR/MR, so cleaning the local bundle does not reset incremental review history.
 
-The agent reads the bundle inputs, including schema references under `.revpack/schemas/`, and writes draft material only to `.revpack/outputs/`. Missing conditional draft files mean there is nothing pending for that output. You can inspect or edit those files before publishing. Replies can target either active threads or resolved threads by `T-NNN` ID.
+`CONTEXT.md` explains two task paths. A formal revpack review follows the generated Review Contract and writes draft material only to `.revpack/outputs/`. Bundle context use instead follows the developer's task and repository instructions, so the agent may discuss threads, edit source or documentation, and run appropriate verification. Fixing or addressing active threads also drafts useful replies in `.revpack/outputs/replies.json`. Missing conditional draft files mean there is nothing pending for that output.
 
 ## Publishing
 
@@ -128,6 +135,7 @@ revpack publish replies T-001
 It helps when you want to:
 
 - include unresolved PR/MR discussions in the agent run
+- use PR/MR changes and discussions as context without starting a formal code review
 - avoid repeating already-raised feedback
 - draft replies to reviewer or author questions
 - focus follow-up reviews on what changed since the last checkpoint
@@ -173,7 +181,13 @@ Inside a repository, `checkout` fetches and switches to the review branch. Outsi
 After `revpack prepare`, ask the agent:
 
 ```text
-Read `.revpack/CONTEXT.md` first, then follow the referenced revpack contract and instruction files.
+Perform a revpack review. Start at `.revpack/CONTEXT.md`.
+```
+
+Or use the bundle for another task:
+
+```text
+Use `.revpack/CONTEXT.md` as context and fix the active review threads.
 ```
 
 For repeated use, add project-level instructions for your agent with `revpack setup agent <target>`.

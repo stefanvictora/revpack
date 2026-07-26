@@ -4,7 +4,7 @@ This directory shows a small, representative slice of the local workspace that `
 
 Included here:
 
-- `CONTEXT.md` - a shortened example of the generated entry point
+- `CONTEXT.md` - a shortened example of the generated neutral entry point and formal-review route
 - `outputs/new-findings.json` - an example positional finding
 - `outputs/replies.json` - an example reply to an existing thread
 - `outputs/summary.md` - an example PR/MR summary

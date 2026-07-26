@@ -127,7 +127,10 @@ function buildInstructionRoute(
   const targetCodeChanged = prepareSummary?.comparison.targetCodeChangedSinceCheckpoint === true;
   const threadsChanged = prepareSummary?.comparison.threadsChangedSinceCheckpoint === true;
   const proactiveReview = freshReview || targetCodeChanged;
-  const required = ['`.revpack/instructions/01-review-workflow-and-outputs.md`'];
+  const required = [
+    '`.revpack/instructions/00-review-contract.md`',
+    '`.revpack/instructions/01-review-workflow-and-outputs.md`',
+  ];
   const skipped: Array<{ path: string; reason: string }> = [];
 
   if (hasActiveThreads && (proactiveReview || threadsChanged)) {
@@ -651,7 +654,7 @@ export class WorkspaceManager {
 
   /**
    * Write CONTEXT.md - the agent-readable context file.
-   * Contains MR/PR summary, prepare state, the review contract, bundle contents, threads, and actions.
+   * Contains MR/PR summary, task routing, prepare state, bundle contents, threads, and actions.
    * Does NOT contain output schemas, severity definitions, or positional tutorials.
    */
   async writeContext(
@@ -930,8 +933,8 @@ export class WorkspaceManager {
     if (isIncrementalCodeReview) {
       return [
         'Read this context file.',
-        'Read the files listed in **Required Instructions for This Run**.',
-        'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
+        'Read the files listed in **Required Formal Review Instructions for This Run**.',
+        'Read applicable `REVIEW.md` guidance as described in **Formal review guidance**.',
         'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
         ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
         'Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.',
@@ -945,8 +948,8 @@ export class WorkspaceManager {
 
     const order = [
       'Read this context file.',
-      'Read the files listed in **Required Instructions for This Run**.',
-      'Read applicable `REVIEW.md` guidance as described in **Review guidance**.',
+      'Read the files listed in **Required Formal Review Instructions for This Run**.',
+      'Read applicable `REVIEW.md` guidance as described in **Formal review guidance**.',
       'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
       ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
       ...(hasActiveThreads
