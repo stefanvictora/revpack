@@ -104,6 +104,43 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
   };
 }
 
+type NodeTerminalFailure = 'raw-mode' | 'hide-cursor' | 'show-cursor';
+
+function createFixture({
+  readableFlowing = null,
+  failOn,
+}: {
+  readableFlowing?: boolean | null;
+  failOn?: NodeTerminalFailure;
+} = {}) {
+  const input = Object.assign(new EventEmitter(), {
+    isTTY: true,
+    isRaw: false,
+    readableFlowing,
+    resume: vi.fn(),
+    pause: vi.fn(),
+    isPaused: vi.fn(() => false),
+    setRawMode: vi.fn((raw: boolean) => {
+      if (failOn === 'raw-mode' && raw) throw new Error('raw mode failed');
+    }),
+  });
+  const output = Object.assign(new EventEmitter(), {
+    isTTY: true,
+    columns: 100,
+    rows: 24,
+    write: vi.fn((value: string) => {
+      if (failOn === 'hide-cursor' && value === '\u001b[?25l') throw new Error('hide cursor failed');
+      if (failOn === 'show-cursor' && value === '\u001b[?25h') throw new Error('show cursor failed');
+      return true;
+    }),
+  });
+  const terminal = createNodePublishTerminal({
+    input: input as unknown as NodeJS.ReadStream,
+    output: output as unknown as NodeJS.WriteStream,
+  });
+  return { input, output, terminal };
+}
+
 describe('guided publish TUI', () => {
   it('starts with every pending item and a due checkpoint selected', async () => {
     const terminal = new FakeTerminal(['enter', 'enter']);
@@ -1124,25 +1161,7 @@ describe('guided publish TUI', () => {
   });
 
   it('pauses a fresh stdin stream after restoring terminal mode', async () => {
-    const input = Object.assign(new EventEmitter(), {
-      isTTY: true,
-      isRaw: false,
-      readableFlowing: null as boolean | null,
-      resume: vi.fn(),
-      pause: vi.fn(),
-      isPaused: vi.fn(() => false),
-      setRawMode: vi.fn(),
-    });
-    const output = {
-      isTTY: true,
-      columns: 100,
-      rows: 24,
-      write: vi.fn(() => true),
-    };
-    const terminal = createNodePublishTerminal({
-      input: input as unknown as NodeJS.ReadStream,
-      output: output as unknown as NodeJS.WriteStream,
-    });
+    const { input, terminal } = createFixture();
 
     await terminal.start();
     await terminal.stop();
@@ -1151,24 +1170,7 @@ describe('guided publish TUI', () => {
   });
 
   it('leaves a previously flowing stdin stream flowing after cleanup', async () => {
-    const input = Object.assign(new EventEmitter(), {
-      isTTY: true,
-      isRaw: false,
-      readableFlowing: true,
-      resume: vi.fn(),
-      pause: vi.fn(),
-      setRawMode: vi.fn(),
-    });
-    const output = {
-      isTTY: true,
-      columns: 100,
-      rows: 24,
-      write: vi.fn(() => true),
-    };
-    const terminal = createNodePublishTerminal({
-      input: input as unknown as NodeJS.ReadStream,
-      output: output as unknown as NodeJS.WriteStream,
-    });
+    const { input, terminal } = createFixture({ readableFlowing: true });
 
     await terminal.start();
     await terminal.stop();
@@ -1177,27 +1179,7 @@ describe('guided publish TUI', () => {
   });
 
   it('restores raw mode, input flow, and cursor visibility when terminal startup fails', () => {
-    const input = Object.assign(new EventEmitter(), {
-      isTTY: true,
-      isRaw: false,
-      readableFlowing: null as boolean | null,
-      resume: vi.fn(),
-      pause: vi.fn(),
-      setRawMode: vi.fn(),
-    });
-    const output = {
-      isTTY: true,
-      columns: 100,
-      rows: 24,
-      write: vi.fn((value: string) => {
-        if (value === '\u001b[?25l') throw new Error('hide cursor failed');
-        return true;
-      }),
-    };
-    const terminal = createNodePublishTerminal({
-      input: input as unknown as NodeJS.ReadStream,
-      output: output as unknown as NodeJS.WriteStream,
-    });
+    const { input, output, terminal } = createFixture({ failOn: 'hide-cursor' });
 
     expect(() => terminal.start()).toThrow('hide cursor failed');
 
@@ -1209,26 +1191,9 @@ describe('guided publish TUI', () => {
   });
 
   it('leaves the alternate screen even when restoring cursor visibility fails', async () => {
-    const input = Object.assign(new EventEmitter(), {
-      isTTY: true,
-      isRaw: false,
+    const { input, output, terminal } = createFixture({
       readableFlowing: true,
-      resume: vi.fn(),
-      pause: vi.fn(),
-      setRawMode: vi.fn(),
-    });
-    const output = {
-      isTTY: true,
-      columns: 100,
-      rows: 24,
-      write: vi.fn((value: string) => {
-        if (value === '\u001b[?25h') throw new Error('show cursor failed');
-        return true;
-      }),
-    };
-    const terminal = createNodePublishTerminal({
-      input: input as unknown as NodeJS.ReadStream,
-      output: output as unknown as NodeJS.WriteStream,
+      failOn: 'show-cursor',
     });
 
     await terminal.start();
@@ -1239,25 +1204,9 @@ describe('guided publish TUI', () => {
   });
 
   it('does not leave the alternate screen when startup fails before entering it', () => {
-    const input = Object.assign(new EventEmitter(), {
-      isTTY: true,
-      isRaw: false,
+    const { output, terminal } = createFixture({
       readableFlowing: true,
-      resume: vi.fn(),
-      pause: vi.fn(),
-      setRawMode: vi.fn((raw: boolean) => {
-        if (raw) throw new Error('raw mode failed');
-      }),
-    });
-    const output = {
-      isTTY: true,
-      columns: 100,
-      rows: 24,
-      write: vi.fn(() => true),
-    };
-    const terminal = createNodePublishTerminal({
-      input: input as unknown as NodeJS.ReadStream,
-      output: output as unknown as NodeJS.WriteStream,
+      failOn: 'raw-mode',
     });
 
     expect(() => terminal.start()).toThrow('raw mode failed');
@@ -1268,26 +1217,9 @@ describe('guided publish TUI', () => {
   });
 
   it('does not pause an already-flowing input when terminal startup fails', () => {
-    const input = Object.assign(new EventEmitter(), {
-      isTTY: true,
-      isRaw: false,
+    const { input, terminal } = createFixture({
       readableFlowing: true,
-      resume: vi.fn(),
-      pause: vi.fn(),
-      setRawMode: vi.fn(),
-    });
-    const output = {
-      isTTY: true,
-      columns: 100,
-      rows: 24,
-      write: vi.fn((value: string) => {
-        if (value === '\u001b[?25l') throw new Error('hide cursor failed');
-        return true;
-      }),
-    };
-    const terminal = createNodePublishTerminal({
-      input: input as unknown as NodeJS.ReadStream,
-      output: output as unknown as NodeJS.WriteStream,
+      failOn: 'hide-cursor',
     });
 
     expect(() => terminal.start()).toThrow('hide cursor failed');

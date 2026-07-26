@@ -461,17 +461,26 @@ async function publishFindingsAndReviewBatch(reviewContent: string): Promise<num
 }
 
 async function publishReviewCmd(opts: { from?: string; repo?: string; allowEmpty?: boolean }): Promise<number> {
-  const defaultNote = opts.from ? null : await loadDefaultReviewNote();
-  const filePath = opts.from ?? defaultNote?.filePath ?? DEFAULT_NOTE_FILE;
+  let filePath: string;
   let content: string;
-  if (defaultNote) {
-    content = defaultNote.content;
-  } else {
+  if (opts.from) {
+    filePath = opts.from;
     try {
       content = await fs.readFile(workspacePath(filePath), 'utf-8');
     } catch {
       throw new Error(`No review note found at ${filePath}.`);
     }
+  } else {
+    const defaultNote = await loadDefaultReviewNote();
+    filePath = defaultNote.filePath;
+    if (!defaultNote.exists) {
+      if (opts.allowEmpty) {
+        console.log(chalk.dim('No review note published'));
+        return 0;
+      }
+      throw new Error(`No review note found at ${filePath}.`);
+    }
+    content = defaultNote.content;
   }
   if (opts.allowEmpty && !content.trim()) {
     console.log(chalk.dim('No review note published'));
@@ -646,11 +655,7 @@ function reportPublishResult(result: PublishExecutionResult): void {
     console.error(
       chalk.dim(`Remaining drafts: ${result.remainingFindings} finding(s), ${result.remainingReplies} reply/replies.`),
     );
-    throw new Error(
-      `${result.failures.length} selected publish action(s) failed: ` +
-        `${result.failures.map((failure) => `${failure.label}: ${failure.error}`).join('; ')}. ` +
-        'Remaining drafts are reported above.',
-    );
+    throw new Error(`${result.failures.length} selected publish action(s) failed; see the report above.`);
   }
 
   console.log('');

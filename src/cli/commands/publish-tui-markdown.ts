@@ -43,7 +43,7 @@ function inlineMarkdownMatch(value: string, start: number): { length: number; sp
   }
 
   if (remaining.startsWith('[')) {
-    const link = remaining.match(/^\[([^\]\n]+)\]\(([^)\n]+)\)/);
+    const link = remaining.match(/^\[([^\]\n]+)]\(([^)\n]+)\)/);
     if (link) {
       const [, label, destination] = link;
       return {
@@ -233,9 +233,9 @@ function renderMarkdown(text: string, width: number): string[] {
 
     const fence = sourceLine.match(/^ {0,3}(`{3,}|~{3,})(?:\s*([\w.+-]+))?\s*$/);
     if (fence) {
+      const closingFencePattern = new RegExp(`^ {0,3}${fence[1][0]}{${fence[1].length},}\\s*$`);
       const closingIndex = sourceLines.findIndex(
-        (candidate, candidateIndex) =>
-          candidateIndex > index && new RegExp(`^ {0,3}${fence[1][0]}{${fence[1].length},}\\s*$`).test(candidate),
+        (candidate, candidateIndex) => candidateIndex > index && closingFencePattern.test(candidate),
       );
       if (closingIndex > index) {
         if (fence[2]) rendered.push(chalk.dim(`[${fence[2]}]`));

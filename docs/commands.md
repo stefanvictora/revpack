@@ -101,7 +101,7 @@ revpack publish summary --repo workspace/repo
 After publishing, revpack refreshes the bundle by default so the new provider comments are reflected locally.
 This publish-triggered refresh preserves other pending output files; run `revpack prepare` explicitly when you want stale replies pruned against the latest thread state. Replies to resolved threads are preserved as long as the provider still returns the thread.
 Missing default queue files such as `.revpack/outputs/replies.json` and `.revpack/outputs/new-findings.json` are treated as having no pending items.
-Malformed queue files stop Guided Publish before any material or checkpoint is selected.
+Malformed queue files stop both Guided Publish and `revpack publish all` before any material or checkpoint is selected or any provider action is performed.
 
 Bare `revpack publish` starts Guided Publish, a TTY-only preview-and-selection screen. Pending material starts selected, while empty categories remain visible but disabled. The controls are:
 

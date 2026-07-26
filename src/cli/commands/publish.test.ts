@@ -120,10 +120,19 @@ describe('publish command internals', () => {
   });
 
   it('routes bare publish through the interactive TTY guard', async () => {
+    const stdinTty = process.stdin.isTTY;
+    const stdoutTty = process.stdout.isTTY;
+    process.stdin.isTTY = false;
+    process.stdout.isTTY = false;
     const program = new Command();
     registerPublishCommand(program);
 
-    await program.parseAsync(['publish'], { from: 'user' });
+    try {
+      await program.parseAsync(['publish'], { from: 'user' });
+    } finally {
+      process.stdin.isTTY = stdinTty;
+      process.stdout.isTTY = stdoutTty;
+    }
 
     expect(handleError).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -249,6 +258,11 @@ describe('publish command internals', () => {
     expect(createOrchestrator).not.toHaveBeenCalled();
   });
 
+  it('allows publish all to skip a missing default review note', async () => {
+    await expect(__testing.publishReviewCmd({ allowEmpty: true })).resolves.toBe(0);
+    expect(createOrchestrator).not.toHaveBeenCalled();
+  });
+
   it('keeps explicit review publishing strict for empty review notes', async () => {
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });
     await fs.writeFile(path.join(tmpDir, '.revpack', 'outputs', 'note.md'), ' \n\t', 'utf-8');
@@ -340,7 +354,7 @@ describe('publish command internals', () => {
     const legacyPath = path.join(tmpDir, '.revpack', 'outputs', 'review.md');
     await fs.writeFile(legacyPath, 'Legacy review body', 'utf-8');
 
-    await expect(__testing.publishReviewCmd({})).rejects.toThrow('.revpack/outputs/note.md is empty');
+    await expect(__testing.publishReviewCmd({})).rejects.toThrow('No review note found at .revpack/outputs/note.md.');
     expect(createOrchestrator).not.toHaveBeenCalled();
     await expect(fs.readFile(legacyPath, 'utf-8')).resolves.toBe('Legacy review body');
   });
@@ -1052,7 +1066,9 @@ describe('publish command internals', () => {
     };
     vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
 
-    await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow('checkpoint failed');
+    await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow(
+      '1 selected publish action(s) failed; see the report above.',
+    );
 
     expect(orchestrator.publishReply).toHaveBeenCalledTimes(1);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('✗ Checkpoint: checkpoint failed'));
@@ -1102,7 +1118,7 @@ describe('publish command internals', () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Bundle refreshed.'));
   });
 
-  it('routes publish all --no-refresh through the non-interactive executor without refreshing', async () => {
+  it('routes publish --no-refresh all through the non-interactive executor without refreshing', async () => {
     await writeBundleState('gitlab');
     const bundlePath = path.join(tmpDir, '.revpack', 'bundle.json');
     const bundle = JSON.parse(await fs.readFile(bundlePath, 'utf-8'));
@@ -1170,12 +1186,15 @@ describe('publish command internals', () => {
     };
     vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
 
-    await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow('provider unavailable');
+    await expect(__testing.publishAllPending({ refresh: false })).rejects.toThrow(
+      '1 selected publish action(s) failed; see the report above.',
+    );
 
     expect(orchestrator.open).toHaveBeenCalledTimes(1);
     expect(orchestrator.updateDescription).not.toHaveBeenCalled();
     expect(orchestrator.publishReview).not.toHaveBeenCalled();
     expect(orchestrator.publishCheckpoint).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('provider unavailable'));
     expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('(no summary to publish)'));
   });
 });

@@ -85,7 +85,10 @@ export function visibleText(value: string): string {
 export function fitColumn(value: string, width: number): string {
   const visible = visibleText(value);
   const visibleWidth = stringWidth(visible);
-  if (visibleWidth > width) return truncateByDisplayWidth(value, width);
+  if (visibleWidth > width) {
+    const truncated = truncateByDisplayWidth(value, width);
+    return truncated + ' '.repeat(Math.max(0, width - stringWidth(visibleText(truncated))));
+  }
   return value + ' '.repeat(width - visibleWidth);
 }
 

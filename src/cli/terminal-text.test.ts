@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import chalk from 'chalk';
 import { fitColumn, truncateColumn, visibleText, wrapText } from './terminal-text.js';
 
 describe('terminal text', () => {
@@ -15,9 +16,21 @@ describe('terminal text', () => {
     expect(fitColumn('界', 4)).toBe('界  ');
     expect(fitColumn('界', 2)).toBe('界');
     expect(fitColumn('界界', 3)).toBe('界…');
+    expect(fitColumn('界界界', 4)).toBe('界… ');
     expect(truncateColumn('界', 0)).toBe('');
     expect(truncateColumn('👩‍💻x', 2)).toBe('…');
     expect(truncateColumn('👩‍💻x', 3)).toBe('👩‍💻x');
+
+    const previousLevel = chalk.level;
+    chalk.level = 1;
+    try {
+      const styled = fitColumn(chalk.bold('界'), 4);
+      expect(styled).toBe(`${chalk.bold('界')}  `);
+      expect(styled).toContain('\u001b[1m');
+      expect(visibleText(styled)).toBe('界  ');
+    } finally {
+      chalk.level = previousLevel;
+    }
   });
 
   it('preserves ANSI styling when truncating columns', () => {

@@ -230,10 +230,7 @@ export async function assertPublishMaterialUnchanged(
     throw changed(material.summary.path);
   }
   if (selection.note && (await readOptionalFile(material.note.path)) !== material.note.content) {
-    throw new Error(
-      `${material.note.path} changed after publish material was loaded. ` +
-        'Reopen Guided Publish and review the updated drafts before publishing.',
-    );
+    throw changed(material.note.path);
   }
 }
 
