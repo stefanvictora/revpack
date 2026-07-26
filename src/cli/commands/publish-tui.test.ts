@@ -132,19 +132,21 @@ describe('guided publish TUI', () => {
       terminal,
     );
 
-    expect(terminal.frames[0]).toContain('[ ] Findings — none');
-    expect(terminal.frames[0]).toContain('[x] Replies — 1/1 selected');
+    expect(terminal.frames[0]).toContain('New findings — none');
+    expect(terminal.frames[0]).toContain('Thread replies — 1/1 selected');
+    expect(terminal.frames[0]).toContain('Overview — none');
+    expect(terminal.frames[0]).toContain('Review state — none');
     expect(terminal.frames[0]).toContain('[ ] Summary — none');
     expect(terminal.frames[0]).toContain('[ ] Review note — none');
     expect(terminal.frames[0]).toContain('[ ] Checkpoint — current');
   });
 
-  it('toggles one finding, shows a mixed group, and turns checkpoint off', async () => {
+  it('toggles one finding, shows a mixed section, and turns checkpoint off', async () => {
     const terminal = new FakeTerminal(['space', 'enter', 'enter']);
 
     const selection = await runGuidedPublish(guidedModel(), terminal);
 
-    expect(terminal.frames.some((frame) => frame.includes('[-] Findings — 1/2 selected'))).toBe(true);
+    expect(terminal.frames.some((frame) => frame.includes('New findings — 1/2 selected'))).toBe(true);
     expect(selection).toEqual({
       findingIndexes: [9],
       replyIndexes: [3],
@@ -154,40 +156,59 @@ describe('guided publish TUI', () => {
     });
   });
 
-  it('toggles every finding with Space on the group header', async () => {
-    const terminal = new FakeTerminal(['up', 'space', 'enter', 'enter']);
+  it('keeps section headers out of the focus order and previews the first item', async () => {
+    const terminal = new FakeTerminal(['up', 'escape']);
 
-    const selection = await runGuidedPublish(guidedModel(), terminal);
+    await runGuidedPublish(guidedModel(), terminal);
 
-    expect(terminal.frames.some((frame) => frame.includes('[ ] Findings — 0/2 selected'))).toBe(true);
-    expect(selection?.findingIndexes).toEqual([]);
-    expect(selection?.replyIndexes).toEqual([3]);
-    expect(selection?.checkpoint).toBe(false);
+    const frame = terminal.frames.at(-1)!;
+    expect(frame).toContain('New findings — 2/2 selected');
+    expect(frame).not.toContain('> New findings —');
+    expect(frame).toContain('> [x] src/new.ts:17');
+    expect(frame).toContain('The complete finding body.');
   });
 
-  it('uses a to toggle the group containing the focused item', async () => {
+  it('renders four peer sections with aggregate status and consistent spacing', async () => {
+    const terminal = new FakeTerminal(['escape']);
+
+    await runGuidedPublish(guidedModel(), terminal);
+
+    const listLines = terminal.frames[0]
+      .split('\n')
+      .map((line) => stripVTControlCharacters(line).split('│')[0].trimEnd());
+    expect(listLines).toContain('New findings — 2/2 selected');
+    expect(listLines).toContain('Thread replies — 1/1 selected');
+    expect(listLines).toContain('Overview — 2/2 selected');
+    expect(listLines).toContain('Review state — 1/1 selected');
+    for (const heading of ['Thread replies —', 'Overview —', 'Review state —']) {
+      const index = listLines.findIndex((line) => line.startsWith(heading));
+      expect(listLines[index - 1]).toBe('');
+    }
+  });
+
+  it('uses a to toggle the section containing the focused item', async () => {
     const terminal = new FakeTerminal(['toggle-group', 'enter', 'enter']);
 
     const selection = await runGuidedPublish(guidedModel(), terminal);
 
     expect(selection?.findingIndexes).toEqual([]);
     expect(selection?.replyIndexes).toEqual([3]);
-    expect(terminal.frames.at(-2)).toContain('a toggle group');
+    expect(terminal.frames.at(-2)).toContain('a toggle section');
   });
 
-  it('clears the Replies group without changing Findings', async () => {
-    const terminal = new FakeTerminal(['down', 'down', 'space', 'enter', 'enter']);
+  it('clears the Thread replies section without changing New findings', async () => {
+    const terminal = new FakeTerminal(['down', 'down', 'toggle-group', 'enter', 'enter']);
 
     const selection = await runGuidedPublish(guidedModel(), terminal);
 
     expect(selection?.replyIndexes).toEqual([]);
     expect(selection?.findingIndexes).toEqual([4, 9]);
     expect(selection?.checkpoint).toBe(false);
-    expect(terminal.frames.some((frame) => frame.includes('[ ] Replies — 0/1 selected'))).toBe(true);
+    expect(terminal.frames.some((frame) => frame.includes('Thread replies — 0/1 selected'))).toBe(true);
   });
 
-  it('can reselect the Replies group without automatically re-enabling the checkpoint', async () => {
-    const terminal = new FakeTerminal(['down', 'down', 'space', 'space', 'enter', 'enter']);
+  it('can reselect the Thread replies section without automatically re-enabling the checkpoint', async () => {
+    const terminal = new FakeTerminal(['down', 'down', 'toggle-group', 'toggle-group', 'enter', 'enter']);
 
     const selection = await runGuidedPublish(guidedModel(), terminal);
 
@@ -216,19 +237,29 @@ describe('guided publish TUI', () => {
   });
 
   it('reserves cursor columns so labels do not move when focus changes', async () => {
-    const terminal = new FakeTerminal(['up', 'down', 'down', 'down', 'down', 'down', 'down', 'down', 'escape']);
+    const terminal = new FakeTerminal(['up', 'down', 'down', 'down', 'down', 'down', 'down', 'escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
+    for (const label of ['New findings —', 'Thread replies —', 'Overview —', 'Review state —'] as const) {
+      const rows = terminal.frames.map(
+        (frame) =>
+          stripVTControlCharacters(frame)
+            .split('\n')
+            .map((line) => line.split('│')[0])
+            .find((line) => line.includes(label))!,
+      );
+      expect(new Set(rows.map((line) => line.indexOf(label)))).toEqual(new Set([0]));
+      expect(rows.every((line) => !line.includes('>'))).toBe(true);
+    }
+
     for (const [label, expectedColumn] of [
-      ['Findings —', 6],
-      ['src/new.ts:17', 8],
-      ['src/other.ts:5', 8],
-      ['Replies —', 6],
-      ['T-001', 8],
-      ['Summary —', 8],
-      ['Review note —', 8],
-      ['Checkpoint —', 8],
+      ['src/new.ts:17', 7],
+      ['src/other.ts:5', 7],
+      ['T-001', 7],
+      ['Summary —', 7],
+      ['Review note —', 7],
+      ['Checkpoint —', 7],
     ] as const) {
       const columns = terminal.frames.map((frame) =>
         stripVTControlCharacters(frame)
@@ -251,6 +282,55 @@ describe('guided publish TUI', () => {
     }
   });
 
+  it('bolds only the focused row without dimming other selectable rows', async () => {
+    const previousLevel = chalk.level;
+    chalk.level = 1;
+    const terminal = new FakeTerminal(['escape']);
+    try {
+      await runGuidedPublish(guidedModel(), terminal);
+    } finally {
+      chalk.level = previousLevel;
+    }
+
+    const lines = terminal.frames[0].split('\n');
+    const focused = lines.find((line) => stripVTControlCharacters(line).includes('> [x] src/new.ts:17'))!;
+    const unfocused = lines.find((line) => stripVTControlCharacters(line).includes('[x] src/other.ts:5'))!;
+    expect(stripVTControlCharacters(focused).indexOf('>')).toBe(1);
+    expect(focused).toContain('\u001b[1m');
+    expect(unfocused).not.toContain('\u001b[1m');
+    expect(unfocused).not.toContain('\u001b[2m');
+  });
+
+  it('preserves focused-row bold styling when the sidebar truncates it', async () => {
+    const previousLevel = chalk.level;
+    chalk.level = 1;
+    const terminal = new FakeTerminal(['escape'], { columns: 100, rows: 30 });
+    try {
+      await runGuidedPublish(
+        guidedModel({
+          findings: [
+            {
+              ...guidedModel().findings[0],
+              value: {
+                ...guidedModel().findings[0].value,
+                newPath: `src/${'long-path-'.repeat(8)}file.ts`,
+              },
+            },
+          ],
+        }),
+        terminal,
+      );
+    } finally {
+      chalk.level = previousLevel;
+    }
+
+    const focused = terminal.frames[0]
+      .split('\n')
+      .find((line) => stripVTControlCharacters(line).includes('> [x] src/'))!;
+    expect(stripVTControlCharacters(focused.split('│')[0])).toContain('…');
+    expect(focused).toContain('\u001b[1m');
+  });
+
   it('dims keyboard hints without muting selection status', async () => {
     const previousLevel = chalk.level;
     chalk.level = 1;
@@ -269,7 +349,7 @@ describe('guided publish TUI', () => {
   });
 
   it('selects replies independently from findings', async () => {
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'space', 'enter', 'enter']);
+    const terminal = new FakeTerminal(['down', 'down', 'space', 'enter', 'enter']);
 
     const selection = await runGuidedPublish(guidedModel(), terminal);
 
@@ -288,18 +368,7 @@ describe('guided publish TUI', () => {
   });
 
   it('warns when checkpoint is explicitly enabled with a deferred draft', async () => {
-    const terminal = new FakeTerminal([
-      'space',
-      'down',
-      'down',
-      'down',
-      'down',
-      'down',
-      'down',
-      'space',
-      'enter',
-      'enter',
-    ]);
+    const terminal = new FakeTerminal(['space', 'down', 'down', 'down', 'down', 'down', 'space', 'enter', 'enter']);
 
     const selection = await runGuidedPublish(guidedModel(), terminal);
 
@@ -311,18 +380,7 @@ describe('guided publish TUI', () => {
   });
 
   it('names an unselected document when checkpoint is explicitly enabled', async () => {
-    const terminal = new FakeTerminal([
-      'down',
-      'down',
-      'down',
-      'down',
-      'space',
-      'down',
-      'down',
-      'space',
-      'enter',
-      'enter',
-    ]);
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'space', 'down', 'down', 'space', 'enter', 'enter']);
 
     const selection = await runGuidedPublish(guidedModel(), terminal);
 
@@ -422,7 +480,7 @@ describe('guided publish TUI', () => {
         },
       ],
     ]);
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'escape']);
+    const terminal = new FakeTerminal(['down', 'down', 'escape']);
 
     await runGuidedPublish(guidedModel({ replyContexts }), terminal);
 
@@ -441,7 +499,7 @@ describe('guided publish TUI', () => {
   });
 
   it('keeps an unselected reply preview independent of publish state', async () => {
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'space', 'escape']);
+    const terminal = new FakeTerminal(['down', 'down', 'space', 'escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
@@ -491,7 +549,7 @@ describe('guided publish TUI', () => {
         },
       ],
     ]);
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'escape']);
+    const terminal = new FakeTerminal(['down', 'down', 'escape']);
 
     await runGuidedPublish(guidedModel({ replyContexts }), terminal);
 
@@ -505,7 +563,7 @@ describe('guided publish TUI', () => {
 
   it('previews the complete managed summary content', async () => {
     const content = '# Review summary\n\nComplete summary details.\n\n```ts\nconst kept = true;\n```';
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'escape']);
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'escape']);
 
     await runGuidedPublish(guidedModel({ summary: { state: 'modified since publish', content } }), terminal);
 
@@ -546,7 +604,7 @@ describe('guided publish TUI', () => {
   });
 
   it('keeps an unselected summary preview independent of publish state', async () => {
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'space', 'escape']);
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'space', 'escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
@@ -559,7 +617,7 @@ describe('guided publish TUI', () => {
 
   it('previews a complete review note with GitHub review delivery', async () => {
     const content = 'Complete target note.\n\nHandover: keep this final prompt.';
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'down', 'escape']);
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'escape']);
 
     await runGuidedPublish(guidedModel({ provider: 'github', note: { content } }), terminal);
 
@@ -570,7 +628,7 @@ describe('guided publish TUI', () => {
   });
 
   it('keeps an unselected review note preview independent of publish state', async () => {
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'down', 'space', 'escape']);
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'space', 'escape']);
 
     await runGuidedPublish(guidedModel({ provider: 'github' }), terminal);
 
@@ -593,7 +651,7 @@ describe('guided publish TUI', () => {
   });
 
   it('previews checkpoint state, target head, recorded state, and deferred-draft warning', async () => {
-    const terminal = new FakeTerminal(['space', 'down', 'down', 'down', 'down', 'down', 'down', 'space', 'escape']);
+    const terminal = new FakeTerminal(['space', 'down', 'down', 'down', 'down', 'down', 'space', 'escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
@@ -610,7 +668,7 @@ describe('guided publish TUI', () => {
   it('colors checkpoint warnings yellow', async () => {
     const previousLevel = chalk.level;
     chalk.level = 1;
-    const terminal = new FakeTerminal(['space', 'down', 'down', 'down', 'down', 'down', 'down', 'space', 'escape']);
+    const terminal = new FakeTerminal(['space', 'down', 'down', 'down', 'down', 'down', 'space', 'escape']);
     try {
       await runGuidedPublish(guidedModel(), terminal);
     } finally {
@@ -626,7 +684,7 @@ describe('guided publish TUI', () => {
   });
 
   it('keeps an unselected checkpoint preview independent of publish state', async () => {
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'down', 'down', 'space', 'escape']);
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'down', 'space', 'escape']);
 
     await runGuidedPublish(guidedModel(), terminal);
 
@@ -690,7 +748,7 @@ describe('guided publish TUI', () => {
         },
       ],
     };
-    const terminal = new FakeTerminal(['down', 'down', 'down', 'down', 'escape'], { columns: 80, rows: 40 });
+    const terminal = new FakeTerminal(['down', 'down', 'down', 'escape'], { columns: 80, rows: 40 });
 
     await runGuidedPublish(
       guidedModel({
@@ -716,8 +774,8 @@ describe('guided publish TUI', () => {
     expect(output).toContain('Reply T-safe');
     expect(output).toContain('In reply to @reviewer:');
     expect(output).toContain('> context safe');
-    expect(terminal.frames[3]).toContain('summary line one\nsummary line two');
-    expect(terminal.frames[4]).toContain('note line one\nnote line two');
+    expect(terminal.frames[2]).toContain('summary line one\nsummary line two');
+    expect(terminal.frames[3]).toContain('note line one\nnote line two');
   });
 
   it('renders the list and preview side by side on a wide terminal', async () => {
@@ -725,8 +783,23 @@ describe('guided publish TUI', () => {
 
     await runGuidedPublish(guidedModel(), terminal);
 
-    expect(terminal.frames[0].split('\n')[0]).toMatch(/^Review material\s+│ Preview$/);
+    expect(stripVTControlCharacters(terminal.frames[0].split('\n')[0])).toMatch(/^Selection\s+│ Preview$/);
     expect(terminal.frames[0]).toContain('HIGH · correctness');
+  });
+
+  it('renders both pane titles in bold', async () => {
+    const previousLevel = chalk.level;
+    chalk.level = 1;
+    const terminal = new FakeTerminal(['escape'], { columns: 120, rows: 30 });
+    try {
+      await runGuidedPublish(guidedModel(), terminal);
+    } finally {
+      chalk.level = previousLevel;
+    }
+
+    const firstLine = terminal.frames[0].split('\n')[0];
+    expect(firstLine).toContain('\u001b[1mSelection\u001b[22m');
+    expect(firstLine).toContain('\u001b[1mPreview\u001b[22m');
   });
 
   it('stacks the preview below the list on a narrow terminal', async () => {
@@ -734,10 +807,10 @@ describe('guided publish TUI', () => {
 
     await runGuidedPublish(guidedModel(), terminal);
 
-    const lines = terminal.frames[0].split('\n');
-    expect(lines[0]).toBe('Review material');
+    const lines = terminal.frames[0].split('\n').map((line) => stripVTControlCharacters(line));
+    expect(lines[0]).toBe('Selection');
     const previewHeading = lines.indexOf('Preview');
-    expect(previewHeading).toBeGreaterThan(lines.indexOf('Review state'));
+    expect(previewHeading).toBeGreaterThan(lines.findIndex((line) => line.startsWith('Review state —')));
     expect(lines[previewHeading - 1]).toBe('');
     expect(terminal.frames[0]).toContain('The complete finding body.');
   });
@@ -748,21 +821,23 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel(), terminal);
 
     expect(terminal.frames.map((frame) => frame.split('\n').length)).toEqual([30, 30, 30, 30, 30]);
-    const initialLines = terminal.frames[0].split('\n');
-    expect(initialLines.indexOf('Preview')).toBe(initialLines.indexOf('Review state') + 3);
+    const initialLines = terminal.frames[0].split('\n').map((line) => stripVTControlCharacters(line));
+    expect(initialLines.indexOf('Preview')).toBe(
+      initialLines.findIndex((line) => line.startsWith('Review state —')) + 3,
+    );
   });
 
   it.each([
-    ['finding', ['up'] as PublishTerminalKey[], 'Findings'],
-    ['reply', ['down', 'down'] as PublishTerminalKey[], 'Replies'],
-  ])('uses the %s group heading instead of a redundant Preview heading', async (_group, keys, heading) => {
+    ['finding', [] as PublishTerminalKey[], 'HIGH · correctness'],
+    ['reply', ['down', 'down'] as PublishTerminalKey[], 'Reply T-001'],
+  ])('keeps the %s section heading structural while showing an item preview', async (_section, keys, preview) => {
     const terminal = new FakeTerminal([...keys, 'escape'], { columns: 120, rows: 30 });
 
     await runGuidedPublish(guidedModel(), terminal);
 
     const firstLine = stripVTControlCharacters(terminal.frames.at(-1)!.split('\n')[0]);
-    expect(firstLine).toMatch(new RegExp(`^Review material\\s+│ ${heading}$`));
-    expect(terminal.frames.at(-1)).not.toMatch(/│ Preview(?:\n|$)/);
+    expect(firstLine).toMatch(/^Selection\s+│ Preview$/);
+    expect(terminal.frames.at(-1)).toContain(preview);
   });
 
   it('keeps narrow physical lines within the terminal while retaining the complete scrollable preview', async () => {
@@ -929,7 +1004,7 @@ describe('guided publish TUI', () => {
     );
     expect(terminal.frames[0]).toContain('> Refresh bundle');
     expect(terminal.frames[0]).toContain('  Cancel');
-    expect(terminal.frames[0]).not.toContain('Review material');
+    expect(terminal.frames[0]).not.toContain('Selection');
     expect(terminal.frames[0].split('\n').filter((line) => line.length > 0)).toHaveLength(3);
     expect(terminal.stops).toBe(1);
   });

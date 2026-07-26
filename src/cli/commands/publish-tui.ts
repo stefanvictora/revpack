@@ -325,9 +325,7 @@ interface SelectionState {
 }
 
 type FocusTarget =
-  | { kind: 'finding-group'; group: 'findings' }
   | { kind: 'finding'; group: 'findings'; index: number }
-  | { kind: 'reply-group'; group: 'replies' }
   | { kind: 'reply'; group: 'replies'; index: number }
   | { kind: 'summary'; group: 'documents' }
   | { kind: 'note'; group: 'documents' }
@@ -359,13 +357,11 @@ function toPublishSelection(model: GuidedPublishModel, selection: SelectionState
 function focusTargets(model: GuidedPublishModel): FocusTarget[] {
   const targets: FocusTarget[] = [];
   if (model.findings.length > 0) {
-    targets.push({ kind: 'finding-group', group: 'findings' });
     targets.push(
       ...model.findings.map(({ index }) => ({ kind: 'finding' as const, group: 'findings' as const, index })),
     );
   }
   if (model.replies.length > 0) {
-    targets.push({ kind: 'reply-group', group: 'replies' });
     targets.push(...model.replies.map(({ index }) => ({ kind: 'reply' as const, group: 'replies' as const, index })));
   }
   if (model.summary.state === 'pending' || model.summary.state === 'modified since publish') {
@@ -374,11 +370,6 @@ function focusTargets(model: GuidedPublishModel): FocusTarget[] {
   if (model.note.content.trim()) targets.push({ kind: 'note', group: 'documents' });
   if (model.checkpoint.state !== 'current') targets.push({ kind: 'checkpoint', group: 'review-state' });
   return targets;
-}
-
-function groupMarker(selected: number, total: number): string {
-  if (total === 0 || selected === 0) return '[ ]';
-  return selected === total ? '[x]' : '[-]';
 }
 
 function deferredDraftCount(model: GuidedPublishModel, selection: SelectionState): number {
@@ -503,12 +494,6 @@ function renderPreview(
       ...renderMarkdownPreview(finding.body, width),
     ];
   }
-  if (focus?.kind === 'finding-group') {
-    return [
-      ...boldWrapped('Findings', width),
-      ...wrapText(`${selection.findingIndexes.size} of ${model.findings.length} findings selected.`, width),
-    ];
-  }
   if (focus?.kind === 'reply') {
     const reply = model.replies.find(({ index }) => index === focus.index)?.value;
     if (!reply) return [];
@@ -534,12 +519,6 @@ function renderPreview(
         : dimWrapped(`Thread context unavailable for ${reply.threadId}.`, width)),
       '',
       ...renderMarkdownPreview(reply.body, width),
-    ];
-  }
-  if (focus?.kind === 'reply-group') {
-    return [
-      ...boldWrapped('Replies', width),
-      ...wrapText(`${selection.replyIndexes.size} of ${model.replies.length} replies selected.`, width),
     ];
   }
   if (focus?.kind === 'summary') {
@@ -594,7 +573,7 @@ interface SelectionLayout {
   previewHeight: number;
 }
 
-const SELECTION_KEY_HELP = '↑↓ navigate  Space toggle  a toggle group  PgUp/PgDn preview  Enter continue  Esc cancel';
+const SELECTION_KEY_HELP = '↑↓ navigate  Space toggle  a toggle section  PgUp/PgDn preview  Enter continue  Esc cancel';
 
 function selectionFooterLines(model: GuidedPublishModel, selection: SelectionState, columns: number): string[] {
   const selectedCount =
@@ -639,7 +618,7 @@ function selectionLayout(
 }
 
 function showPreviewHeading(focus: FocusTarget | undefined): boolean {
-  return focus?.kind !== 'finding-group' && focus?.kind !== 'reply-group' && focus?.kind !== 'checkpoint';
+  return focus?.kind !== 'checkpoint';
 }
 
 function maximumPreviewOffset(
@@ -662,6 +641,14 @@ function focusMarker(focused: boolean): string {
   return focused ? '> ' : '  ';
 }
 
+function boldWhenFocused(value: string, focused: boolean): string {
+  return focused ? chalk.bold(value) : value;
+}
+
+function sectionSelectionStatus(selected: number, total: number): string {
+  return total === 0 ? 'none' : `${selected}/${total} selected`;
+}
+
 function selectionMaterialLines(
   model: GuidedPublishModel,
   selection: SelectionState,
@@ -669,53 +656,74 @@ function selectionMaterialLines(
 ): string[] {
   const summaryDetail =
     model.summary.state === 'empty' ? 'none' : model.summary.state === 'published' ? 'current' : model.summary.state;
+  const summarySelectable = model.summary.state === 'pending' || model.summary.state === 'modified since publish';
   const notePending = model.note.content.trim().length > 0;
   const checkpointDue = model.checkpoint.state !== 'current';
+  const overviewTotal = Number(summarySelectable) + Number(notePending);
+  const selectedOverview = Number(summarySelectable && selection.summary) + Number(notePending && selection.note);
 
   return [
-    'Review material',
+    chalk.bold('Selection'),
     dimWhenDisabled(
-      `${focusMarker(focus?.kind === 'finding-group')}${groupMarker(selection.findingIndexes.size, model.findings.length)} Findings — ${
-        model.findings.length === 0 ? 'none' : `${selection.findingIndexes.size}/${model.findings.length} selected`
-      }`,
+      `New findings — ${sectionSelectionStatus(selection.findingIndexes.size, model.findings.length)}`,
       model.findings.length === 0,
     ),
     ...model.findings.map(({ index, value }) => {
+      const focused = focus?.kind === 'finding' && focus.index === index;
       const position = value.newLine ?? value.oldLine ?? '?';
       const displayPath = value.newPath || value.oldPath;
       const label = renderMarkdownPreviewLabel(value.body, '(untitled finding)');
-      return `  ${focusMarker(focus?.kind === 'finding' && focus.index === index)}${
-        selection.findingIndexes.has(index) ? '[x]' : '[ ]'
-      } ${displayPath}:${position} ${label}`;
+      return boldWhenFocused(
+        ` ${focusMarker(focused)}${
+          selection.findingIndexes.has(index) ? '[x]' : '[ ]'
+        } ${displayPath}:${position} ${label}`,
+        focused,
+      );
     }),
+    '',
     dimWhenDisabled(
-      `${focusMarker(focus?.kind === 'reply-group')}${groupMarker(selection.replyIndexes.size, model.replies.length)} Replies — ${
-        model.replies.length === 0 ? 'none' : `${selection.replyIndexes.size}/${model.replies.length} selected`
-      }`,
+      `Thread replies — ${sectionSelectionStatus(selection.replyIndexes.size, model.replies.length)}`,
       model.replies.length === 0,
     ),
-    ...model.replies.map(
-      ({ index, value }) =>
-        `  ${focusMarker(focus?.kind === 'reply' && focus.index === index)}${
-          selection.replyIndexes.has(index) ? '[x]' : '[ ]'
-        } ${value.threadId} ${renderMarkdownPreviewLabel(value.body, '(empty reply)')}`,
-    ),
+    ...model.replies.map(({ index, value }) => {
+      const focused = focus?.kind === 'reply' && focus.index === index;
+      return boldWhenFocused(
+        ` ${focusMarker(focused)}${selection.replyIndexes.has(index) ? '[x]' : '[ ]'} ${
+          value.threadId
+        } ${renderMarkdownPreviewLabel(value.body, '(empty reply)')}`,
+        focused,
+      );
+    }),
     '',
-    'Documents',
+    dimWhenDisabled(`Overview — ${sectionSelectionStatus(selectedOverview, overviewTotal)}`, overviewTotal === 0),
     dimWhenDisabled(
-      `  ${focusMarker(focus?.kind === 'summary')}${selection.summary ? '[x]' : '[ ]'} Summary — ${summaryDetail}`,
+      boldWhenFocused(
+        ` ${focusMarker(focus?.kind === 'summary')}${selection.summary ? '[x]' : '[ ]'} Summary — ${summaryDetail}`,
+        focus?.kind === 'summary',
+      ),
       model.summary.state !== 'pending' && model.summary.state !== 'modified since publish',
     ),
     dimWhenDisabled(
-      `  ${focusMarker(focus?.kind === 'note')}${selection.note ? '[x]' : '[ ]'} Review note — ${notePending ? 'pending' : 'none'}`,
+      boldWhenFocused(
+        ` ${focusMarker(focus?.kind === 'note')}${selection.note ? '[x]' : '[ ]'} Review note — ${
+          notePending ? 'pending' : 'none'
+        }`,
+        focus?.kind === 'note',
+      ),
       !notePending,
     ),
     '',
-    'Review state',
     dimWhenDisabled(
-      `  ${focusMarker(focus?.kind === 'checkpoint')}${selection.checkpoint ? '[x]' : '[ ]'} Checkpoint — ${
-        checkpointDue ? (model.checkpoint.state === 'none' ? 'not recorded' : 'needs update') : 'current'
-      }`,
+      `Review state — ${sectionSelectionStatus(Number(selection.checkpoint && checkpointDue), Number(checkpointDue))}`,
+      !checkpointDue,
+    ),
+    dimWhenDisabled(
+      boldWhenFocused(
+        ` ${focusMarker(focus?.kind === 'checkpoint')}${selection.checkpoint ? '[x]' : '[ ]'} Checkpoint — ${
+          checkpointDue ? (model.checkpoint.state === 'none' ? 'not recorded' : 'needs update') : 'current'
+        }`,
+        focus?.kind === 'checkpoint',
+      ),
       !checkpointDue,
     ),
   ];
@@ -738,7 +746,7 @@ function renderSelection(
         const list = visibleListLines(materialLines, layout.listHeight);
         const offset = Math.min(Math.max(0, previewOffset), Math.max(0, previewLines.length - layout.previewHeight));
         const preview = [
-          ...(previewHasHeading ? ['Preview'] : []),
+          ...(previewHasHeading ? [chalk.bold('Preview')] : []),
           ...previewLines.slice(offset, offset + layout.previewHeight),
         ];
         return Array.from({ length: layout.availableHeight }, (_, index) => {
@@ -753,7 +761,7 @@ function renderSelection(
         const offset = Math.min(Math.max(0, previewOffset), Math.max(0, previewLines.length - layout.previewHeight));
         const preview = previewLines.slice(offset, offset + layout.previewHeight);
         const previewPadding = Array.from({ length: layout.previewHeight - preview.length }, () => '');
-        return [...list, '', ...(previewHasHeading ? ['Preview'] : []), ...preview, ...previewPadding];
+        return [...list, '', ...(previewHasHeading ? [chalk.bold('Preview')] : []), ...preview, ...previewPadding];
       })();
 
   return [...contentLines, ...footerLines].join('\n');
@@ -831,12 +839,8 @@ function toggleGroup(model: GuidedPublishModel, selection: SelectionState, group
   }
 }
 
-function toggleFocused(model: GuidedPublishModel, selection: SelectionState, focus: FocusTarget): void {
-  if (focus.kind === 'finding-group') {
-    toggleGroup(model, selection, 'findings');
-  } else if (focus.kind === 'reply-group') {
-    toggleGroup(model, selection, 'replies');
-  } else if (focus.kind === 'finding') {
+function toggleFocused(selection: SelectionState, focus: FocusTarget): void {
+  if (focus.kind === 'finding') {
     if (selection.findingIndexes.delete(focus.index)) selection.checkpoint = false;
     else selection.findingIndexes.add(focus.index);
   } else if (focus.kind === 'reply') {
@@ -865,10 +869,7 @@ export async function runGuidedPublish(
   try {
     const selection = initialSelection(displayModel);
     const targets = focusTargets(displayModel);
-    let focusIndex = Math.max(
-      0,
-      targets.findIndex((target) => target.kind !== 'finding-group' && target.kind !== 'reply-group'),
-    );
+    let focusIndex = 0;
     let confirming = false;
     let previewOffset = 0;
 
@@ -897,7 +898,7 @@ export async function runGuidedPublish(
       if (key === 'enter') {
         confirming = true;
       } else if (key === 'space' && focus) {
-        toggleFocused(displayModel, selection, focus);
+        toggleFocused(selection, focus);
       } else if (key === 'toggle-group' && focus) {
         toggleGroup(displayModel, selection, focus.group);
       } else if (key === 'up') {

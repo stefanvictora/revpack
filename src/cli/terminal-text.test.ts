@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitColumn, truncateColumn, wrapText } from './terminal-text.js';
+import { fitColumn, truncateColumn, visibleText, wrapText } from './terminal-text.js';
 
 describe('terminal text', () => {
   it('wraps on usable word boundaries and hard-wraps complete wide graphemes', () => {
@@ -18,5 +18,27 @@ describe('terminal text', () => {
     expect(truncateColumn('界', 0)).toBe('');
     expect(truncateColumn('👩‍💻x', 2)).toBe('…');
     expect(truncateColumn('👩‍💻x', 3)).toBe('👩‍💻x');
+  });
+
+  it('preserves ANSI styling when truncating columns', () => {
+    const escape = String.fromCharCode(27);
+    const bold = `${escape}[1m`;
+    const unbold = `${escape}[22m`;
+    const reset = `${escape}[0m`;
+    const value = `${bold}focused finding${unbold}`;
+
+    for (const truncated of [fitColumn(value, 12), truncateColumn(value, 12)]) {
+      expect(visibleText(truncated)).toBe('focused fin…');
+      expect(truncated).toBe(`${bold}focused fin…${reset}`);
+    }
+
+    for (const truncated of [fitColumn(value, 1), truncateColumn(value, 1)]) {
+      expect(truncated).toBe(`${bold}…${reset}`);
+    }
+
+    const styledPrefix = `${bold}focus${unbold} trailing`;
+    for (const truncated of [fitColumn(styledPrefix, 9), truncateColumn(styledPrefix, 9)]) {
+      expect(truncated).toBe(`${bold}focus${unbold} tr…${reset}`);
+    }
   });
 });
