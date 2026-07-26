@@ -360,7 +360,7 @@ export function buildStatusNextLines(options: {
       if (options.repliesReady) selectedCommands.push('  revpack publish replies');
       if (options.findingsReady) selectedCommands.push('  revpack publish findings');
       if (options.summaryReady) selectedCommands.push('  revpack publish summary');
-      if (options.reviewReady) selectedCommands.push('  revpack publish review');
+      if (options.reviewReady) selectedCommands.push('  revpack publish note');
 
       lines.push('', 'Or publish selected:', ...selectedCommands);
       if (options.checkpointDue) {
@@ -387,7 +387,7 @@ export function buildPendingOlderBundleLines(options: {
   if (options.repliesReady) lines.push('  revpack publish replies');
   if (options.findingsReady) lines.push('  revpack publish findings');
   if (options.summaryReady) lines.push('  revpack publish summary');
-  if (options.reviewReady) lines.push('  revpack publish review');
+  if (options.reviewReady) lines.push('  revpack publish note');
 
   return lines.length > 0 ? ['Still pending output from previous bundle:', '  Review .revpack/outputs/', ...lines] : [];
 }

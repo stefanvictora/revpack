@@ -29,7 +29,7 @@ Typical workflow:
   revpack prepare
   <run your agent>
   revpack status
-  revpack publish all
+  revpack publish
 
 Other review targets:
   revpack checkout <url-or-id>

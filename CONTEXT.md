@@ -22,6 +22,10 @@ _Avoid_: Clone, switch, fetch
 A disposable local package of review context created for a review target so an agent can use the relevant diff, review threads, and instructions for a revpack review or another developer-directed task.
 _Avoid_: Context folder, workspace, review package
 
+**Single-Writer Review Bundle**:
+A Review Bundle whose Agent Output is authored or changed by one person or agent at a time. Concurrent output writers are outside revpack's supported workflow.
+_Avoid_: Locked bundle, concurrent workspace
+
 **Revpack Review**:
 An explicitly requested agent task that evaluates a review target under the review contract and produces agent output for later inspection and publishing.
 _Avoid_: Bundle context use, any task that merely reads a review bundle
@@ -37,6 +41,10 @@ _Avoid_: Post, submit, send, upload
 **Guided Publish**:
 An interactive publish flow that summarizes publishable review material before asking which items to publish.
 _Avoid_: Publish all, auto-publish
+
+**Publish Preview**:
+A read-only, scan-oriented presentation of focused review material during Guided Publish. It helps a person inspect content but does not promise to reproduce the provider's final rendering.
+_Avoid_: Provider preview, rendered review
 
 **Checkpoint**:
 A published marker of the review target state that future prepares use to decide what changed since the last intentional review.

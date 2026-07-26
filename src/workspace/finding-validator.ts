@@ -90,7 +90,7 @@ function validateFindingPosition(finding: NewFinding, index: number, lineMap: Li
         message:
           `No valid added-line anchor found for ${finding.newPath} newLine ${finding.newLine}. ` +
           `If this is an unchanged context line, provide both oldLine and newLine. ` +
-          `If this line is outside the visible diff, move the issue to review.md or anchor it to the closest visible changed/context line.`,
+          `If this line is outside the visible diff, move the issue to note.md or anchor it to the closest visible changed/context line.`,
       };
     }
   } else if (hasOldLine && !hasNewLine) {
@@ -102,7 +102,7 @@ function validateFindingPosition(finding: NewFinding, index: number, lineMap: Li
         finding,
         message:
           `No valid removed-line anchor found for ${finding.oldPath} oldLine ${finding.oldLine}. ` +
-          `If this line is outside the visible diff, move the issue to review.md or anchor it to the closest visible changed/context line.`,
+          `If this line is outside the visible diff, move the issue to note.md or anchor it to the closest visible changed/context line.`,
       };
     }
   } else {
