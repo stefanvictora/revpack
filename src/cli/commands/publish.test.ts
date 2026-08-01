@@ -20,6 +20,7 @@ describe('publish command internals', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.stubEnv('TERMINAL_EMULATOR', '');
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revpack-publish-test-'));
     vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
     vi.mocked(getRepoFromGit).mockResolvedValue('group/project');
@@ -28,6 +29,7 @@ describe('publish command internals', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });

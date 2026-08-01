@@ -226,8 +226,15 @@ describe('WorkspaceManager', () => {
     expect(context).toContain('### Perform a formal revpack review');
     expect(context).not.toContain('## Review Contract');
     expect(reviewContract).toContain('do not discard a valid, non-duplicate issue');
+    expect(findingsInstructions).toContain(
+      'using the applicable `REVIEW.md` guidance when present and the quality bar above',
+    );
+    expect(findingsInstructions).not.toContain('using the priorities in REVIEW.md');
+    expect(findingsInstructions).toContain('Use your judgment to focus deeper inspection');
+    expect(findingsInstructions).toContain('Before reporting a finding, try to disprove it');
     expect(findingsInstructions).toContain('## Incremental review scope');
     expect(findingsInstructions).toContain('Looking up that record is a required input step');
+    expect(finalChecks).toContain('disprove each remaining candidate finding');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
   });
 

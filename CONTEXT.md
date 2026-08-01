@@ -30,8 +30,12 @@ _Avoid_: Locked bundle, concurrent workspace
 An explicitly requested agent task that evaluates a review target under the review contract and produces agent output for later inspection and publishing.
 _Avoid_: Bundle context use, any task that merely reads a review bundle
 
+**Risk Inventory**:
+A lightweight, internal classification of changed behavior used to direct review depth during a fresh or incremental Revpack Review. It is not Agent Output or a persistent review artifact.
+_Avoid_: Risk report, review checklist, generated review order
+
 **Bundle Context Use**:
-The use of a review bundle as supporting context for a developer-directed task without activating the review contract. Merely reading a review bundle does not make the task a revpack review.
+A developer-directed task that uses a review bundle as supporting context without activating the review contract or producing findings. Relevant concerns may still be surfaced conversationally.
 _Avoid_: Review mode, informal review
 
 **Publish**:
@@ -67,6 +71,10 @@ _Avoid_: Bot comment, generated result
 **Finding**:
 A new agent-proposed line comment about code changed in the review target. A finding must have a valid positional anchor.
 _Avoid_: Issue, defect, annotation
+
+**Finding Category**:
+An advisory tag for the primary concern described by a Finding. Preferred values promote consistency without restricting agent judgment, custom categories, or forming a stable analytics or routing contract.
+_Avoid_: Allowed category, finding type
 
 **Positional Anchor**:
 The valid diff position where a finding can be published on a review target.
@@ -131,8 +139,8 @@ The provider access setup represented by a profile and its credential references
 _Avoid_: Login, token storage, connection
 
 **Review Guidance**:
-Project-specific review priorities that agents should follow when reviewing a review bundle.
-_Avoid_: Instructions, contract, prompt
+Human-authored, free-form project priorities and conventions that inform agent judgment during a Revpack Review without forming a machine-enforced rule set.
+_Avoid_: Instructions, contract, prompt, policy schema
 
 **Review Contract**:
 The mandatory review rules an agent must follow while producing agent output for a review bundle.

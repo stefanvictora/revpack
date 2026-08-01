@@ -16,12 +16,11 @@ Do not create findings for speculative issues, broad refactoring preferences, st
 
 ## Review changed behavior, not just changed lines
 
-When reviewing a changed line, also inspect the surrounding method, class, or call path. Ask:
+After understanding the overall change, form a lightweight internal Risk Inventory using the applicable `REVIEW.md` guidance when present and the quality bar above. Identify what behavior changed, what outcome it appears intended to deliver, and where failure would matter most. Use your judgment to focus deeper inspection.
 
-- What behavior changed? What inputs can reach this code?
-- What happens on null, empty, invalid, duplicate, unauthorized, or failed external calls?
-- Does the change preserve existing API, database, security, audit, or compatibility behavior?
-- Are existing tests still meaningful, or did the change bypass them?
+For higher-risk areas, inspect the surrounding code, affected callers and consumers, contracts, and tests. Consider reachability, relevant edge cases and failure modes, preserved guarantees, and related updates the change may require elsewhere.
+
+Before reporting a finding, try to disprove it. Keep only concerns that are concrete, introduced, exposed, or made worse by the MR/PR, not prevented by surrounding safeguards, and not already covered. Treat unresolved ambiguity about intent as a question, not a confirmed finding.
 
 Create positional findings only on lines listed in a per-file Anchor Map.
 
@@ -161,6 +160,6 @@ Choose based on concrete impact, not how suspicious the code looks. If you canno
 
 ## Categories
 
-Prefer: `security`, `correctness`, `performance`, `testing`, `architecture`, `style`, `documentation`, `naming`, `error-handling`, `general`.
+Prefer: `security`, `correctness`, `reliability`, `compatibility`, `observability`, `performance`, `testing`, `architecture`, `style`, `documentation`, `naming`, `error-handling`, `general`.
 
 ---
