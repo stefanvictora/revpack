@@ -2,7 +2,7 @@
 
 Before finishing, perform a lightweight self-check.
 
-Before finishing a fresh or incremental review, make one final coverage pass over the Risk Inventory. Finish only when that pass yields no new valid finding.
+Before finishing a fresh or incremental review, revisit the Risk Inventory for gaps in review coverage and try to disprove each remaining candidate finding. Keep only concerns with a reachable failure scenario and concrete impact that were introduced, exposed, or made worse by the MR/PR, are not prevented by surrounding safeguards or safe fallback behavior, and are not already covered.
 
 Do not run additional shell commands solely for final verification unless you have a concrete reason to suspect that an output file is malformed or missing.
 

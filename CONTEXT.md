@@ -139,8 +139,8 @@ The provider access setup represented by a profile and its credential references
 _Avoid_: Login, token storage, connection
 
 **Review Guidance**:
-Project-specific review priorities that agents should follow when reviewing a review bundle.
-_Avoid_: Instructions, contract, prompt
+Human-authored, free-form project priorities and conventions that inform agent judgment during a Revpack Review without forming a machine-enforced rule set.
+_Avoid_: Instructions, contract, prompt, policy schema
 
 **Review Contract**:
 The mandatory review rules an agent must follow while producing agent output for a review bundle.
