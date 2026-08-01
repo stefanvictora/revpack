@@ -2523,17 +2523,17 @@ describe('WorkspaceManager', () => {
       expect(md).toContain('## Diff Context');
       expect(md).toContain('```diff');
       expect(md).toContain('compute(a, b)');
-      expect(md).toContain('▶');
+      expect(md).toMatch(/^[ +-] \| /m);
       // Verify diff context format: prefix characters match line types
       expect(md).toContain('+ '); // added line prefix
       expect(md).toContain('- '); // removed line prefix
       // The targeted line (newLine 10) maps to 'const c = compute(a, b)' which is added
       // Verify the point marker appears on the correct line
       const diffBlock = md.split('```diff')[1].split('```')[0];
-      const markedLine = diffBlock.split('\n').find((l) => l.includes('▶'));
+      const markedLine = diffBlock.split('\n').find((l) => /^[ +-] \| /.test(l));
       expect(markedLine).toContain('compute(a, b)');
       // Only one line should have the point marker
-      expect(diffBlock.split('▶').length).toBe(2); // one occurrence = 2 parts
+      expect(diffBlock.match(/^[ +-] \| /gm)).toHaveLength(1);
       // First line of diff context starts with a valid prefix (space, +, or -)
       const firstContextLine = diffBlock.split('\n').find((l) => l.trim().length > 0);
       expect(firstContextLine).toMatch(/^[ +-]/);
@@ -2577,7 +2577,7 @@ describe('WorkspaceManager', () => {
       // Verify context line (space prefix) is included
       expect(diffLines.some((l) => l.includes('│ line9'))).toBe(true);
       // The point marker should be on the newLine10 line (the target)
-      expect(diffLines.find((l) => l.includes('▶'))).toContain('newLine10');
+      expect(diffLines.find((l) => /^[ +-] \| /.test(l))).toContain('newLine10');
       // Lines before the window should not appear.
       expect(diffBlock).not.toContain('line5');
       expect(diffBlock).not.toContain('line6');
@@ -2603,7 +2603,7 @@ describe('WorkspaceManager', () => {
       expect(md).toContain('## Diff Context');
       expect(md).toContain('removedLine10');
       const diffBlock = md.split('```diff')[1].split('```')[0];
-      expect(diffBlock).toContain('▶');
+      expect(diffBlock).toMatch(/^[ +-] \| /m);
     });
 
     it('renders an imported Code Span with its exact range and selected-line gutter', async () => {
@@ -2639,7 +2639,7 @@ describe('WorkspaceManager', () => {
       expect(diffBlock).toContain('+ │  132 │ newLine132');
       expect(diffBlock).toContain('  └  133 │ line133');
       expect(diffBlock).toContain('-    130 │ oldLine130');
-      expect(diffBlock).not.toContain('▶');
+      expect(diffBlock).not.toMatch(/^[ +-] \| /m);
     });
 
     it('shows stale revision warning when headSha does not match', async () => {
@@ -3714,7 +3714,7 @@ describe('WorkspaceManager', () => {
       const diffBlock = md.split('```diff')[1].split('```')[0];
       // At the hunk boundary, only available rows are shown.
       expect(diffBlock).toContain('newFirst');
-      expect(diffBlock).toContain('▶');
+      expect(diffBlock).toMatch(/^[ +-] \| /m);
       expect(diffBlock).toContain('line2');
     });
 
@@ -3736,7 +3736,7 @@ describe('WorkspaceManager', () => {
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       const diffBlock = md.split('```diff')[1].split('```')[0];
       expect(diffBlock).toContain('lastLine');
-      expect(diffBlock).toContain('▶');
+      expect(diffBlock).toMatch(/^[ +-] \| /m);
       // Only the two nearest context rows above should be shown.
       expect(diffBlock).not.toContain('line1');
       expect(diffBlock).toContain('line2');
@@ -3765,7 +3765,7 @@ describe('WorkspaceManager', () => {
       const removedLine = lines.find((l) => l.includes('deleted'));
       expect(removedLine).toBeDefined();
       expect(removedLine![0]).toBe('-');
-      expect(removedLine).toContain('▶');
+      expect(removedLine).toMatch(/^- \| /);
       // Removed line uses oldLine number since newLine is undefined
       expect(removedLine).toContain('6');
       // Context line should have space prefix at position 0

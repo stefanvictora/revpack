@@ -336,8 +336,16 @@ export class BitbucketCloudProvider implements ReviewProvider {
     if (position.oldLine == null && position.newLine == null) return undefined;
     const isOldSide = position.oldLine != null && position.newLine == null;
     return isOldSide
-      ? { path: position.oldPath, from: position.oldLine }
-      : { path: position.newPath, to: position.newLine };
+      ? {
+          path: position.oldPath,
+          from: position.oldLine,
+          ...(position.oldStartLine != null ? { start_from: position.oldStartLine } : {}),
+        }
+      : {
+          path: position.newPath,
+          to: position.newLine,
+          ...(position.newStartLine != null ? { start_to: position.newStartLine } : {}),
+        };
   }
 
   private notFoundMessage(text: string): string {
@@ -453,10 +461,17 @@ export class BitbucketCloudProvider implements ReviewProvider {
     const inline = comment.inline;
     if (!inline?.path) return undefined;
 
+    const oldLine = inline.from ?? undefined;
+    const newLine = inline.to ?? undefined;
+    const oldStartLine = inline.start_from;
+    const newStartLine = inline.start_to;
+
     return {
       filePath: inline.path,
-      oldLine: inline.from ?? undefined,
-      newLine: inline.to ?? undefined,
+      ...(oldStartLine != null && oldLine != null && oldStartLine < oldLine ? { oldStartLine } : {}),
+      ...(newStartLine != null && newLine != null && newStartLine < newLine ? { newStartLine } : {}),
+      oldLine,
+      newLine,
       oldPath: inline.path,
       newPath: inline.path,
     };
@@ -562,6 +577,8 @@ interface BitbucketComment {
     path?: string | null;
     from?: number | null;
     to?: number | null;
+    start_from?: number | null;
+    start_to?: number | null;
   } | null;
   resolution?: unknown;
 }
@@ -576,6 +593,8 @@ interface BitbucketInlinePosition {
   path: string;
   from?: number;
   to?: number;
+  start_from?: number;
+  start_to?: number;
 }
 
 interface BitbucketUser {

@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Prepared GitHub and GitLab review threads now preserve multi-line Code Spans, and new findings can publish Code Spans on both providers. Thread Markdown and Guided Publish code excerpts use clearer selection gutters, symmetric context that stays within one diff hunk, visible condensation for long spans, and width-safe soft wrapping.
+- Prepared GitHub, GitLab, and Bitbucket Cloud review threads now preserve multi-line Code Spans, and new findings can publish Code Spans on all three providers. Thread Markdown and Guided Publish code excerpts use a width-stable point marker, clearer Code Span gutters, symmetric context that stays within one diff hunk, visible condensation for long spans, and width-safe soft wrapping.
 
 ### Changed
 

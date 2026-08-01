@@ -161,7 +161,7 @@ export function extractDiffContext(position: DiffContextPosition, lineMap: LineM
       const marker = !selectedIndexes.has(row.index)
         ? ' '
         : span.indexes.length === 1
-          ? '▶'
+          ? '|'
           : selectedOffset === 0
             ? '┌'
             : selectedOffset === span.indexes.length - 1

@@ -377,6 +377,50 @@ describe('BitbucketCloudProvider target reads', () => {
     ).resolves.toBe('103');
   });
 
+  it('creates new-side code spans with start_to and to lines', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({
+        content: { raw: 'new-side range finding' },
+        inline: { path: 'src/new.ts', to: 12, start_to: 9 },
+      });
+      return jsonResponse(comment({ id: 107, content: { raw: 'new-side range finding' } }));
+    });
+
+    await expect(
+      provider.createThread(ref, 'new-side range finding', {
+        oldPath: 'src/old.ts',
+        newPath: 'src/new.ts',
+        oldStartLine: 7,
+        oldLine: 10,
+        newStartLine: 9,
+        newLine: 12,
+      }),
+    ).resolves.toBe('107');
+  });
+
+  it('creates old-side code spans with start_from and from lines', async () => {
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
+      expect(init?.method).toBe('POST');
+      expect(requestBodyJson(init)).toEqual({
+        content: { raw: 'old-side range finding' },
+        inline: { path: 'src/old.ts', from: 8, start_from: 5 },
+      });
+      return jsonResponse(comment({ id: 108, content: { raw: 'old-side range finding' } }));
+    });
+
+    await expect(
+      provider.createThread(ref, 'old-side range finding', {
+        oldPath: 'src/old.ts',
+        newPath: 'src/new.ts',
+        oldStartLine: 5,
+        oldLine: 8,
+      }),
+    ).resolves.toBe('108');
+  });
+
   it('creates top-level review notes without an inline anchor', async () => {
     installFetch((url, init) => {
       expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
@@ -589,6 +633,55 @@ describe('BitbucketCloudProvider review comments', () => {
             system: false,
           },
         ],
+      },
+    ]);
+  });
+
+  it('maps valid Bitbucket code spans and ignores incomplete or non-increasing starts', async () => {
+    installFetch(() =>
+      jsonResponse({
+        values: [
+          comment({
+            id: 110,
+            inline: { path: 'src/range.ts', from: 8, to: 12, start_from: 5, start_to: 9 },
+          }),
+          comment({
+            id: 111,
+            inline: { path: 'src/incomplete.ts', start_from: 5, start_to: 9 },
+          }),
+          comment({
+            id: 112,
+            inline: { path: 'src/single-line.ts', from: 5, to: 9, start_from: 5, start_to: 9 },
+          }),
+        ],
+      }),
+    );
+
+    const threads = await provider.listAllThreads(ref);
+
+    expect(threads.map((thread) => thread.position)).toEqual([
+      {
+        filePath: 'src/range.ts',
+        oldStartLine: 5,
+        newStartLine: 9,
+        oldLine: 8,
+        newLine: 12,
+        oldPath: 'src/range.ts',
+        newPath: 'src/range.ts',
+      },
+      {
+        filePath: 'src/incomplete.ts',
+        oldLine: undefined,
+        newLine: undefined,
+        oldPath: 'src/incomplete.ts',
+        newPath: 'src/incomplete.ts',
+      },
+      {
+        filePath: 'src/single-line.ts',
+        oldLine: 5,
+        newLine: 9,
+        oldPath: 'src/single-line.ts',
+        newPath: 'src/single-line.ts',
       },
     ]);
   });

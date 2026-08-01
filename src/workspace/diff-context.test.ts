@@ -27,15 +27,16 @@ function lineMap(overrides: Partial<LineMap['files'][number]> = {}): LineMap {
 }
 
 describe('diff context', () => {
-  it('shows two rows on each side of a marked point', () => {
+  it('shows two rows on each side of a marked point with aligned editor-safe gutters', () => {
     const context = extractDiffContext({ newPath: 'src/new.ts', newLine: 10 }, lineMap());
 
     expect(context?.split('\n')).toEqual([
       '       9 │ line9',
       '-     10 │ removedLine10',
-      '+ ▶   10 │ addedLine10',
+      '+ |   10 │ addedLine10',
       '      11 │ line11',
     ]);
+    expect(context?.split('\n').map((line) => line.indexOf('│'))).toEqual([9, 9, 9, 9]);
   });
 
   it('marks a new-side Code Span while retaining old-side comparison rows', () => {
@@ -83,20 +84,20 @@ describe('diff context', () => {
   it('matches removed anchors through the old path and old line', () => {
     const context = extractDiffContext({ oldPath: 'src/old.ts', oldLine: 10 }, lineMap());
 
-    expect(context).toContain('- ▶   10 │ removedLine10');
+    expect(context).toContain('- |   10 │ removedLine10');
     expect(context).toContain('+     10 │ addedLine10');
-    expect(context).not.toContain('+ ▶   10 │ addedLine10');
+    expect(context).not.toContain('+ |   10 │ addedLine10');
   });
 
   it('matches a context line when only one side of its position is available', () => {
-    expect(extractDiffContext({ oldPath: 'src/old.ts', oldLine: 11 }, lineMap())).toContain('▶   11 │ line11');
-    expect(extractDiffContext({ newPath: 'src/new.ts', newLine: 11 }, lineMap())).toContain('▶   11 │ line11');
+    expect(extractDiffContext({ oldPath: 'src/old.ts', oldLine: 11 }, lineMap())).toContain('|   11 │ line11');
+    expect(extractDiffContext({ newPath: 'src/new.ts', newLine: 11 }, lineMap())).toContain('|   11 │ line11');
   });
 
   it('requires both sides to match when both endpoint positions are provided', () => {
     expect(extractDiffContext({ newPath: 'src/new.ts', oldLine: 10, newLine: 10 }, lineMap())).toBeNull();
     expect(extractDiffContext({ newPath: 'src/new.ts', oldLine: 11, newLine: 11 }, lineMap())).toContain(
-      '▶   11 │ line11',
+      '|   11 │ line11',
     );
   });
 
@@ -161,7 +162,7 @@ describe('diff context', () => {
   it('falls back to the endpoint when the Code Span start is unavailable in the hunk', () => {
     const context = extractDiffContext({ newPath: 'src/new.ts', newStartLine: 1, newLine: 10 }, lineMap());
 
-    expect(context).toContain('+ ▶   10 │ addedLine10');
+    expect(context).toContain('+ |   10 │ addedLine10');
     expect(context).not.toMatch(/[┌└]/);
   });
 
