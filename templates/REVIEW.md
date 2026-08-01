@@ -65,7 +65,7 @@ Flag convention deviations only when they create a concrete readability, maintai
 
 ## Simplicity
 
-Treat disproportionate complexity as a review concern when it makes changed behavior materially harder to understand, verify, or safely modify. Prefer designs that meet the current requirement while keeping ownership, state, validation, and side effects easy to trace. Do not flag an abstraction merely because a simpler shape exists; explain its concrete cost or risk, or report nothing.
+Treat complexity as a review concern only when it is disproportionate to the requirement and makes changed behavior materially harder to understand, verify, or safely modify. Prefer designs that keep ownership, state, validation, and side effects easy to trace. A simpler alternative alone is not a finding; identify a concrete cost or risk created or worsened by the change, or report nothing.
 
 ## Always check when relevant
 
