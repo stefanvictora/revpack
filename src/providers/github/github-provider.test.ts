@@ -261,7 +261,9 @@ describe('GitHubProvider GraphQL review threads', () => {
                         isOutdated: false,
                         path: 'src/app.ts',
                         line: 12,
+                        startLine: 9,
                         diffSide: 'RIGHT',
+                        startDiffSide: 'RIGHT',
                         comments: {
                           nodes: [
                             {
@@ -291,7 +293,9 @@ describe('GitHubProvider GraphQL review threads', () => {
                         isOutdated: false,
                         path: 'src/old.ts',
                         line: 7,
+                        startLine: 5,
                         diffSide: 'LEFT',
+                        startDiffSide: 'LEFT',
                         comments: {
                           nodes: [
                             {
@@ -316,6 +320,8 @@ describe('GitHubProvider GraphQL review threads', () => {
     const threads = await provider.listAllThreads(ref);
 
     expect(queries[0]).toContain('isOutdated');
+    expect(queries[0]).toContain('startLine');
+    expect(queries[0]).toContain('startDiffSide');
     expect(queries[0]).toContain('author { __typename login }');
     expect(calls).toEqual([
       { owner: 'octo', name: 'repo', number: 42, after: null },
@@ -333,6 +339,7 @@ describe('GitHubProvider GraphQL review threads', () => {
         resolvedAt: undefined,
         position: {
           filePath: 'src/app.ts',
+          newStartLine: 9,
           oldLine: undefined,
           newLine: 12,
           oldPath: 'src/app.ts',
@@ -370,6 +377,7 @@ describe('GitHubProvider GraphQL review threads', () => {
         resolvedAt: undefined,
         position: {
           filePath: 'src/old.ts',
+          oldStartLine: 5,
           oldLine: 7,
           newLine: undefined,
           oldPath: 'src/old.ts',

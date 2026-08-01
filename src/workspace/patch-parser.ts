@@ -8,6 +8,8 @@ export interface LineEntry {
   oldLine?: number;
   newLine?: number;
   text: string;
+  /** Zero-based hunk identity within the containing file. */
+  hunkIndex?: number;
 }
 
 export interface FileEntry {
@@ -67,11 +69,13 @@ export function parsePatch(patch: string): LineMap {
     };
 
     // Parse hunks
+    let hunkIndex = 0;
     while (i < lines.length && !lines[i].startsWith('diff --git ')) {
       if (lines[i].startsWith('@@ ')) {
-        const hunkResult = parseHunk(lines, i);
+        const hunkResult = parseHunk(lines, i, hunkIndex);
         fileEntry.lines.push(...hunkResult.entries);
         i = hunkResult.nextIndex;
+        hunkIndex++;
       } else {
         i++;
       }
@@ -310,7 +314,11 @@ function inferStatus(header: PatchFileHeader): FileStatus {
   return 'unknown';
 }
 
-function parseHunk(lines: string[], startIndex: number): { entries: LineEntry[]; nextIndex: number } {
+function parseHunk(
+  lines: string[],
+  startIndex: number,
+  hunkIndex: number,
+): { entries: LineEntry[]; nextIndex: number } {
   const entries: LineEntry[] = [];
   const hunkHeader = lines[startIndex];
 
@@ -347,6 +355,7 @@ function parseHunk(lines: string[], startIndex: number): { entries: LineEntry[];
         type: 'added',
         newLine,
         text: line.slice(1),
+        hunkIndex,
       });
       newLine++;
       i++;
@@ -358,6 +367,7 @@ function parseHunk(lines: string[], startIndex: number): { entries: LineEntry[];
         type: 'removed',
         oldLine,
         text: line.slice(1),
+        hunkIndex,
       });
       oldLine++;
       i++;
@@ -373,6 +383,7 @@ function parseHunk(lines: string[], startIndex: number): { entries: LineEntry[];
         oldLine,
         newLine,
         text: line.slice(1),
+        hunkIndex,
       });
       oldLine++;
       newLine++;

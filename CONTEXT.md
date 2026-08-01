@@ -69,7 +69,7 @@ Draft review material written by an agent for later inspection and publishing.
 _Avoid_: Bot comment, generated result
 
 **Finding**:
-A new agent-proposed line comment about code changed in the review target. A finding must have a valid positional anchor.
+A new agent-proposed line comment about code changed in the review target. A finding must have one valid Positional Anchor.
 _Avoid_: Issue, defect, annotation
 
 **Finding Category**:
@@ -79,6 +79,10 @@ _Avoid_: Allowed category, finding type
 **Positional Anchor**:
 The valid diff position where a finding can be published on a review target.
 _Avoid_: Anchor, line number, file location
+
+**Code Span**:
+A contiguous selection of changed-file lines on one side of a diff to which a Review Thread is attached. A single-line selection is a Code Span whose start and end are the same line.
+_Avoid_: Line range, multi-line anchor, context window
 
 **Anchor Map**:
 A review bundle artifact that maps diff text to valid positional anchors without serving as the diff used to understand the change.

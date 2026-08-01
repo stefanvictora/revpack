@@ -81,14 +81,14 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
       [
         4,
         [
-          '     14 | before();',
-          '     15 | validate();',
-          '-    16 | previous();',
-          '+    17 | replacement(); ◀',
-          '     18 | after();',
+          '      14 │ before();',
+          '      15 │ validate();',
+          '-     16 │ previous();',
+          '+ ▶   17 │ replacement();',
+          '      18 │ after();',
         ].join('\n'),
       ],
-      [9, '-     5 | removed(); ◀'],
+      [9, '- ▶    5 │ removed();'],
     ]),
     replies: [
       {
@@ -269,8 +269,9 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel(), terminal);
 
     expect(terminal.frames).toHaveLength(2);
-    expect(terminal.frames[0]).toContain(' │ ');
-    expect(terminal.frames[1]).not.toContain(' │ ');
+    expect(terminal.frames[0].split('\n')[0]).toContain('│ Preview');
+    expect(terminal.frames[1].split('\n')[0]).not.toContain('│ Preview');
+    expect(terminal.frames[1].split('\n')).toContain('Preview');
   });
 
   it('reserves cursor columns so labels do not move when focus changes', async () => {
@@ -455,14 +456,26 @@ describe('guided publish TUI', () => {
 
     expect(terminal.frames[0]).toContain('HIGH · correctness');
     expect(terminal.frames[0]).toContain('src/old.ts → src/new.ts · new line 17');
-    expect(terminal.frames[0]).toContain('+    17 | replacement(); ◀');
+    expect(terminal.frames[0]).toContain('+ ▶   17 │ replacement();');
     expect(terminal.frames[0]).toContain('The complete finding body.');
     expect(terminal.frames[0]).not.toContain('Finding —');
     expect(terminal.frames[0]).not.toContain('Anchor context');
     expect(terminal.frames[0]).not.toContain('Finding body');
-    expect(terminal.frames[0].indexOf('+    17 | replacement(); ◀')).toBeLessThan(
+    expect(terminal.frames[0].indexOf('+ ▶   17 │ replacement();')).toBeLessThan(
       terminal.frames[0].lastIndexOf('The complete finding body.'),
     );
+  });
+
+  it('clips long code rows instead of wrapping them as unlabeled continuation lines', async () => {
+    const longContext = `+ ▶   17 │ ${'segment '.repeat(20)}tail`;
+    const terminal = new FakeTerminal(['escape'], { columns: 100, rows: 24 });
+
+    await runGuidedPublish(guidedModel({ findingContexts: new Map([[4, longContext]]) }), terminal);
+
+    const frame = terminal.frames[0];
+    expect(frame).toContain('+ ▶   17 │ segment');
+    expect(frame).toContain('…');
+    expect(frame).not.toContain('tail');
   });
 
   it('keeps an unselected finding preview independent of publish state', async () => {
@@ -521,7 +534,7 @@ describe('guided publish TUI', () => {
 
     const frame = terminal.frames.at(-1)!;
     expect(frame).toContain('Reply T-001 · resolves thread');
-    expect(frame).toContain('src/reply.ts:21');
+    expect(frame).toContain('src/reply.ts · new line 21');
     expect(frame).toContain('In reply to @reviewer:');
     expect(stripVTControlCharacters(frame)).toContain('> • Original reviewer context with inline code.');
     expect(frame).not.toContain('**Original**');
@@ -629,7 +642,7 @@ describe('guided publish TUI', () => {
             },
           },
         ],
-        findingContexts: new Map([[4, '+   17 | **context remains literal** ◀']]),
+        findingContexts: new Map([[4, '+ ▶   17 │ **context remains literal**']]),
       }),
       terminal,
     );
@@ -790,7 +803,7 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(
       guidedModel({
         findings,
-        findingContexts: new Map([[4, `+   17 | context ${poison}safe ◀`]]),
+        findingContexts: new Map([[4, `+ ▶   17 │ context ${poison}safe`]]),
         replies,
         replyContexts: new Map([[3, baseContext]]),
         summary: { state: 'pending', content: `summary line one\nsummary ${poison}line two` },
@@ -807,7 +820,7 @@ describe('guided publish TUI', () => {
     expect(output).not.toContain('\r');
     expect(output).toContain('HIGH · correctness');
     expect(output).toContain('old-safe.ts → new-safe.ts · new line 17');
-    expect(output).toContain('context safe ◀');
+    expect(output).toContain('context safe');
     expect(output).toContain('Reply T-safe');
     expect(output).toContain('In reply to @reviewer:');
     expect(output).toContain('> context safe');

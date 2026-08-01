@@ -21,7 +21,7 @@ import { formatTargetKind } from '../core/display.js';
 import { formatTargetDisplayId } from '../providers/display.js';
 import { WorkspaceError } from '../core/errors.js';
 import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
-import { extractDiffContext } from './diff-context.js';
+import { extractDiffContext, formatDiffPositionLabel } from './diff-context.js';
 import type { GitHelper } from './git-helper.js';
 import { computeContentHash, computeThreadDigest, DIGEST_VERSION } from './thread-digest.js';
 import {
@@ -1347,8 +1347,8 @@ export class WorkspaceManager {
     if (thread.outdated !== undefined) lines.push(`- **Outdated**: ${thread.outdated}`);
     if (thread.position) {
       lines.push(`- **File**: \`${thread.position.filePath}\``);
-      const lineNum = thread.position.newLine ?? thread.position.oldLine;
-      if (lineNum) lines.push(`- **Line**: ${lineNum}`);
+      const positionLabel = formatDiffPositionLabel(thread.position);
+      if (positionLabel) lines.push(`- **Position**: ${positionLabel}`);
     }
     lines.push('');
 

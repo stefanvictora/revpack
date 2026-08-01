@@ -9,6 +9,7 @@ import type {
 import chalk from 'chalk';
 import { emitKeypressEvents } from 'node:readline';
 import { fitColumn, truncateColumn, visibleText, wrapText } from '../terminal-text.js';
+import { formatDiffPositionLabel } from '../../workspace/diff-context.js';
 import { renderMarkdownPreview, renderMarkdownPreviewLabel } from './publish-tui-markdown.js';
 
 export type PublishTerminalKey =
@@ -481,15 +482,12 @@ function renderPreview(
     const finding = model.findings.find(({ index }) => index === focus.index)?.value;
     if (!finding) return [];
     const context = model.findingContexts.get(focus.index);
-    const positions = [
-      finding.oldLine === undefined ? null : `old line ${finding.oldLine}`,
-      finding.newLine === undefined ? null : `new line ${finding.newLine}`,
-    ].filter((position): position is string => position !== null);
+    const positionLabel = formatDiffPositionLabel(finding) ?? 'position unavailable';
     const path = finding.oldPath === finding.newPath ? finding.newPath : `${finding.oldPath} → ${finding.newPath}`;
     return [
       ...severityHeading(finding.severity, finding.category, width),
-      ...dimWrapped(`${path} · ${positions.join(', ') || 'position unavailable'}`, width),
-      ...(context ? ['', ...wrapText(context, width)] : []),
+      ...dimWrapped(`${path} · ${positionLabel}`, width),
+      ...(context ? ['', ...context.split('\n').map((line) => truncateColumn(line, width))] : []),
       '',
       ...renderMarkdownPreview(finding.body, width),
     ];
@@ -498,12 +496,9 @@ function renderPreview(
     const reply = model.replies.find(({ index }) => index === focus.index)?.value;
     if (!reply) return [];
     const context = model.replyContexts.get(focus.index);
+    const replyPositionLabel = context?.position ? formatDiffPositionLabel(context.position) : null;
     const contextPosition = context?.position
-      ? `${context.position.filePath}${
-          (context.position.newLine ?? context.position.oldLine) === undefined
-            ? ''
-            : `:${context.position.newLine ?? context.position.oldLine}`
-        }`
+      ? `${context.position.filePath}${replyPositionLabel ? ` · ${replyPositionLabel}` : ''}`
       : null;
     const originalComment = context?.comments[0];
     return [

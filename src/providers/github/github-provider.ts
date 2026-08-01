@@ -453,8 +453,15 @@ export class GitHubProvider implements ReviewProvider {
   private mapThreadPosition(thread: GitHubReviewThread): DiffPosition | undefined {
     if (!thread.path) return undefined;
     const side = thread.diffSide ?? 'RIGHT';
+    const startSide = thread.startDiffSide ?? side;
+    const startLine =
+      startSide === side && thread.startLine != null && thread.line != null && thread.startLine < thread.line
+        ? thread.startLine
+        : undefined;
     return {
       filePath: thread.path,
+      ...(side === 'LEFT' && startLine !== undefined ? { oldStartLine: startLine } : {}),
+      ...(side === 'RIGHT' && startLine !== undefined ? { newStartLine: startLine } : {}),
       oldLine: side === 'LEFT' ? (thread.line ?? undefined) : undefined,
       newLine: side === 'RIGHT' ? (thread.line ?? undefined) : undefined,
       oldPath: thread.path,

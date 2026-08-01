@@ -53,7 +53,7 @@ const baseThread: ReviewThread = {
 
 describe('thread digest', () => {
   it('uses the current digest version', () => {
-    expect(DIGEST_VERSION).toBe(3);
+    expect(DIGEST_VERSION).toBe(4);
   });
 
   it('computes prefixed SHA-256 hashes', () => {
@@ -71,7 +71,7 @@ describe('thread digest', () => {
 
   it('preserves the canonical digest for a representative thread', () => {
     expect(computeThreadDigest(baseThread)).toBe(
-      'sha256:14d9444274c0e23f54a1b9cb6ba2d68899b811de3acdabe1c367c4d877885ddd',
+      'sha256:b60a779ea36d8ae27a819db3ce22ca84cdb7f1317083cc5d7da19d2ce700fd79',
     );
   });
 
@@ -101,6 +101,15 @@ describe('thread digest', () => {
     };
 
     expect(computeThreadDigest(moved)).not.toBe(computeThreadDigest(baseThread));
+  });
+
+  it('changes when a Code Span start changes', () => {
+    const ranged = {
+      ...baseThread,
+      position: { ...baseThread.position!, newStartLine: 9 },
+    };
+
+    expect(computeThreadDigest(ranged)).not.toBe(computeThreadDigest(baseThread));
   });
 
   it('changes when resolution metadata changes', () => {
@@ -199,7 +208,7 @@ describe('thread digest', () => {
 
   it('preserves the canonical aggregate digest for a representative thread list', () => {
     expect(computeAggregateThreadsDigest([baseThread])).toBe(
-      'sha256:6524da8fb995951d2e784f6d6af0342ef8b90798364702414f80fc1bf3f769a7',
+      'sha256:674c566a2cba1918d84990df9a2e70962174dae7a020b7e9858e1fdab79d2c2d',
     );
   });
 });

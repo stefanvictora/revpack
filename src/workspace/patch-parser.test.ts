@@ -21,7 +21,7 @@ index 111..222 100644
       expect(file.newPath).toBe('src/App.java');
       expect(file.status).toBe('modified');
 
-      expect(file.lines).toEqual([
+      expect(file.lines).toMatchObject([
         { type: 'context', oldLine: 1, newLine: 1, text: 'class App {' },
         { type: 'added', newLine: 2, text: '    private String name;' },
         { type: 'context', oldLine: 2, newLine: 3, text: '}' },
@@ -44,7 +44,7 @@ index 111..222 100644
       const file = result.files[0];
 
       const removed = file.lines.find((l) => l.type === 'removed');
-      expect(removed).toEqual({ type: 'removed', oldLine: 2, text: '    private String name;' });
+      expect(removed).toMatchObject({ type: 'removed', oldLine: 2, text: '    private String name;' });
     });
   });
 
@@ -63,7 +63,7 @@ index 111..222 100644
       const result = parsePatch(patch);
       const file = result.files[0];
 
-      expect(file.lines).toEqual([
+      expect(file.lines).toMatchObject([
         { type: 'context', oldLine: 5, newLine: 5, text: '    validate(user);' },
         { type: 'removed', oldLine: 6, text: '    repository.save(user);' },
         { type: 'added', newLine: 6, text: '    repository.saveAndFlush(user);' },
@@ -86,7 +86,7 @@ index 111..222 100644
       const result = parsePatch(patch);
       const file = result.files[0];
 
-      expect(file.lines).toEqual([
+      expect(file.lines).toMatchObject([
         { type: 'context', oldLine: 10, newLine: 10, text: '    validate(user);' },
         { type: 'added', newLine: 11, text: '    audit.log(user);' },
         { type: 'context', oldLine: 11, newLine: 12, text: '    notify(user);' },
@@ -136,7 +136,7 @@ rename to "src/new name.ts"
       expect(file.oldPath).toBe('src/old name.ts');
       expect(file.newPath).toBe('src/new name.ts');
       expect(file.status).toBe('renamed');
-      expect(file.lines[1]).toEqual({ type: 'added', newLine: 2, text: 'export const extra = true;' });
+      expect(file.lines[1]).toMatchObject({ type: 'added', newLine: 2, text: 'export const extra = true;' });
     });
 
     it('decodes Git C-style escapes in quoted paths', () => {
@@ -301,13 +301,20 @@ diff --git a/src/B.ts b/src/B.ts
       const file = result.files[0];
 
       // First hunk
-      expect(file.lines[0]).toEqual({ type: 'context', oldLine: 1, newLine: 1, text: 'line1' });
-      expect(file.lines[1]).toEqual({ type: 'added', newLine: 2, text: 'added1' });
+      expect(file.lines[0]).toMatchObject({ type: 'context', oldLine: 1, newLine: 1, text: 'line1' });
+      expect(file.lines[1]).toMatchObject({ type: 'added', newLine: 2, text: 'added1' });
+      expect(file.lines[0].hunkIndex).toBe(0);
 
       // Second hunk
       const secondHunkStart = file.lines.findIndex((l) => l.oldLine === 10);
       expect(secondHunkStart).toBeGreaterThan(0);
-      expect(file.lines[secondHunkStart]).toEqual({ type: 'context', oldLine: 10, newLine: 11, text: 'line10' });
+      expect(file.lines[secondHunkStart]).toMatchObject({
+        type: 'context',
+        oldLine: 10,
+        newLine: 11,
+        text: 'line10',
+      });
+      expect(file.lines[secondHunkStart].hunkIndex).toBe(1);
     });
   });
 
@@ -330,7 +337,7 @@ diff --git a/src/B.ts b/src/B.ts
 `;
 
       const result = parsePatch(patch);
-      expect(result.files[0].lines).toEqual([
+      expect(result.files[0].lines).toMatchObject([
         { type: 'context', oldLine: 1, newLine: 1, text: 'line1' },
         { type: 'added', newLine: 2, text: 'added' },
         { type: 'context', oldLine: 2, newLine: 3, text: 'line2' },

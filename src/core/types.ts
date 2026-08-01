@@ -98,7 +98,13 @@ export interface ReviewCommit {
 
 export interface DiffPosition {
   filePath: string;
+  /** Inclusive start line on the old side for a multi-line thread placement. */
+  oldStartLine?: number;
+  /** Inclusive start line on the new side for a multi-line thread placement. */
+  newStartLine?: number;
+  /** End line on the old side, or the sole line for a single-line placement. */
   oldLine?: number;
+  /** End line on the new side, or the sole line for a single-line placement. */
   newLine?: number;
   oldPath?: string;
   newPath?: string;
