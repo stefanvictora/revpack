@@ -59,6 +59,9 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
         value: {
           oldPath: 'src/old.ts',
           newPath: 'src/new.ts',
+          oldStartLine: 14,
+          oldLine: 16,
+          newStartLine: 15,
           newLine: 17,
           body: 'The complete finding body.',
           severity: 'high',
@@ -455,7 +458,8 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel(), terminal);
 
     expect(terminal.frames[0]).toContain('HIGH · correctness');
-    expect(terminal.frames[0]).toContain('src/old.ts → src/new.ts · new line 17');
+    expect(terminal.frames[0]).toContain('old lines 14–16');
+    expect(terminal.frames[0]).toContain('new lines 15–17');
     expect(terminal.frames[0]).toContain('+ ▶   17 │ replacement();');
     expect(terminal.frames[0]).toContain('The complete finding body.');
     expect(terminal.frames[0]).not.toContain('Finding —');
@@ -474,6 +478,7 @@ describe('guided publish TUI', () => {
 
     const frame = terminal.frames[0];
     expect(frame).toContain('+ ▶   17 │ segment');
+    expect(frame.match(/\bsegment\b/g)).toHaveLength(20);
     expect(frame).toContain('tail');
     expect(
       frame
