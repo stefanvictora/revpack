@@ -6,6 +6,9 @@ export type Severity = 'blocker' | 'high' | 'medium' | 'low' | 'nit';
 export type FindingCategory =
   | 'security'
   | 'correctness'
+  | 'reliability'
+  | 'compatibility'
+  | 'observability'
   | 'performance'
   | 'testing'
   | 'architecture'

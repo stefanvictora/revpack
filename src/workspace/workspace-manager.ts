@@ -1449,7 +1449,7 @@ const NEW_FINDINGS_JSON_SCHEMA = {
         type: 'string',
         minLength: 1,
         description:
-          'Finding category tag. Prefer: security, correctness, performance, testing, architecture, style, documentation, naming, error-handling, general.',
+          'Finding category tag. Prefer: security, correctness, reliability, compatibility, observability, performance, testing, architecture, style, documentation, naming, error-handling, general.',
       },
     },
     anyOf: [{ required: ['oldLine'] }, { required: ['newLine'] }],

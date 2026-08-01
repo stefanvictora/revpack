@@ -371,10 +371,13 @@ describe('severitySchema', () => {
 });
 
 describe('findingCategorySchema', () => {
-  it('accepts all valid categories', () => {
+  it('accepts all preferred categories', () => {
     for (const cat of [
       'security',
       'correctness',
+      'reliability',
+      'compatibility',
+      'observability',
       'performance',
       'testing',
       'architecture',

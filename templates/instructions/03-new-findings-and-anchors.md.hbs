@@ -16,6 +16,8 @@ Do not create findings for speculative issues, broad refactoring preferences, st
 
 ## Review changed behavior, not just changed lines
 
+Before evaluating individual findings, form a lightweight internal Risk Inventory of the changed behavior using the priorities in `REVIEW.md`. Use it to decide where the affected behavior, surrounding code, contracts, and tests warrant deeper inspection.
+
 When reviewing a changed line, also inspect the surrounding method, class, or call path. Ask:
 
 - What behavior changed? What inputs can reach this code?
@@ -161,6 +163,6 @@ Choose based on concrete impact, not how suspicious the code looks. If you canno
 
 ## Categories
 
-Prefer: `security`, `correctness`, `performance`, `testing`, `architecture`, `style`, `documentation`, `naming`, `error-handling`, `general`.
+Prefer: `security`, `correctness`, `reliability`, `compatibility`, `observability`, `performance`, `testing`, `architecture`, `style`, `documentation`, `naming`, `error-handling`, `general`.
 
 ---

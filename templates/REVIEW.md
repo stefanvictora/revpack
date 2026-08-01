@@ -63,6 +63,10 @@ Prefer existing repository conventions unless they are clearly harmful or confli
 
 Flag convention deviations only when they create a concrete readability, maintainability, correctness, compatibility, or onboarding risk.
 
+## Simplicity
+
+Treat disproportionate complexity as a review concern when it makes changed behavior materially harder to understand, verify, or safely modify. Prefer designs that meet the current requirement while keeping ownership, state, validation, and side effects easy to trace. Do not flag an abstraction merely because a simpler shape exists; explain its concrete cost or risk, or report nothing.
+
 ## Always check when relevant
 
 Pay particular attention to these areas when they are touched by the change:

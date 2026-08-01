@@ -228,6 +228,7 @@ describe('WorkspaceManager', () => {
     expect(reviewContract).toContain('do not discard a valid, non-duplicate issue');
     expect(findingsInstructions).toContain('## Incremental review scope');
     expect(findingsInstructions).toContain('Looking up that record is a required input step');
+    expect(finalChecks).toContain('one final coverage pass over the Risk Inventory');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
   });
 
