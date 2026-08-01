@@ -7,6 +7,7 @@ describe('terminal text', () => {
     expect(wrapText('alpha beta gamma', 10)).toEqual(['alpha beta', 'gamma']);
     expect(wrapText('1234567890', 10)).toEqual(['1234567890']);
     expect(wrapText('12345678901', 10)).toEqual(['1234567890', '1']);
+    expect(wrapText('abcdef', 3)).toEqual(['abc', 'def']);
     expect(wrapText('審査対象確認', 10)).toEqual(['審査対象確', '認']);
     expect(wrapText('123456789👩‍💻界B', 10)).toEqual(['123456789', '👩‍💻界B']);
   });

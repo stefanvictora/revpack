@@ -59,6 +59,27 @@ describe('diff context', () => {
     expect(context).toContain('└   11 │ line11');
   });
 
+  it('uses old-side gutter coordinates throughout an old-side span when an insertion shifts new lines', () => {
+    const context = extractDiffContext(
+      { oldPath: 'src/old.ts', oldStartLine: 8, oldLine: 10 },
+      lineMap({
+        lines: [
+          { type: 'context', oldLine: 8, newLine: 8, text: 'line8', hunkIndex: 0 },
+          { type: 'added', newLine: 9, text: 'insertedLine9', hunkIndex: 0 },
+          { type: 'context', oldLine: 9, newLine: 10, text: 'oldLine9', hunkIndex: 0 },
+          { type: 'context', oldLine: 10, newLine: 11, text: 'oldLine10', hunkIndex: 0 },
+        ],
+      }),
+    );
+
+    expect(context?.split('\n')).toEqual([
+      '  ┌    8 │ line8',
+      '+      9 │ insertedLine9',
+      '  │    9 │ oldLine9',
+      '  └   10 │ oldLine10',
+    ]);
+  });
+
   it('matches removed anchors through the old path and old line', () => {
     const context = extractDiffContext({ oldPath: 'src/old.ts', oldLine: 10 }, lineMap());
 

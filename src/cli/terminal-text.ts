@@ -64,7 +64,7 @@ function splitAtDisplayWidth(value: string, width: number): { line: string; rema
 }
 
 export function wrapText(text: string, width: number): string[] {
-  const safeWidth = Math.max(10, width);
+  const safeWidth = Math.max(1, width);
   const result: string[] = [];
   for (const sourceLine of text.replace(/\r\n/g, '\n').split('\n')) {
     let remaining = sourceLine;

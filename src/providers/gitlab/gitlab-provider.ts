@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { Agent } from 'undici';
 import type { CheckoutBranchTarget, CheckoutFallbackRef, ReviewProvider, NewThreadPosition } from '../provider.js';
 import type {
@@ -186,6 +187,8 @@ export class GitLabProvider implements ReviewProvider {
       };
       if (position.newLine != null) positionPayload.new_line = position.newLine;
       if (position.oldLine != null) positionPayload.old_line = position.oldLine;
+      const lineRange = buildGitLabLineRange(position);
+      if (lineRange) positionPayload.line_range = lineRange;
 
       // Try diff-positioned note with the values the agent provided.
       try {
@@ -449,10 +452,18 @@ export class GitLabProvider implements ReviewProvider {
   }
 
   private mapPosition(pos: GitLabPosition): DiffPosition {
+    const rangeStart = pos.line_range?.start;
+    const rangeEnd = pos.line_range?.end;
+    const oldLine = rangeEnd?.old_line ?? pos.old_line ?? undefined;
+    const newLine = rangeEnd?.new_line ?? pos.new_line ?? undefined;
+    const oldStartLine = rangeStart?.old_line;
+    const newStartLine = rangeStart?.new_line;
     return {
       filePath: pos.new_path ?? pos.old_path ?? '',
-      oldLine: pos.old_line ?? undefined,
-      newLine: pos.new_line ?? undefined,
+      oldLine,
+      newLine,
+      ...(oldStartLine != null && oldLine != null && oldStartLine < oldLine ? { oldStartLine } : {}),
+      ...(newStartLine != null && newLine != null && newStartLine < newLine ? { newStartLine } : {}),
       oldPath: pos.old_path ?? undefined,
       newPath: pos.new_path ?? undefined,
       baseSha: pos.base_sha ?? undefined,
@@ -532,6 +543,17 @@ interface GitLabPosition {
   base_sha?: string;
   head_sha?: string;
   start_sha?: string;
+  line_range?: {
+    start: GitLabLineRangeEndpoint;
+    end: GitLabLineRangeEndpoint;
+  };
+}
+
+interface GitLabLineRangeEndpoint {
+  line_code: string;
+  type: 'old' | 'new';
+  old_line?: number | null;
+  new_line?: number | null;
 }
 
 interface GitLabDiffVersion {
@@ -540,6 +562,30 @@ interface GitLabDiffVersion {
   base_commit_sha: string;
   start_commit_sha: string;
   created_at: string;
+}
+
+function buildGitLabLineRange(
+  position: NewThreadPosition,
+): { start: GitLabLineRangeEndpoint; end: GitLabLineRangeEndpoint } | undefined {
+  if (position.oldStartLine == null && position.newStartLine == null) return undefined;
+
+  const filePath = position.newPath || position.oldPath;
+  const fileHash = createHash('sha1').update(filePath).digest('hex');
+  const endpoint = (oldLine: number | undefined, newLine: number | undefined): GitLabLineRangeEndpoint | undefined => {
+    if (oldLine == null && newLine == null) return undefined;
+    const oldPosition = oldLine ?? newLine!;
+    const newPosition = newLine ?? oldLine!;
+    return {
+      line_code: `${fileHash}_${oldPosition}_${newPosition}`,
+      type: oldLine != null ? 'old' : 'new',
+      ...(oldLine != null ? { old_line: oldLine } : {}),
+      ...(newLine != null ? { new_line: newLine } : {}),
+    };
+  };
+
+  const start = endpoint(position.oldStartLine, position.newStartLine);
+  const end = endpoint(position.oldLine, position.newLine);
+  return start && end ? { start, end } : undefined;
 }
 
 // ─── TLS / dispatcher helper ──────────────────────────────

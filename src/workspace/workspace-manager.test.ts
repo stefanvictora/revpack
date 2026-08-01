@@ -189,6 +189,8 @@ describe('WorkspaceManager', () => {
     const newFindingsSchema = await fs.readFile(path.join(bundleDir, 'schemas', 'new-findings.schema.json'), 'utf-8');
     const repliesSchema = await fs.readFile(path.join(bundleDir, 'schemas', 'replies.schema.json'), 'utf-8');
     expect(newFindingsSchema).toContain('Array of review findings to publish as provider diff threads.');
+    expect(newFindingsSchema).toContain('oldStartLine');
+    expect(newFindingsSchema).toContain('newStartLine');
     expect(newFindingsSchema).not.toContain('GitLab/GitHub');
     expect(repliesSchema).toContain('Internal disposition tag (not published to the provider).');
     expect(repliesSchema).not.toContain('not published to GitLab');
@@ -233,7 +235,7 @@ describe('WorkspaceManager', () => {
     expect(findingsInstructions).toContain('Use your judgment to focus deeper inspection');
     expect(findingsInstructions).toContain('Before reporting a finding, try to disprove it');
     expect(findingsInstructions).toContain('## Incremental review scope');
-    expect(findingsInstructions).toContain('Looking up that record is a required input step');
+    expect(findingsInstructions).toContain('Looking up the required records is an input step');
     expect(finalChecks).toContain('disprove each remaining candidate finding');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
   });

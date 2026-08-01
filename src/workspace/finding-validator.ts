@@ -121,7 +121,46 @@ function validateFindingPosition(finding: NewFinding, index: number, lineMap: Li
     }
   }
 
+  if (finding.oldStartLine != null || finding.newStartLine != null) {
+    const startIndex = fileEntry.lines.findIndex((line) =>
+      matchesAnchor(line, finding.oldStartLine, finding.newStartLine),
+    );
+    if (startIndex === -1) {
+      return {
+        index,
+        finding,
+        message:
+          `No valid Code Span start found for ${finding.newPath} with ` +
+          `oldStartLine=${finding.oldStartLine ?? '<unset>'}, newStartLine=${finding.newStartLine ?? '<unset>'}. ` +
+          `Start fields must identify an exact Anchor Map record just like the endpoint fields.`,
+      };
+    }
+
+    const endIndex = fileEntry.lines.findIndex((line) => matchesAnchor(line, finding.oldLine, finding.newLine));
+    if (
+      endIndex === -1 ||
+      startIndex >= endIndex ||
+      fileEntry.lines[startIndex].hunkIndex !== fileEntry.lines[endIndex].hunkIndex
+    ) {
+      return {
+        index,
+        finding,
+        message: 'A Code Span start must precede its endpoint within the same diff hunk.',
+      };
+    }
+  }
+
   return null;
+}
+
+function matchesAnchor(
+  line: LineMap['files'][number]['lines'][number],
+  oldLine: number | undefined,
+  newLine: number | undefined,
+): boolean {
+  if (oldLine == null) return line.type === 'added' && line.newLine === newLine;
+  if (newLine == null) return line.type === 'removed' && line.oldLine === oldLine;
+  return line.type === 'context' && line.oldLine === oldLine && line.newLine === newLine;
 }
 
 /**
@@ -135,6 +174,8 @@ export function formatValidationErrors(errors: ValidationError[]): string {
         e.finding.newPath ? `newPath: ${e.finding.newPath}` : null,
         e.finding.oldLine != null ? `oldLine: ${e.finding.oldLine}` : null,
         e.finding.newLine != null ? `newLine: ${e.finding.newLine}` : null,
+        e.finding.oldStartLine != null ? `oldStartLine: ${e.finding.oldStartLine}` : null,
+        e.finding.newStartLine != null ? `newStartLine: ${e.finding.newStartLine}` : null,
       ]
         .filter(Boolean)
         .join('\n  ');

@@ -466,7 +466,7 @@ describe('guided publish TUI', () => {
     );
   });
 
-  it('clips long code rows instead of wrapping them as unlabeled continuation lines', async () => {
+  it('soft-wraps long code rows beneath the code gutter without losing content', async () => {
     const longContext = `+ ▶   17 │ ${'segment '.repeat(20)}tail`;
     const terminal = new FakeTerminal(['escape'], { columns: 100, rows: 24 });
 
@@ -474,8 +474,17 @@ describe('guided publish TUI', () => {
 
     const frame = terminal.frames[0];
     expect(frame).toContain('+ ▶   17 │ segment');
-    expect(frame).toContain('…');
-    expect(frame).not.toContain('tail');
+    expect(frame).toContain('tail');
+    expect(
+      frame
+        .split('\n')
+        .filter((line) => line.includes('segment'))
+        .every((line) => !line.includes('…')),
+    ).toBe(true);
+    expect(frame.split('\n').some((line) => /\s│\s+\u2502 segment/.test(stripVTControlCharacters(line)))).toBe(true);
+    for (const line of frame.split('\n')) {
+      expect(stringWidth(stripVTControlCharacters(line))).toBeLessThanOrEqual(100);
+    }
   });
 
   it('keeps an unselected finding preview independent of publish state', async () => {

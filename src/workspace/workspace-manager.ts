@@ -1443,6 +1443,16 @@ const NEW_FINDINGS_JSON_SCHEMA = {
       newPath: { type: 'string', minLength: 1, description: 'Path in the new (head) version of the diff.' },
       oldLine: { type: 'integer', minimum: 1, description: 'Line number in the old file (for removed/context lines).' },
       newLine: { type: 'integer', minimum: 1, description: 'Line number in the new file (for added/context lines).' },
+      oldStartLine: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Inclusive old-file start line for a multi-line finding; must identify an Anchor Map record.',
+      },
+      newStartLine: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Inclusive new-file start line for a multi-line finding; must identify an Anchor Map record.',
+      },
       body: { type: 'string', minLength: 1, description: 'Review comment body (markdown).' },
       severity: { type: 'string', enum: ['blocker', 'high', 'medium', 'low', 'nit'] },
       category: {
@@ -1453,6 +1463,10 @@ const NEW_FINDINGS_JSON_SCHEMA = {
       },
     },
     anyOf: [{ required: ['oldLine'] }, { required: ['newLine'] }],
+    allOf: [
+      { if: { required: ['oldStartLine'] }, then: { required: ['oldLine'] } },
+      { if: { required: ['newStartLine'] }, then: { required: ['newLine'] } },
+    ],
     additionalProperties: false,
   },
 };

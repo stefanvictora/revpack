@@ -47,7 +47,9 @@ The workspace contains only the new branch state. Deleted lines do not exist in 
 
 ## Positional anchors
 
-Each finding must anchor to exactly one Anchor Map record. Looking up that record is a required input step for writing a finding; revpack's later validation is the mechanical safety check, not a substitute for choosing the anchor.
+Every finding position must use exact Anchor Map records. A single-line finding uses one record; a Code Span uses one record for each endpoint. Looking up the required records is an input step for writing a finding; revpack's later validation is the mechanical safety check, not a substitute for choosing the anchors.
+
+To publish a finding on a contiguous Code Span, use the selected span's last Anchor Map record for `oldLine`/`newLine` and its first record for `oldStartLine`/`newStartLine`. Apply the same line-field rules below independently to each endpoint. Omit start fields for single-line findings. Both endpoints must be in the same diff hunk, and the start must precede the end.
 
 | `kind`    | Required line fields         |
 | --------- | ---------------------------- |
@@ -84,7 +86,7 @@ When a prospective finding appears to repeat earlier feedback, consult relevant 
 
 ## `outputs/new-findings.json`
 
-JSON array. Create this file only when you have at least one finding. Required fields: `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one of `oldLine`/`newLine`. For non-renamed files, paths are usually identical.
+JSON array. Create this file only when you have at least one finding. Required fields: `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one of `oldLine`/`newLine`. Optional `oldStartLine`/`newStartLine` fields turn that endpoint into a multi-line Code Span. For non-renamed files, paths are usually identical.
 
 <example>
 

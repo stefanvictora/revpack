@@ -27,6 +27,11 @@ function installFetch(handler: (url: string, init?: RequestInit) => Response | P
   );
 }
 
+function requestBodyJson(init?: RequestInit): unknown {
+  if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body');
+  return JSON.parse(init.body) as unknown;
+}
+
 describe('GitLabProvider.resolveTarget', () => {
   const provider = new GitLabProvider('https://gitlab.example.com', 'fake-token');
 
@@ -188,6 +193,116 @@ describe('GitLabProvider checkout fallback', () => {
     expect(error.message).toContain('refs/merge-requests/42/head');
     expect(error.message).toContain('GitLab 16.6 and newer');
     expect(error.message).toContain('14 days after merge or close');
+  });
+});
+
+describe('GitLabProvider Code Spans', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('preserves multi-line positions returned by GitLab discussions', async () => {
+    installFetch((url) => {
+      expect(url).toContain('/api/v4/projects/group%2Fproject/merge_requests/42/discussions');
+      return jsonResponse([
+        {
+          id: 'discussion-1',
+          notes: [
+            {
+              id: 1,
+              body: 'Range comment',
+              author: { username: 'reviewer' },
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+              resolvable: true,
+              resolved: false,
+              position: {
+                old_path: 'src/app.ts',
+                new_path: 'src/app.ts',
+                old_line: 12,
+                new_line: 14,
+                line_range: {
+                  start: {
+                    line_code: 'hash_8_10',
+                    type: 'old',
+                    old_line: 8,
+                    new_line: 10,
+                  },
+                  end: {
+                    line_code: 'hash_12_14',
+                    type: 'old',
+                    old_line: 12,
+                    new_line: 14,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ]);
+    });
+
+    const provider = new GitLabProvider('https://gitlab.example.com', 'fake-token');
+    const threads = await provider.listAllThreads(ref);
+
+    expect(threads[0].position).toMatchObject({
+      oldPath: 'src/app.ts',
+      newPath: 'src/app.ts',
+      oldStartLine: 8,
+      newStartLine: 10,
+      oldLine: 12,
+      newLine: 14,
+    });
+  });
+
+  it('posts multi-line findings using GitLab line_range positions', async () => {
+    let discussionBody: unknown;
+    installFetch((url, init) => {
+      if (url.endsWith('/versions')) {
+        return jsonResponse([
+          {
+            id: 1,
+            base_commit_sha: 'base-sha',
+            head_commit_sha: 'head-sha',
+            start_commit_sha: 'start-sha',
+            created_at: '2026-01-01T00:00:00Z',
+          },
+        ]);
+      }
+      if (url.endsWith('/discussions')) {
+        discussionBody = requestBodyJson(init);
+        return jsonResponse({ id: 'discussion-2', notes: [] });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const provider = new GitLabProvider('https://gitlab.example.com', 'fake-token');
+    await expect(
+      provider.createThread(ref, 'Range finding', {
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
+        newStartLine: 10,
+        newLine: 12,
+      }),
+    ).resolves.toBe('discussion-2');
+
+    expect(discussionBody).toMatchObject({
+      position: {
+        new_line: 12,
+        line_range: {
+          start: {
+            line_code: '216381173f187cf4c2baf119193855699f4bc616_10_10',
+            type: 'new',
+            new_line: 10,
+          },
+          end: {
+            line_code: '216381173f187cf4c2baf119193855699f4bc616_12_12',
+            type: 'new',
+            new_line: 12,
+          },
+        },
+      },
+    });
   });
 });
 

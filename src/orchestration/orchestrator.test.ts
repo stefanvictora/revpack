@@ -1193,6 +1193,7 @@ describe('ReviewOrchestrator', () => {
       const finding = {
         oldPath: 'src/app.ts',
         newPath: 'src/app.ts',
+        newStartLine: 40,
         newLine: 42,
         body: 'Potential null dereference here',
         severity: 'high' as const,
@@ -1204,7 +1205,14 @@ describe('ReviewOrchestrator', () => {
       expect(mockProvider.createThread).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
         expect.stringContaining('Potential null dereference here'),
-        { oldPath: 'src/app.ts', newPath: 'src/app.ts', newLine: 42, oldLine: undefined },
+        {
+          oldPath: 'src/app.ts',
+          newPath: 'src/app.ts',
+          newLine: 42,
+          oldLine: undefined,
+          newStartLine: 40,
+          oldStartLine: undefined,
+        },
       );
     });
 
@@ -2222,6 +2230,7 @@ describe('ReviewOrchestrator', () => {
         {
           oldPath: 'src/app.ts',
           newPath: 'src/app.ts',
+          newStartLine: 8,
           newLine: 10,
           body: 'Fix this',
           severity: 'medium' as const,
@@ -2233,7 +2242,15 @@ describe('ReviewOrchestrator', () => {
       expect(result).toEqual({ created: true });
       expect(submitReviewMock).toHaveBeenCalledWith(
         expect.objectContaining({ targetId: '42' }),
-        expect.arrayContaining([expect.objectContaining({ path: 'src/app.ts', line: 10, side: 'RIGHT' })]),
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: 'src/app.ts',
+            line: 10,
+            side: 'RIGHT',
+            startLine: 8,
+            startSide: 'RIGHT',
+          }),
+        ]),
         expect.stringContaining('Good work.'),
         'COMMENT',
       );

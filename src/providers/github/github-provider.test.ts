@@ -444,7 +444,7 @@ describe('GitHubProvider writes', () => {
     await provider.updateDescription(ref, 'new body');
   });
 
-  it('creates review threads with side-aware GraphQL input', async () => {
+  it('creates review threads with side-aware Code Span GraphQL input', async () => {
     const requests: { url: string; body?: unknown }[] = [];
     installFetch((url, init) => {
       requests.push({ url, body: init?.body ? requestBodyJson(init) : undefined });
@@ -459,6 +459,7 @@ describe('GitHubProvider writes', () => {
       provider.createThread(ref, 'finding body', {
         oldPath: 'src/app.ts',
         newPath: 'src/app.ts',
+        newStartLine: 9,
         newLine: 12,
       }),
     ).resolves.toBe('new-thread');
@@ -471,8 +472,39 @@ describe('GitHubProvider writes', () => {
           path: 'src/app.ts',
           line: 12,
           side: 'RIGHT',
+          startLine: 9,
+          startSide: 'RIGHT',
         },
       },
+    });
+  });
+
+  it('submits Code Spans in batched REST reviews', async () => {
+    let reviewBody: unknown;
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.github.com/repos/octo/repo/pulls/42/reviews');
+      reviewBody = requestBodyJson(init);
+      return jsonResponse({ id: 1 });
+    });
+
+    await provider.submitReview(
+      ref,
+      [
+        {
+          body: 'range finding',
+          path: 'src/app.ts',
+          line: 12,
+          side: 'RIGHT',
+          startLine: 9,
+          startSide: 'RIGHT',
+        },
+      ],
+      '',
+      'COMMENT',
+    );
+
+    expect(reviewBody).toMatchObject({
+      comments: [{ line: 12, side: 'RIGHT', start_line: 9, start_side: 'RIGHT' }],
     });
   });
 

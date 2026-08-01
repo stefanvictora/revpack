@@ -544,6 +544,8 @@ export class ReviewOrchestrator {
       newPath: finding.newPath,
       newLine: finding.newLine,
       oldLine: finding.oldLine,
+      newStartLine: finding.newStartLine,
+      oldStartLine: finding.oldStartLine,
     });
   }
 
@@ -582,6 +584,8 @@ export class ReviewOrchestrator {
         path: side === 'LEFT' ? f.oldPath : f.newPath,
         line: side === 'LEFT' ? f.oldLine : f.newLine,
         side,
+        ...(side === 'LEFT' && f.oldStartLine != null ? { startLine: f.oldStartLine, startSide: side } : {}),
+        ...(side === 'RIGHT' && f.newStartLine != null ? { startLine: f.newStartLine, startSide: side } : {}),
       };
     });
 

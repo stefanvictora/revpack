@@ -180,6 +180,10 @@ export interface NewFinding {
   newLine?: number;
   /** Line number in the old version of the file (left side of the diff). Set for removed/context lines. */
   oldLine?: number;
+  /** Inclusive start line in the new version for a multi-line finding. */
+  newStartLine?: number;
+  /** Inclusive start line in the old version for a multi-line finding. */
+  oldStartLine?: number;
   /** The review comment body (markdown). */
   body: string;
   /** Severity for prioritization. */

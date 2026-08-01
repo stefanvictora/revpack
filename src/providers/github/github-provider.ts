@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { Agent } from 'undici';
-import type { ReviewProvider, NewThreadPosition } from '../provider.js';
+import type { ReviewBatchComment, ReviewProvider, NewThreadPosition } from '../provider.js';
 import type {
   CommentOrigin,
   DiffPosition,
@@ -508,12 +508,15 @@ export class GitHubProvider implements ReviewProvider {
 
   private buildThreadInput(pullRequestId: string, body: string, position: NewThreadPosition): GitHubCreateThreadInput {
     const isLeftSide = position.oldLine != null && position.newLine == null;
+    const side = isLeftSide ? 'LEFT' : 'RIGHT';
+    const startLine = isLeftSide ? position.oldStartLine : position.newStartLine;
     return {
       pullRequestId,
       body,
       path: isLeftSide ? position.oldPath : position.newPath,
       line: isLeftSide ? position.oldLine : position.newLine,
-      side: isLeftSide ? 'LEFT' : 'RIGHT',
+      side,
+      ...(startLine != null ? { startLine, startSide: side } : {}),
     };
   }
 
@@ -523,7 +526,7 @@ export class GitHubProvider implements ReviewProvider {
    */
   async submitReview(
     ref: ReviewTargetRef,
-    comments: Array<{ body: string; path: string; line?: number; side?: 'LEFT' | 'RIGHT' }>,
+    comments: ReviewBatchComment[],
     body: string,
     event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
   ): Promise<void> {
@@ -534,6 +537,8 @@ export class GitHubProvider implements ReviewProvider {
         path: c.path,
         ...(c.line != null ? { line: c.line } : {}),
         ...(c.side ? { side: c.side } : {}),
+        ...(c.startLine != null ? { start_line: c.startLine } : {}),
+        ...(c.startSide ? { start_side: c.startSide } : {}),
       })),
     };
     if (body) {
@@ -638,6 +643,8 @@ interface GitHubCreateThreadInput {
   path: string;
   line?: number;
   side: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
 }
 
 // ─── Helpers ─────────────────────────────────────────────

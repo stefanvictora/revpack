@@ -447,6 +447,22 @@ function warningWrapped(text: string, width: number): string[] {
   return wrapText(text, width).map((line) => chalk.yellow(line));
 }
 
+function wrapCodeContext(context: string, width: number): string[] {
+  return context.split('\n').flatMap((line) => {
+    const separator = ' │ ';
+    const contentStart = line.indexOf(separator) + separator.length;
+    if (contentStart < separator.length) return wrapText(line, width);
+
+    const prefix = line.slice(0, contentStart);
+    const prefixWidth = visibleText(prefix).length;
+    if (prefixWidth >= width) return wrapText(line, width);
+
+    const contentLines = wrapText(line.slice(contentStart), width - prefixWidth);
+    const continuationPrefix = `${' '.repeat(Math.max(0, prefixWidth - 2))}│ `;
+    return contentLines.map((contentLine, index) => `${index === 0 ? prefix : continuationPrefix}${contentLine}`);
+  });
+}
+
 const REPLY_CONTEXT_MAX_CHARACTERS = 500;
 const REPLY_CONTEXT_MAX_LINES = 6;
 
@@ -487,7 +503,7 @@ function renderPreview(
     return [
       ...severityHeading(finding.severity, finding.category, width),
       ...dimWrapped(`${path} · ${positionLabel}`, width),
-      ...(context ? ['', ...context.split('\n').map((line) => truncateColumn(line, width))] : []),
+      ...(context ? ['', ...wrapCodeContext(context, width)] : []),
       '',
       ...renderMarkdownPreview(finding.body, width),
     ];

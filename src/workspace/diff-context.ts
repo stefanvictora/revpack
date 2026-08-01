@@ -18,6 +18,7 @@ type DiffSide = 'old' | 'new';
 
 interface SelectedSpan {
   indexes: number[];
+  side: DiffSide;
 }
 
 interface PreviewRow {
@@ -63,7 +64,7 @@ function resolveSelectedSpan(
         }
       }
       if (indexes.at(-1) === anchorIndex) {
-        return { indexes };
+        return { indexes, side: range.side };
       }
     }
   }
@@ -71,7 +72,7 @@ function resolveSelectedSpan(
   const pointSide: DiffSide = position.newLine !== undefined ? 'new' : 'old';
   const pointLine = pointSide === 'new' ? position.newLine : position.oldLine;
   if (pointLine === undefined) return null;
-  return { indexes: [anchorIndex] };
+  return { indexes: [anchorIndex], side: pointSide };
 }
 
 function previewRows(
@@ -142,9 +143,12 @@ export function extractDiffContext(position: DiffContextPosition, lineMap: LineM
   if (!span) return null;
   const selectedIndexes = new Set(span.indexes);
   const rows = previewRows(file.lines, span, hunkStart, hunkEnd);
+  const oppositeSide: DiffSide = span.side === 'new' ? 'old' : 'new';
+  const displayLineNumber = (line: LineEntry): number | undefined =>
+    sideLine(line, span.side) ?? sideLine(line, oppositeSide);
   const lineNumberWidth = Math.max(
     4,
-    ...rows.flatMap((row) => (row.line ? [String(row.line.newLine ?? row.line.oldLine ?? '').length] : [])),
+    ...rows.flatMap((row) => (row.line ? [String(displayLineNumber(row.line) ?? '').length] : [])),
   );
 
   return rows
@@ -163,7 +167,7 @@ export function extractDiffContext(position: DiffContextPosition, lineMap: LineM
             : selectedOffset === span.indexes.length - 1
               ? '└'
               : '│';
-      const lineNumber = row.line.newLine ?? row.line.oldLine ?? '';
+      const lineNumber = displayLineNumber(row.line) ?? '';
       return `${prefix} ${marker} ${String(lineNumber).padStart(lineNumberWidth)} │ ${row.line.text}`;
     })
     .join('\n');
