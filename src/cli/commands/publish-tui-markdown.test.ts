@@ -80,6 +80,18 @@ describe('publish TUI Markdown', () => {
     }
   });
 
+  it('bolds inline code containing underscores inside strong emphasis', () => {
+    const previousLevel = chalk.level;
+    chalk.level = 1;
+    try {
+      expect(renderMarkdownPreview('bucket now records the existing **`NO_OP_BUCKET_CANCELLED`** outcome', 80)).toEqual(
+        [['bucket now records the existing ', chalk.bold.cyan('NO_OP_BUCKET_CANCELLED'), ' outcome'].join('')],
+      );
+    } finally {
+      chalk.level = previousLevel;
+    }
+  });
+
   it.each([
     ['closing heading markers', '### Heading ###', ['Heading']],
     ['unordered marker variants', '+ plus\n* star', ['• plus', '• star']],

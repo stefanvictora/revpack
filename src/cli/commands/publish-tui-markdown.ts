@@ -27,12 +27,12 @@ function appendMarkdownSpan(spans: MarkdownSpan[], text: string, style: Markdown
   }
 }
 
+function containsUnsupportedEmphasisSyntax(value: string): boolean {
+  return [...value].some((character) => ['*', '_', '[', ']'].includes(character));
+}
+
 function emphasisMarkdownSpans(content: string, style: 'bold' | 'italic'): MarkdownSpan[] | null {
-  if (
-    content === '' ||
-    content.trim() !== content ||
-    [...content].some((character) => ['*', '_', '[', ']'].includes(character))
-  ) {
+  if (content === '' || content.trim() !== content) {
     return null;
   }
 
@@ -41,13 +41,17 @@ function emphasisMarkdownSpans(content: string, style: 'bold' | 'italic'): Markd
   while (offset < content.length) {
     const opening = content.indexOf('`', offset);
     if (opening < 0) {
-      appendMarkdownSpan(spans, content.slice(offset), style);
+      const remaining = content.slice(offset);
+      if (containsUnsupportedEmphasisSyntax(remaining)) return null;
+      appendMarkdownSpan(spans, remaining, style);
       break;
     }
 
     const closing = content.indexOf('`', opening + 1);
     if (closing <= opening + 1) return null;
-    appendMarkdownSpan(spans, content.slice(offset, opening), style);
+    const beforeCode = content.slice(offset, opening);
+    if (containsUnsupportedEmphasisSyntax(beforeCode)) return null;
+    appendMarkdownSpan(spans, beforeCode, style);
     appendMarkdownSpan(spans, content.slice(opening + 1, closing), style === 'bold' ? 'bold-code' : 'italic-code');
     offset = closing + 1;
   }

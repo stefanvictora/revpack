@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Default Review Guidance now includes a concise simplicity lens for disproportionate complexity with concrete maintenance or correctness risk.
 - Review findings now prefer `reliability`, `compatibility`, and `observability` categories while continuing to accept custom categories.
 
+### Fixed
+
+- Guided Publish Markdown previews now style inline code containing underscores correctly inside bold or italic emphasis.
+
 ## [0.5.0] - 2026-07-27
 
 ### Added
