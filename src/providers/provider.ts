@@ -12,6 +12,19 @@ export interface NewThreadPosition {
   newLine?: number;
   /** Line number in the old version of the file (for removed/context lines). */
   oldLine?: number;
+  /** Inclusive start line in the new version for a multi-line thread. */
+  newStartLine?: number;
+  /** Inclusive start line in the old version for a multi-line thread. */
+  oldStartLine?: number;
+}
+
+export interface ReviewBatchComment {
+  body: string;
+  path: string;
+  line?: number;
+  side?: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
 }
 
 export interface CheckoutFallbackRef {
@@ -116,7 +129,7 @@ export interface ReviewProvider {
    */
   submitReview?(
     ref: ReviewTargetRef,
-    comments: Array<{ body: string; path: string; line?: number; side?: 'LEFT' | 'RIGHT' }>,
+    comments: ReviewBatchComment[],
     body: string,
     event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
   ): Promise<void>;

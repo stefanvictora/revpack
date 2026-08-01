@@ -87,6 +87,44 @@ describe('validateFindings', () => {
       expect(result.valid).toHaveLength(1);
     });
 
+    it('accepts a Code Span whose start and endpoint are exact anchors in one hunk', () => {
+      const findings = [
+        {
+          oldPath: 'src/App.java',
+          newPath: 'src/App.java',
+          newStartLine: 2,
+          oldLine: 3,
+          newLine: 3,
+          body: 'Range finding',
+          severity: 'medium',
+          category: 'correctness',
+        },
+      ];
+
+      const result = validateFindings(findings, makeLineMap());
+      expect(result.errors).toHaveLength(0);
+      expect(result.valid).toEqual(findings);
+    });
+
+    it('accepts an old-side Code Span beginning on a removed line', () => {
+      const findings = [
+        {
+          oldPath: 'src/App.java',
+          newPath: 'src/App.java',
+          oldStartLine: 2,
+          oldLine: 3,
+          newLine: 3,
+          body: 'Old-side range finding',
+          severity: 'medium',
+          category: 'correctness',
+        },
+      ];
+
+      const result = validateFindings(findings, makeLineMap());
+      expect(result.errors).toHaveLength(0);
+      expect(result.valid).toEqual(findings);
+    });
+
     it('accepts an empty array', () => {
       const result = validateFindings([], makeLineMap());
       expect(result.errors).toHaveLength(0);
@@ -121,6 +159,51 @@ describe('validateFindings', () => {
   });
 
   describe('invalid findings', () => {
+    it('rejects a Code Span whose start does not identify an exact anchor', () => {
+      const result = validateFindings(
+        [
+          {
+            oldPath: 'src/App.java',
+            newPath: 'src/App.java',
+            newStartLine: 1,
+            oldLine: 3,
+            newLine: 3,
+            body: 'Invalid range finding',
+            severity: 'medium',
+            category: 'correctness',
+          },
+        ],
+        makeLineMap(),
+      );
+
+      expect(result.errors[0].message).toContain('No valid Code Span start');
+    });
+
+    it('rejects a Code Span whose endpoints are in different diff hunks', () => {
+      const lineMap = makeLineMap();
+      lineMap.files[0].lines = [
+        { type: 'added', newLine: 2, text: 'start', hunkIndex: 0 },
+        { type: 'added', newLine: 3, text: 'end', hunkIndex: 1 },
+      ];
+
+      const result = validateFindings(
+        [
+          {
+            oldPath: 'src/App.java',
+            newPath: 'src/App.java',
+            newStartLine: 2,
+            newLine: 3,
+            body: 'Cross-hunk range finding',
+            severity: 'medium',
+            category: 'correctness',
+          },
+        ],
+        lineMap,
+      );
+
+      expect(result.errors[0].message).toBe('A Code Span start must precede its endpoint within the same diff hunk.');
+    });
+
     it('rejects newLine-only finding on a context line', () => {
       const findings = [
         {

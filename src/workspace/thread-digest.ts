@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { ReviewThread } from '../core/types.js';
 import { canonicalThreadComments } from './thread-utils.js';
 
-const DIGEST_VERSION = 3;
+const DIGEST_VERSION = 4;
 
 /**
  * Compute a SHA-256 hash of a string.
@@ -39,6 +39,8 @@ function threadProjection(thread: ReviewThread): object {
           filePath: nullable(thread.position.filePath),
           oldPath: nullable(thread.position.oldPath),
           newPath: nullable(thread.position.newPath),
+          oldStartLine: nullable(thread.position.oldStartLine),
+          newStartLine: nullable(thread.position.newStartLine),
           oldLine: nullable(thread.position.oldLine),
           newLine: nullable(thread.position.newLine),
           baseSha: nullable(thread.position.baseSha),

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Prepared GitHub, GitLab, and Bitbucket Cloud review threads now preserve multi-line Code Spans, and new findings can publish Code Spans on all three providers. Thread Markdown and Guided Publish code excerpts use a width-stable point marker, clearer Code Span gutters, symmetric context that stays within one diff hunk, visible condensation for long spans, and width-safe soft wrapping.
+
 ### Changed
 
 - Formal revpack reviews now use a lightweight internal Risk Inventory to focus effort on higher-impact areas, trace intended behavior and required follow-through, validate concerns against surrounding evidence, and discard candidate findings that do not survive an active attempt to disprove them.

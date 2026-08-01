@@ -98,7 +98,13 @@ export interface ReviewCommit {
 
 export interface DiffPosition {
   filePath: string;
+  /** Inclusive start line on the old side for a multi-line thread placement. */
+  oldStartLine?: number;
+  /** Inclusive start line on the new side for a multi-line thread placement. */
+  newStartLine?: number;
+  /** End line on the old side, or the sole line for a single-line placement. */
   oldLine?: number;
+  /** End line on the new side, or the sole line for a single-line placement. */
   newLine?: number;
   oldPath?: string;
   newPath?: string;
@@ -174,6 +180,10 @@ export interface NewFinding {
   newLine?: number;
   /** Line number in the old version of the file (left side of the diff). Set for removed/context lines. */
   oldLine?: number;
+  /** Inclusive start line in the new version for a multi-line finding. */
+  newStartLine?: number;
+  /** Inclusive start line in the old version for a multi-line finding. */
+  oldStartLine?: number;
   /** The review comment body (markdown). */
   body: string;
   /** Severity for prioritization. */

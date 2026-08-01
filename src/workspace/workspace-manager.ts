@@ -21,7 +21,7 @@ import { formatTargetKind } from '../core/display.js';
 import { formatTargetDisplayId } from '../providers/display.js';
 import { WorkspaceError } from '../core/errors.js';
 import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
-import { extractDiffContext } from './diff-context.js';
+import { extractDiffContext, formatDiffPositionLabel } from './diff-context.js';
 import type { GitHelper } from './git-helper.js';
 import { computeContentHash, computeThreadDigest, DIGEST_VERSION } from './thread-digest.js';
 import {
@@ -1347,8 +1347,8 @@ export class WorkspaceManager {
     if (thread.outdated !== undefined) lines.push(`- **Outdated**: ${thread.outdated}`);
     if (thread.position) {
       lines.push(`- **File**: \`${thread.position.filePath}\``);
-      const lineNum = thread.position.newLine ?? thread.position.oldLine;
-      if (lineNum) lines.push(`- **Line**: ${lineNum}`);
+      const positionLabel = formatDiffPositionLabel(thread.position);
+      if (positionLabel) lines.push(`- **Position**: ${positionLabel}`);
     }
     lines.push('');
 
@@ -1443,6 +1443,16 @@ const NEW_FINDINGS_JSON_SCHEMA = {
       newPath: { type: 'string', minLength: 1, description: 'Path in the new (head) version of the diff.' },
       oldLine: { type: 'integer', minimum: 1, description: 'Line number in the old file (for removed/context lines).' },
       newLine: { type: 'integer', minimum: 1, description: 'Line number in the new file (for added/context lines).' },
+      oldStartLine: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Inclusive old-file start line for a multi-line finding; must identify an Anchor Map record.',
+      },
+      newStartLine: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Inclusive new-file start line for a multi-line finding; must identify an Anchor Map record.',
+      },
       body: { type: 'string', minLength: 1, description: 'Review comment body (markdown).' },
       severity: { type: 'string', enum: ['blocker', 'high', 'medium', 'low', 'nit'] },
       category: {
@@ -1453,6 +1463,10 @@ const NEW_FINDINGS_JSON_SCHEMA = {
       },
     },
     anyOf: [{ required: ['oldLine'] }, { required: ['newLine'] }],
+    allOf: [
+      { if: { required: ['oldStartLine'] }, then: { required: ['oldLine'] } },
+      { if: { required: ['newStartLine'] }, then: { required: ['newLine'] } },
+    ],
     additionalProperties: false,
   },
 };

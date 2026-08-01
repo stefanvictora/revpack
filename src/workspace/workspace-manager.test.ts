@@ -189,6 +189,8 @@ describe('WorkspaceManager', () => {
     const newFindingsSchema = await fs.readFile(path.join(bundleDir, 'schemas', 'new-findings.schema.json'), 'utf-8');
     const repliesSchema = await fs.readFile(path.join(bundleDir, 'schemas', 'replies.schema.json'), 'utf-8');
     expect(newFindingsSchema).toContain('Array of review findings to publish as provider diff threads.');
+    expect(newFindingsSchema).toContain('oldStartLine');
+    expect(newFindingsSchema).toContain('newStartLine');
     expect(newFindingsSchema).not.toContain('GitLab/GitHub');
     expect(repliesSchema).toContain('Internal disposition tag (not published to the provider).');
     expect(repliesSchema).not.toContain('not published to GitLab');
@@ -233,7 +235,7 @@ describe('WorkspaceManager', () => {
     expect(findingsInstructions).toContain('Use your judgment to focus deeper inspection');
     expect(findingsInstructions).toContain('Before reporting a finding, try to disprove it');
     expect(findingsInstructions).toContain('## Incremental review scope');
-    expect(findingsInstructions).toContain('Looking up that record is a required input step');
+    expect(findingsInstructions).toContain('Looking up the required records is an input step');
     expect(finalChecks).toContain('disprove each remaining candidate finding');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
   });
@@ -2521,25 +2523,25 @@ describe('WorkspaceManager', () => {
       expect(md).toContain('## Diff Context');
       expect(md).toContain('```diff');
       expect(md).toContain('compute(a, b)');
-      expect(md).toContain('◀');
+      expect(md).toMatch(/^[ +-] \| /m);
       // Verify diff context format: prefix characters match line types
       expect(md).toContain('+ '); // added line prefix
       expect(md).toContain('- '); // removed line prefix
       // The targeted line (newLine 10) maps to 'const c = compute(a, b)' which is added
-      // Verify the marker ◀ appears on the correct line
+      // Verify the point marker appears on the correct line
       const diffBlock = md.split('```diff')[1].split('```')[0];
-      const markedLine = diffBlock.split('\n').find((l) => l.includes('◀'));
+      const markedLine = diffBlock.split('\n').find((l) => /^[ +-] \| /.test(l));
       expect(markedLine).toContain('compute(a, b)');
-      // Only one line should have the ◀ marker
-      expect(diffBlock.split('◀').length).toBe(2); // one occurrence = 2 parts
+      // Only one line should have the point marker
+      expect(diffBlock.match(/^[ +-] \| /gm)).toHaveLength(1);
       // First line of diff context starts with a valid prefix (space, +, or -)
       const firstContextLine = diffBlock.split('\n').find((l) => l.trim().length > 0);
       expect(firstContextLine).toMatch(/^[ +-]/);
-      // Context window extends beyond the marked line (verifies +1 after marker)
+      // Context window extends beyond the marked line.
       expect(diffBlock).toContain('return c');
     });
 
-    it('shows correct context window with 3 lines above and 1 below', async () => {
+    it('shows a symmetric context window with 2 rows above and below', async () => {
       const diff: ReviewDiff = {
         oldPath: 'src/app.ts',
         newPath: 'src/app.ts',
@@ -2568,17 +2570,18 @@ describe('WorkspaceManager', () => {
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       const diffBlock = md.split('```diff')[1].split('```')[0];
       const diffLines = diffBlock.trim().split('\n');
-      // Context window should show indices 3-7 (line8, line9, -oldLine10, +newLine10, line11)
+      // Context window shows the two diff rows on each side of +newLine10.
       // Verify removed and added prefixes appear
       expect(diffLines.some((l) => l.startsWith('-') && l.includes('oldLine10'))).toBe(true);
       expect(diffLines.some((l) => l.startsWith('+') && l.includes('newLine10'))).toBe(true);
       // Verify context line (space prefix) is included
-      expect(diffLines.some((l) => l.trimStart().includes('| line8'))).toBe(true);
-      // The ◀ marker should be on the newLine10 line (the target)
-      expect(diffLines.find((l) => l.includes('◀'))).toContain('newLine10');
-      // Lines before the window (line5, line6, line7) should NOT appear
+      expect(diffLines.some((l) => l.includes('│ line9'))).toBe(true);
+      // The point marker should be on the newLine10 line (the target)
+      expect(diffLines.find((l) => /^[ +-] \| /.test(l))).toContain('newLine10');
+      // Lines before the window should not appear.
       expect(diffBlock).not.toContain('line5');
       expect(diffBlock).not.toContain('line6');
+      expect(diffBlock).not.toContain('line8');
     });
 
     it('uses oldLine for position matching when newLine is absent', async () => {
@@ -2600,7 +2603,43 @@ describe('WorkspaceManager', () => {
       expect(md).toContain('## Diff Context');
       expect(md).toContain('removedLine10');
       const diffBlock = md.split('```diff')[1].split('```')[0];
-      expect(diffBlock).toContain('◀');
+      expect(diffBlock).toMatch(/^[ +-] \| /m);
+    });
+
+    it('renders an imported Code Span with its exact range and selected-line gutter', async () => {
+      const diff: ReviewDiff = {
+        oldPath: 'src/app.ts',
+        newPath: 'src/app.ts',
+        diff: [
+          '@@ -128,6 +128,7 @@',
+          ' line128',
+          ' line129',
+          '-oldLine130',
+          '+newLine130',
+          ' line131',
+          '+newLine132',
+          ' line133',
+          ' line134',
+        ].join('\n'),
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      };
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: { filePath: 'src/app.ts', newStartLine: 130, newLine: 133 },
+      };
+      await createBundle(manager, makeTarget(), [thread], [diff]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      const diffBlock = md.split('```diff')[1].split('```')[0];
+      expect(md).toContain('- **Position**: new lines 130–133');
+      expect(diffBlock).toContain('+ ┌  130 │ newLine130');
+      expect(diffBlock).toContain('  │  131 │ line131');
+      expect(diffBlock).toContain('+ │  132 │ newLine132');
+      expect(diffBlock).toContain('  └  133 │ line133');
+      expect(diffBlock).toContain('-    130 │ oldLine130');
+      expect(diffBlock).not.toMatch(/^[ +-] \| /m);
     });
 
     it('shows stale revision warning when headSha does not match', async () => {
@@ -2713,7 +2752,7 @@ describe('WorkspaceManager', () => {
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       expect(md).toContain('- **File**: `src/foo.ts`');
-      expect(md).toContain('- **Line**: 42');
+      expect(md).toContain('- **Position**: new line 42');
     });
 
     it('falls back to oldLine when newLine is absent', async () => {
@@ -2724,7 +2763,7 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), [thread], []);
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
-      expect(md).toContain('- **Line**: 7');
+      expect(md).toContain('- **Position**: old line 7');
     });
 
     it('omits line when both newLine and oldLine are absent', async () => {
@@ -2736,7 +2775,7 @@ describe('WorkspaceManager', () => {
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       expect(md).toContain('- **File**: `src/baz.ts`');
-      expect(md).not.toContain('- **Line**');
+      expect(md).not.toContain('- **Position**');
     });
   });
 
@@ -3673,10 +3712,9 @@ describe('WorkspaceManager', () => {
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       const diffBlock = md.split('```diff')[1].split('```')[0];
-      // lineIdx=0, start=max(0,0-3)=0, end=min(3,0+1)=1
-      // Should show at most 2 lines: the target + 1 below
+      // At the hunk boundary, only available rows are shown.
       expect(diffBlock).toContain('newFirst');
-      expect(diffBlock).toContain('◀');
+      expect(diffBlock).toMatch(/^[ +-] \| /m);
       expect(diffBlock).toContain('line2');
     });
 
@@ -3697,11 +3735,10 @@ describe('WorkspaceManager', () => {
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       const diffBlock = md.split('```diff')[1].split('```')[0];
-      // lineIdx=3 (last), start=max(0,3-3)=0, end=min(3,3+1)=3
       expect(diffBlock).toContain('lastLine');
-      expect(diffBlock).toContain('◀');
-      // All 3 context lines above should be shown
-      expect(diffBlock).toContain('line1');
+      expect(diffBlock).toMatch(/^[ +-] \| /m);
+      // Only the two nearest context rows above should be shown.
+      expect(diffBlock).not.toContain('line1');
       expect(diffBlock).toContain('line2');
       expect(diffBlock).toContain('line3');
     });
@@ -3728,7 +3765,7 @@ describe('WorkspaceManager', () => {
       const removedLine = lines.find((l) => l.includes('deleted'));
       expect(removedLine).toBeDefined();
       expect(removedLine![0]).toBe('-');
-      expect(removedLine).toContain('◀');
+      expect(removedLine).toMatch(/^- \| /);
       // Removed line uses oldLine number since newLine is undefined
       expect(removedLine).toContain('6');
       // Context line should have space prefix at position 0

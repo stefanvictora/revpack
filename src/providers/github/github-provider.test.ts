@@ -261,7 +261,9 @@ describe('GitHubProvider GraphQL review threads', () => {
                         isOutdated: false,
                         path: 'src/app.ts',
                         line: 12,
+                        startLine: 9,
                         diffSide: 'RIGHT',
+                        startDiffSide: 'RIGHT',
                         comments: {
                           nodes: [
                             {
@@ -291,7 +293,9 @@ describe('GitHubProvider GraphQL review threads', () => {
                         isOutdated: false,
                         path: 'src/old.ts',
                         line: 7,
+                        startLine: 5,
                         diffSide: 'LEFT',
+                        startDiffSide: 'LEFT',
                         comments: {
                           nodes: [
                             {
@@ -316,6 +320,8 @@ describe('GitHubProvider GraphQL review threads', () => {
     const threads = await provider.listAllThreads(ref);
 
     expect(queries[0]).toContain('isOutdated');
+    expect(queries[0]).toContain('startLine');
+    expect(queries[0]).toContain('startDiffSide');
     expect(queries[0]).toContain('author { __typename login }');
     expect(calls).toEqual([
       { owner: 'octo', name: 'repo', number: 42, after: null },
@@ -333,6 +339,7 @@ describe('GitHubProvider GraphQL review threads', () => {
         resolvedAt: undefined,
         position: {
           filePath: 'src/app.ts',
+          newStartLine: 9,
           oldLine: undefined,
           newLine: 12,
           oldPath: 'src/app.ts',
@@ -370,6 +377,7 @@ describe('GitHubProvider GraphQL review threads', () => {
         resolvedAt: undefined,
         position: {
           filePath: 'src/old.ts',
+          oldStartLine: 5,
           oldLine: 7,
           newLine: undefined,
           oldPath: 'src/old.ts',
@@ -436,7 +444,7 @@ describe('GitHubProvider writes', () => {
     await provider.updateDescription(ref, 'new body');
   });
 
-  it('creates review threads with side-aware GraphQL input', async () => {
+  it('creates review threads with side-aware Code Span GraphQL input', async () => {
     const requests: { url: string; body?: unknown }[] = [];
     installFetch((url, init) => {
       requests.push({ url, body: init?.body ? requestBodyJson(init) : undefined });
@@ -451,6 +459,7 @@ describe('GitHubProvider writes', () => {
       provider.createThread(ref, 'finding body', {
         oldPath: 'src/app.ts',
         newPath: 'src/app.ts',
+        newStartLine: 9,
         newLine: 12,
       }),
     ).resolves.toBe('new-thread');
@@ -463,8 +472,39 @@ describe('GitHubProvider writes', () => {
           path: 'src/app.ts',
           line: 12,
           side: 'RIGHT',
+          startLine: 9,
+          startSide: 'RIGHT',
         },
       },
+    });
+  });
+
+  it('submits Code Spans in batched REST reviews', async () => {
+    let reviewBody: unknown;
+    installFetch((url, init) => {
+      expect(url).toBe('https://api.github.com/repos/octo/repo/pulls/42/reviews');
+      reviewBody = requestBodyJson(init);
+      return jsonResponse({ id: 1 });
+    });
+
+    await provider.submitReview(
+      ref,
+      [
+        {
+          body: 'range finding',
+          path: 'src/app.ts',
+          line: 12,
+          side: 'RIGHT',
+          startLine: 9,
+          startSide: 'RIGHT',
+        },
+      ],
+      '',
+      'COMMENT',
+    );
+
+    expect(reviewBody).toMatchObject({
+      comments: [{ line: 12, side: 'RIGHT', start_line: 9, start_side: 'RIGHT' }],
     });
   });
 

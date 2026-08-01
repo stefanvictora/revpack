@@ -23,11 +23,19 @@ export const newFindingSchema = z
     newPath: z.string().min(1),
     oldLine: z.number().int().positive().optional(),
     newLine: z.number().int().positive().optional(),
+    oldStartLine: z.number().int().positive().optional(),
+    newStartLine: z.number().int().positive().optional(),
     body: z.string().min(1),
     severity: severitySchema,
     category: findingCategorySchema,
   })
-  .refine((f) => f.oldLine != null || f.newLine != null, { message: 'At least one of oldLine or newLine is required' });
+  .refine((f) => f.oldLine != null || f.newLine != null, { message: 'At least one of oldLine or newLine is required' })
+  .refine((f) => f.oldStartLine == null || (f.oldLine != null && f.oldStartLine < f.oldLine), {
+    message: 'oldStartLine requires a later oldLine endpoint',
+  })
+  .refine((f) => f.newStartLine == null || (f.newLine != null && f.newStartLine < f.newLine), {
+    message: 'newStartLine requires a later newLine endpoint',
+  });
 
 export const replyDispositionSchema = z.enum(['already_fixed', 'explain', 'suggest_fix', 'disagree', 'escalate']);
 

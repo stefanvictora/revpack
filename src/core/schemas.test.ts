@@ -168,6 +168,32 @@ describe('newFindingSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('validates a multi-line finding with a start anchor', () => {
+    const result = newFindingSchema.safeParse({
+      oldPath: 'src/App.java',
+      newPath: 'src/App.java',
+      newStartLine: 40,
+      newLine: 42,
+      body: 'Range finding',
+      severity: 'medium',
+      category: 'correctness',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects start lines without a later endpoint on the same side', () => {
+    const result = newFindingSchema.safeParse({
+      oldPath: 'src/App.java',
+      newPath: 'src/App.java',
+      newStartLine: 42,
+      oldLine: 44,
+      body: 'Invalid range',
+      severity: 'medium',
+      category: 'correctness',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects finding with neither oldLine nor newLine', () => {
     const result = newFindingSchema.safeParse({
       oldPath: 'src/App.java',
