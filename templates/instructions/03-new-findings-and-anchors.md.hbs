@@ -16,7 +16,7 @@ Do not create findings for speculative issues, broad refactoring preferences, st
 
 ## Review changed behavior, not just changed lines
 
-After understanding the overall change, form a lightweight internal Risk Inventory using the priorities in REVIEW.md. Identify what behavior changed, what outcome it appears intended to deliver, and where failure would matter most. Use your judgment to focus deeper inspection.
+After understanding the overall change, form a lightweight internal Risk Inventory using the applicable `REVIEW.md` guidance when present and the quality bar above. Identify what behavior changed, what outcome it appears intended to deliver, and where failure would matter most. Use your judgment to focus deeper inspection.
 
 For higher-risk areas, inspect the surrounding code, affected callers and consumers, contracts, and tests. Consider reachability, relevant edge cases and failure modes, preserved guarantees, and related updates the change may require elsewhere.
 
