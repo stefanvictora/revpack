@@ -128,8 +128,17 @@ describe('WorkspaceManager', () => {
     versions: ReviewVersion[] = [],
     commits: ReviewCommit[] = [],
   ) {
+    const contextPatch = diffs.map((diff) => WorkspaceManager.diffToGitPatch(diff)).join('\n');
+    const contextualThreads = contextPatch
+      ? threads.map((thread) =>
+          thread.position && !thread.threadContext ? { ...thread, threadContext: { patch: contextPatch } } : thread,
+        )
+      : threads;
     const threadIndex = WorkspaceManager.buildThreadIndex(threads);
-    return { bundle: await m.createBundle(target, threads, diffs, versions, threadIndex, { commits }), threadIndex };
+    return {
+      bundle: await m.createBundle(target, contextualThreads, diffs, versions, threadIndex, { commits }),
+      threadIndex,
+    };
   }
 
   function makeTargetForProvider(provider: ReviewTarget['provider']): ReviewTarget {
@@ -2557,7 +2566,7 @@ describe('WorkspaceManager', () => {
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       // Thread markdown starts with the expected header
       expect(md).toMatch(/^# T-001: Thread thread-abc/);
-      expect(md).toContain('## Diff Context');
+      expect(md).toContain('## Thread Context');
       expect(md).toContain('```diff');
       expect(md).toContain('compute(a, b)');
       expect(md).toMatch(/^[ +-] \| /m);
@@ -2637,7 +2646,7 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), [thread], [diff]);
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
-      expect(md).toContain('## Diff Context');
+      expect(md).toContain('## Thread Context');
       expect(md).toContain('removedLine10');
       const diffBlock = md.split('```diff')[1].split('```')[0];
       expect(diffBlock).toMatch(/^[ +-] \| /m);
@@ -2693,6 +2702,63 @@ describe('WorkspaceManager', () => {
       expect(md).toContain('bbb');
     });
 
+    it('renders publication-era context for an older revision without persisting the raw patch', async () => {
+      const historicalPatch = [
+        'diff --git a/src/app.ts b/src/app.ts',
+        '--- a/src/app.ts',
+        '+++ b/src/app.ts',
+        '@@ -1,2 +1,2 @@',
+        ' context',
+        '+published version',
+      ].join('\n');
+      const thread: ReviewThread = {
+        ...makeThread(),
+        position: {
+          filePath: 'src/app.ts',
+          newLine: 2,
+          oldPath: 'src/app.ts',
+          newPath: 'src/app.ts',
+          baseSha: 'old-base',
+          headSha: 'old-head',
+          startSha: 'old-base',
+        },
+        threadContext: { patch: historicalPatch },
+      };
+      await createBundle(manager, makeTarget(), [thread]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      const json = JSON.parse(
+        await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.json'), 'utf-8'),
+      ) as Record<string, unknown>;
+      expect(md).toContain('## Thread Context');
+      expect(md).toContain('published version');
+      expect(md).toContain('- **Thread revision**: `old-head`');
+      expect(md).toContain('- **Thread revision**: `old-head`\n\n> ⚠️ This thread was created on an older revision.');
+      expect(md).toContain('Inspect the current source or `diffs/latest.patch`');
+      expect(md.match(/```/g)).toHaveLength(2);
+      expect(md).toContain('older revision.\n> Thread revision: `old-head` | Current: `bbb`');
+      expect(md).toContain('still actionable.\n\n## Thread Context\n\n```diff');
+      expect(md).toContain('\n```\n\n## Comments\n\n### bob (human) — 2026-01-01T00:00:00Z\n\nFix this null check');
+      expect(md).not.toContain('**Outdated**');
+      expect(md).not.toContain('The provider marks this thread as outdated');
+      expect(json).not.toHaveProperty('threadContext');
+      expect(json).toHaveProperty('position.headSha', 'old-head');
+    });
+
+    it('reports unavailable Thread Context without failing bundle creation', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        threadContext: { unavailableReason: 'Historical diff for Thread Revision deadbee could not be retrieved.' },
+      };
+      await createBundle(manager, makeTarget(), [thread]);
+
+      const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(md).toContain('## Thread Context');
+      expect(md).toContain(
+        'Thread Context unavailable: Historical diff for Thread Revision deadbee could not be retrieved.',
+      );
+    });
+
     it('renders system comments with informational prefix', async () => {
       const thread: ReviewThread = {
         ...makeThread(),
@@ -2725,6 +2791,10 @@ describe('WorkspaceManager', () => {
       expect(md).toContain('> gitlab added 2 commits');
       expect(md).toContain('informational context only');
       expect(md).toContain('### bob (human)');
+      expect(md).toContain(
+        '> ℹ️ **System event** — 2026-01-01T00:00:00Z\n>\n> gitlab added 2 commits\n>\n> *This is informational context only.',
+      );
+      expect(md).toContain('still actionable.*\n\n---');
     });
 
     it('omits diff context when thread has no position', async () => {
@@ -2735,7 +2805,7 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), [thread], [makeDiff()]);
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
-      expect(md).not.toContain('## Diff Context');
+      expect(md).not.toContain('## Thread Context');
     });
 
     it('renders resolved status without exposing provider resolvability in the agent-facing header', async () => {
@@ -2777,7 +2847,8 @@ describe('WorkspaceManager', () => {
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       expect(md).toContain('- **Outdated**: true');
-      expect(md).toContain('GitHub marks this thread as outdated');
+      expect(md).toContain('The provider marks this thread as outdated');
+      expect(md).toContain('still actionable.\n\n## Comments');
     });
 
     it('renders file path and line number from position', async () => {
@@ -2790,6 +2861,10 @@ describe('WorkspaceManager', () => {
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
       expect(md).toContain('- **File**: `src/foo.ts`');
       expect(md).toContain('- **Position**: new line 42');
+      expect(md).not.toContain('**Outdated**');
+      expect(md).not.toContain('**Thread revision**');
+      expect(md).not.toContain('The provider marks this thread as outdated');
+      expect(md).toContain('Thread Context unavailable: No publication-era diff was available.');
     });
 
     it('falls back to oldLine when newLine is absent', async () => {
@@ -3833,8 +3908,9 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), [thread], [diff]);
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
-      // No diff context section when line not found
-      expect(md).not.toContain('## Diff Context');
+      expect(md).toContain('## Thread Context');
+      expect(md).toContain('Thread Context unavailable');
+      expect(md).toContain('historical diff does not contain the recorded position');
     });
 
     it('returns no diff context when position file does not match diff paths', async () => {
@@ -3853,7 +3929,8 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), [thread], [diff]);
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
-      expect(md).not.toContain('## Diff Context');
+      expect(md).toContain('## Thread Context');
+      expect(md).toContain('Thread Context unavailable');
     });
 
     it('uses newPath matching for file lookup', async () => {
@@ -3872,7 +3949,7 @@ describe('WorkspaceManager', () => {
       await createBundle(manager, makeTarget(), [thread], [diff]);
 
       const md = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
-      expect(md).toContain('## Diff Context');
+      expect(md).toContain('## Thread Context');
       expect(md).toContain('added');
     });
   });

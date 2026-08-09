@@ -8,6 +8,7 @@ import type {
   ReviewThread,
   ReviewVersion,
   ReviewComment,
+  ReviewDiff,
   DiffPosition,
   DiffRefs,
   CommentOrigin,
@@ -122,6 +123,22 @@ export class GitLabProvider implements ReviewProvider {
       `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/versions`,
     );
     return versions.map((v) => this.mapVersion(ref, v));
+  }
+
+  async getDiffVersionDiffs(ref: ReviewTargetRef, versionId: string): Promise<ReviewDiff[] | null> {
+    const projectId = encodeURIComponent(ref.repository);
+    const version = await this.request<GitLabDiffVersion>(
+      `/api/v4/projects/${projectId}/merge_requests/${ref.targetId}/versions/${encodeURIComponent(versionId)}`,
+    );
+    if (!version.diffs) return null;
+    return version.diffs.map((diff) => ({
+      oldPath: diff.old_path,
+      newPath: diff.new_path,
+      diff: diff.diff,
+      newFile: diff.new_file,
+      renamedFile: diff.renamed_file,
+      deletedFile: diff.deleted_file,
+    }));
   }
 
   // ─── Write operations ───────────────────────────────────
@@ -562,6 +579,16 @@ interface GitLabDiffVersion {
   base_commit_sha: string;
   start_commit_sha: string;
   created_at: string;
+  diffs?: GitLabVersionDiff[];
+}
+
+interface GitLabVersionDiff {
+  old_path: string;
+  new_path: string;
+  diff: string;
+  new_file: boolean;
+  renamed_file: boolean;
+  deleted_file: boolean;
 }
 
 function buildGitLabLineRange(

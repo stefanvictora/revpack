@@ -1,4 +1,4 @@
-import type { ReviewTarget, ReviewTargetRef, ReviewThread, ReviewVersion } from '../core/types.js';
+import type { ReviewDiff, ReviewTarget, ReviewTargetRef, ReviewThread, ReviewVersion } from '../core/types.js';
 
 /**
  * Position for creating a new discussion thread on a diff.
@@ -70,6 +70,9 @@ export interface ReviewProvider {
 
   /** List diff versions (for incremental review). */
   getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]>;
+
+  /** Fetch a provider-retained historical diff version when available. */
+  getDiffVersionDiffs?(ref: ReviewTargetRef, versionId: string): Promise<ReviewDiff[] | null>;
 
   /** Post a reply to a thread. */
   postReply(ref: ReviewTargetRef, threadId: string, body: string): Promise<void>;

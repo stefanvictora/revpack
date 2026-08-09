@@ -131,7 +131,8 @@ export class BitbucketCloudProvider implements ReviewProvider {
       `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}/comments`,
       { pagelen: '100' },
     );
-    return this.mapReviewThreads(ref, comments);
+    const contextPatches = await this.fetchThreadContextPatches(ref, comments);
+    return this.mapReviewThreads(ref, comments, contextPatches);
   }
 
   async getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]> {
@@ -423,7 +424,46 @@ export class BitbucketCloudProvider implements ReviewProvider {
     };
   }
 
-  private mapReviewThreads(ref: ReviewTargetRef, comments: BitbucketComment[]): ReviewThread[] {
+  private async fetchThreadContextPatches(
+    ref: ReviewTargetRef,
+    comments: BitbucketComment[],
+  ): Promise<Map<string, string>> {
+    const revisions = new Map<string, BitbucketCodeRevision>();
+    for (const comment of comments) {
+      if (!this.isVisibleComment(comment) || comment.parent || !comment.inline?.path) continue;
+      const revision = parseBitbucketCodeLink(
+        this.apiBaseUrl,
+        ref.repository,
+        comment.inline.path,
+        comment.links?.code?.href,
+      );
+      if (revision) revisions.set(revision.key, revision);
+    }
+
+    const entries = await Promise.all(
+      [...revisions.values()].map(async (revision): Promise<[string, string] | null> => {
+        try {
+          const response = await fetch(revision.diffUrl, {
+            headers: { ...this.headers(), Accept: 'text/plain' },
+            redirect: 'error',
+            ...(this.fetchDispatcher ? { dispatcher: this.fetchDispatcher } : {}),
+          } as RequestInit);
+          if (!response.ok) return null;
+          const patch = await response.text();
+          return patch.trim() ? [revision.key, patch] : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return new Map(entries.filter((entry): entry is [string, string] => entry !== null));
+  }
+
+  private mapReviewThreads(
+    ref: ReviewTargetRef,
+    comments: BitbucketComment[],
+    contextPatches: ReadonlyMap<string, string> = new Map(),
+  ): ReviewThread[] {
     const topLevel = new Map<number, BitbucketComment>();
     for (const comment of comments) {
       if (!this.isVisibleComment(comment) || comment.parent) continue;
@@ -442,13 +482,19 @@ export class BitbucketCloudProvider implements ReviewProvider {
 
     return [...topLevel.values()].map((comment): ReviewThread => {
       const threadComments = [comment, ...(replies.get(comment.id) ?? [])];
+      const revision = comment.inline?.path
+        ? parseBitbucketCodeLink(this.apiBaseUrl, ref.repository, comment.inline.path, comment.links?.code?.href)
+        : undefined;
+      const contextPatch = revision ? contextPatches.get(revision.key) : undefined;
       return {
         provider: 'bitbucket-cloud',
         targetRef: ref,
         threadId: String(comment.id),
         resolved: comment.resolution != null,
         resolvable: true,
-        position: this.mapCommentPosition(comment),
+        outdated: comment.inline?.outdated ?? undefined,
+        position: this.mapCommentPosition(comment, revision),
+        ...(contextPatch ? { threadContext: { patch: contextPatch } } : {}),
         comments: threadComments.map((threadComment) => this.mapReviewComment(threadComment)),
       };
     });
@@ -458,7 +504,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
     return !comment.deleted && !comment.pending;
   }
 
-  private mapCommentPosition(comment: BitbucketComment): DiffPosition | undefined {
+  private mapCommentPosition(comment: BitbucketComment, revision?: BitbucketCodeRevision): DiffPosition | undefined {
     const inline = comment.inline;
     if (!inline?.path) return undefined;
 
@@ -475,6 +521,9 @@ export class BitbucketCloudProvider implements ReviewProvider {
       newLine,
       oldPath: inline.path,
       newPath: inline.path,
+      baseSha: revision?.baseSha,
+      headSha: revision?.headSha,
+      startSha: revision?.baseSha,
     };
   }
 
@@ -573,14 +622,69 @@ interface BitbucketComment {
   deleted?: boolean | null;
   pending?: boolean | null;
   parent?: { id: number } | null;
+  links?: {
+    code?: { href?: string | null } | null;
+  } | null;
   inline?: {
     path?: string | null;
     from?: number | null;
     to?: number | null;
     start_from?: number | null;
     start_to?: number | null;
+    outdated?: boolean | null;
   } | null;
   resolution?: unknown;
+}
+
+interface BitbucketCodeRevision {
+  key: string;
+  baseSha: string;
+  headSha: string;
+  diffUrl: string;
+}
+
+function parseBitbucketCodeLink(
+  apiBaseUrl: string,
+  repository: string,
+  filePath: string,
+  href?: string | null,
+): BitbucketCodeRevision | undefined {
+  if (!href) return undefined;
+
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return undefined;
+  }
+
+  const apiUrl = new URL(apiBaseUrl);
+  if (url.origin !== apiUrl.origin) return undefined;
+
+  const { workspace, slug } = splitRepository(repository);
+  const repoPrefix = `${apiUrl.pathname.replace(/\/+$/, '')}/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}/diff/`;
+  if (!url.pathname.startsWith(repoPrefix)) return undefined;
+  const linkedPath = url.searchParams.get('path');
+  if (linkedPath && linkedPath !== filePath) return undefined;
+
+  let revspec: string;
+  try {
+    revspec = decodeURIComponent(url.pathname.slice(repoPrefix.length));
+  } catch {
+    return undefined;
+  }
+  const revisionPair = revspec.match(/(?:^|:)([0-9a-f]{7,64})\.\.([0-9a-f]{7,64})$/i);
+  if (!revisionPair) return undefined;
+
+  const baseSha = revisionPair[1];
+  const headSha = revisionPair[2];
+  url.searchParams.delete('path');
+  return {
+    key: `${baseSha}:${headSha}`,
+    baseSha,
+    headSha,
+    diffUrl: url.toString(),
+  };
 }
 
 interface BitbucketCommentCreatePayload {

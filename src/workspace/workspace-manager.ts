@@ -18,10 +18,11 @@ import type {
   WorkspaceBundle,
 } from '../core/types.js';
 import { formatTargetKind } from '../core/display.js';
+import { sameCommitSha } from '../core/commits.js';
 import { isRevpackAuthoredComment } from '../providers/comment-attribution.js';
 import { formatTargetDisplayId } from '../providers/display.js';
 import { WorkspaceError } from '../core/errors.js';
-import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
+import { type FileEntry as PatchFileEntry, parsePatch } from './patch-parser.js';
 import { extractDiffContext, formatDiffPositionLabel } from './diff-context.js';
 import type { GitHelper } from './git-helper.js';
 import { computeContentHash, computeThreadDigest, DIGEST_VERSION } from './thread-digest.js';
@@ -279,15 +280,8 @@ export class WorkspaceManager {
     // Write thread files
     await this.clearThreadFiles('threads');
     await this.clearThreadFiles('resolved-threads');
-    await this.writeThreads(threads, threadIndex, diffs, target.diffRefs.headSha, options?.latestPatchContent);
-    await this.writeThreads(
-      options?.resolvedThreads ?? [],
-      threadIndex,
-      diffs,
-      target.diffRefs.headSha,
-      options?.latestPatchContent,
-      'resolved-threads',
-    );
+    await this.writeThreads(threads, threadIndex, target.diffRefs.headSha);
+    await this.writeThreads(options?.resolvedThreads ?? [], threadIndex, target.diffRefs.headSha, 'resolved-threads');
 
     // Write diffs and diff bundle artifacts
     await this.writeDiffs(diffs, options?.latestPatchContent);
@@ -1253,15 +1247,9 @@ export class WorkspaceManager {
   private async writeThreads(
     threads: ReviewThread[],
     threadIndex: ThreadIndex,
-    diffs: ReviewDiff[],
     currentHeadSha: string,
-    latestPatchContent?: string,
     threadDir: 'threads' | 'resolved-threads' = 'threads',
   ): Promise<void> {
-    // Build line map from diffs for embedding diff context in thread files
-    const patchContent = latestPatchContent ?? diffs.map((d) => WorkspaceManager.diffToGitPatch(d)).join('\n');
-    const lineMap = parsePatch(patchContent);
-
     for (const thread of threads) {
       const prefix = threadIndex.get(thread.threadId);
       if (!prefix) {
@@ -1279,10 +1267,11 @@ export class WorkspaceManager {
           targetId: thread.targetRef.targetId,
         },
       };
+      delete threadToWrite.threadContext;
       await this.writeJson(path.join(this.baseDir, threadDir, `${prefix}.json`), threadToWrite);
 
       // Markdown version for human/agent reading
-      const md = this.threadToMarkdown(thread, prefix, lineMap, currentHeadSha);
+      const md = this.threadToMarkdown(thread, prefix, currentHeadSha);
       await fs.writeFile(path.join(this.baseDir, threadDir, `${prefix}.md`), md, 'utf-8');
     }
   }
@@ -1332,12 +1321,7 @@ export class WorkspaceManager {
     await fs.writeFile(path.join(this.baseDir, 'diffs', 'incremental.patch'), diffOutput, 'utf-8');
   }
 
-  private threadToMarkdown(
-    thread: ReviewThread,
-    prefix: string,
-    lineMap: LineMap | undefined,
-    currentHeadSha: string,
-  ): string {
+  private threadToMarkdown(thread: ReviewThread, prefix: string, currentHeadSha: string): string {
     const lines: string[] = [];
     lines.push(`# ${prefix}: Thread ${thread.threadId}`);
     lines.push('');
@@ -1347,40 +1331,44 @@ export class WorkspaceManager {
       lines.push(`- **File**: \`${thread.position.filePath}\``);
       const positionLabel = formatDiffPositionLabel(thread.position);
       if (positionLabel) lines.push(`- **Position**: ${positionLabel}`);
+      if (thread.position.headSha) lines.push(`- **Thread revision**: \`${thread.position.headSha}\``);
     }
     lines.push('');
 
     if (thread.outdated) {
       lines.push(
-        '> Warning: GitHub marks this thread as outdated because newer changes affected its diff anchor. Verify against the current code before deciding whether it is still actionable.',
+        '> Warning: The provider marks this thread as outdated because newer changes affected its diff anchor. Verify against the current code before deciding whether it is still actionable.',
       );
       lines.push('');
     }
 
-    // Embed diff context around the thread's position.
-    // Only show context if the thread's headSha matches the current MR head,
-    // otherwise the position may refer to code that no longer exists at those lines.
-    if (thread.position && lineMap) {
-      const positionMatchesCurrent = !thread.position.headSha || thread.position.headSha === currentHeadSha;
-      if (positionMatchesCurrent) {
-        const diffSnippet = extractDiffContext(thread.position, lineMap);
-        if (diffSnippet) {
-          lines.push('## Diff Context');
-          lines.push('');
-          lines.push('```diff');
-          lines.push(diffSnippet);
-          lines.push('```');
-          lines.push('');
-        }
+    if (thread.position?.headSha && !sameCommitSha(thread.position.headSha, currentHeadSha)) {
+      lines.push('> ⚠️ This thread was created on an older revision.');
+      lines.push(`> Thread revision: \`${thread.position.headSha}\` | Current: \`${currentHeadSha}\``);
+      lines.push(
+        '> Inspect the current source or `diffs/latest.patch` when deciding whether the thread is still actionable.',
+      );
+      lines.push('');
+    }
+
+    if (thread.position) {
+      lines.push('## Thread Context');
+      lines.push('');
+      const contextPatch = thread.threadContext?.patch;
+      const diffSnippet = contextPatch ? extractDiffContext(thread.position, parsePatch(contextPatch)) : null;
+      if (diffSnippet) {
+        lines.push('```diff');
+        lines.push(diffSnippet);
+        lines.push('```');
       } else {
-        lines.push('## Diff Context');
-        lines.push('');
-        lines.push(
-          '> ⚠️ This thread was created on an older revision. The diff context may no longer match the current code.',
-        );
-        lines.push(`> Thread revision: \`${thread.position.headSha}\` | Current: \`${currentHeadSha}\``);
-        lines.push('');
+        const reason =
+          thread.threadContext?.unavailableReason ??
+          (contextPatch
+            ? 'The historical diff does not contain the recorded position.'
+            : 'No publication-era diff was available.');
+        lines.push(`> ⚠️ Thread Context unavailable: ${reason}`);
       }
+      lines.push('');
     }
 
     lines.push('## Comments');

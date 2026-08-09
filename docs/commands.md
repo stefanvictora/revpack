@@ -38,6 +38,7 @@ Behavior:
 - If the current git branch no longer matches the bundled PR/MR source branch, `prepare` stops and asks you to switch branches or run `clean`.
 - Thread IDs such as `T-001` are derived from the provider's thread creation order. They stay stable unless existing provider threads are deleted.
 - Resolved review threads are exported to `.revpack/resolved-threads/` as context and can still receive replies by `T-NNN` ID.
+- Positional thread Markdown shows Thread Context from the revision where the thread was created when the provider or local Git still exposes it. If that history is unavailable, only the affected thread says so; inspect the checked-out source or `.revpack/diffs/latest.patch` for current code.
 
 Local mode:
 

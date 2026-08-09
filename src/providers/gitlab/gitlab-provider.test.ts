@@ -138,6 +138,48 @@ describe('GitLabProvider constructor and options', () => {
   });
 });
 
+describe('GitLabProvider historical diff versions', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('maps a provider-retained diff version into review diffs', async () => {
+    installFetch((url) => {
+      expect(url).toContain('/merge_requests/42/versions/7');
+      return jsonResponse({
+        id: 7,
+        base_commit_sha: 'base-sha',
+        head_commit_sha: 'head-sha',
+        start_commit_sha: 'start-sha',
+        created_at: '2026-01-01T00:00:00Z',
+        diffs: [
+          {
+            old_path: 'src/old.ts',
+            new_path: 'src/new.ts',
+            diff: '@@ -1 +1 @@\n-old\n+new',
+            new_file: false,
+            renamed_file: true,
+            deleted_file: false,
+          },
+        ],
+      });
+    });
+
+    const provider = new GitLabProvider('https://gitlab.example.com', 'fake-token');
+
+    await expect(provider.getDiffVersionDiffs(ref, '7')).resolves.toEqual([
+      {
+        oldPath: 'src/old.ts',
+        newPath: 'src/new.ts',
+        diff: '@@ -1 +1 @@\n-old\n+new',
+        newFile: false,
+        renamedFile: true,
+        deletedFile: false,
+      },
+    ]);
+  });
+});
+
 describe('GitLabProvider checkout fallback', () => {
   const provider = new GitLabProvider('https://gitlab.example.com', 'fake-token');
 

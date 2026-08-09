@@ -15,6 +15,7 @@ import type {
   PublishAttribution,
   ReviewThread,
   ReviewVersion,
+  ThreadContext,
 } from '../core/types.js';
 import { formatTargetKind } from '../core/display.js';
 import { formatTargetDisplayId } from '../providers/display.js';
@@ -212,8 +213,13 @@ export class ReviewOrchestrator {
 
     // ─── Source consistency verified — proceed with writes ─
 
-    // Filter out provider/system-only threads.
-    const allThreads = filterReviewThreads(rawThreads);
+    const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
+    const allThreads = await this.resolveThreadContexts(
+      target,
+      filterReviewThreads(rawThreads),
+      versions,
+      latestPatchContent,
+    );
 
     // Build position-based thread index
     const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
@@ -222,7 +228,6 @@ export class ReviewOrchestrator {
     const activeThreads = activeReviewThreads(allThreads);
     const resolvedThreads = allThreads.filter((thread) => thread.resolvable && thread.resolved);
 
-    const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
     let commits: ReviewCommit[];
     try {
       commits = await this.git.listReviewCommits(target.diffRefs.baseSha, target.diffRefs.headSha);
@@ -761,6 +766,78 @@ export class ReviewOrchestrator {
       const message = err instanceof Error ? err.message : String(err);
       throw this.localPatchFailure(baseSha, headSha, message);
     }
+  }
+
+  private async resolveThreadContexts(
+    target: ReviewTarget,
+    threads: ReviewThread[],
+    versions: ReviewVersion[],
+    latestPatchContent: string,
+  ): Promise<ReviewThread[]> {
+    const contextByRevision = new Map<string, Promise<ThreadContext>>();
+
+    return Promise.all(
+      threads.map(async (thread): Promise<ReviewThread> => {
+        const position = thread.position;
+        if (!position) return thread;
+        if (thread.threadContext?.patch?.trim()) return thread;
+
+        const { baseSha, headSha } = position;
+        if (!baseSha || !headSha) {
+          return {
+            ...thread,
+            threadContext: {
+              unavailableReason: 'The provider did not return a historical diff or complete Thread Revision.',
+            },
+          };
+        }
+
+        const revisionKey = `${baseSha.toLowerCase()}:${headSha.toLowerCase()}`;
+        let context = contextByRevision.get(revisionKey);
+        if (!context) {
+          context = this.loadThreadRevisionContext(target, baseSha, headSha, versions, latestPatchContent);
+          contextByRevision.set(revisionKey, context);
+        }
+        return { ...thread, threadContext: await context };
+      }),
+    );
+  }
+
+  private async loadThreadRevisionContext(
+    target: ReviewTarget,
+    baseSha: string,
+    headSha: string,
+    versions: ReviewVersion[],
+    latestPatchContent: string,
+  ): Promise<ThreadContext> {
+    if (sameCommitSha(baseSha, target.diffRefs.baseSha) && sameCommitSha(headSha, target.diffRefs.headSha)) {
+      return { patch: latestPatchContent };
+    }
+
+    const providerVersion = versions.find(
+      (version) => sameCommitSha(version.baseCommitSha, baseSha) && sameCommitSha(version.headCommitSha, headSha),
+    );
+    if (providerVersion && this.provider.getDiffVersionDiffs) {
+      try {
+        const diffs = await this.provider.getDiffVersionDiffs(target, providerVersion.versionId);
+        const patch = diffs?.map((diff) => WorkspaceManager.diffToGitPatch(diff)).join('\n') ?? '';
+        if (patch.trim()) return { patch };
+      } catch {
+        // Fall back to local Git below. Historical context failure is isolated to the thread.
+      }
+    }
+
+    try {
+      await this.ensureCommitsAvailableForDiff(target, baseSha, headSha);
+      const patch = await this.git.diffForReview(baseSha, headSha);
+      if (patch.trim()) return { patch };
+    } catch {
+      // Render a per-thread unavailable notice below.
+    }
+
+    return {
+      unavailableReason: `Historical diff for Thread Revision ${shortSha(headSha)} could not be retrieved.`,
+    };
   }
 
   private async ensureCommitsAvailableForDiff(
