@@ -96,10 +96,33 @@ describe('publish TUI Markdown', () => {
     ['closing heading markers', '### Heading ###', ['Heading']],
     ['unordered marker variants', '+ plus\n* star', ['• plus', '• star']],
     ['ordered marker variants', '12) twelve\n2. two', ['12. twelve', '2. two']],
+    ['bare code fence', '```\nconst value = true;\n```', ['│ const value = true;']],
     ['tilde code fence', '~~~sh\necho ready\n~~~', ['[sh]', '│ echo ready']],
+    ['GitHub-style suggestion fence', '```suggestion\nreplacement\n```', ['[suggestion]', '│ replacement']],
+    ['GitLab-style suggestion fence', '```suggestion:-0+0\nreplacement\n```', ['[suggestion:-0+0]', '│ replacement']],
+    [
+      'GitLab-style suggestion fence with a wider range',
+      '```suggestion:-1+2\nreplacement\n```',
+      ['[suggestion:-1+2]', '│ replacement'],
+    ],
     ['empty quote', '>', ['│']],
     ['double-underscore bold and asterisk italic', '__bold__ and *italic*', ['bold and italic']],
   ])('renders %s', (_label, source, expected) => {
+    expect(renderMarkdownPreview(source, 80).map(stripVTControlCharacters)).toEqual(expected);
+  });
+
+  it.each([
+    [
+      'prefixed fence-like text',
+      'prefix```ts\nconst prefixed = true;\n```',
+      ['prefix```ts', 'const prefixed = true;', '```'],
+    ],
+    [
+      'a fence with invalid trailing metadata',
+      '```ts{\nconst invalidInfo = true;\n```',
+      ['```ts{', 'const invalidInfo = true;', '```'],
+    ],
+  ])('keeps %s literal', (_label, source, expected) => {
     expect(renderMarkdownPreview(source, 80).map(stripVTControlCharacters)).toEqual(expected);
   });
 

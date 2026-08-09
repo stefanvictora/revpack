@@ -264,7 +264,7 @@ function renderMarkdown(text: string, width: number): string[] {
       continue;
     }
 
-    const fence = sourceLine.match(/^ {0,3}(`{3,}|~{3,})(?:\s*([\w.+-]+))?\s*$/);
+    const fence = sourceLine.match(/^ {0,3}(`{3,}|~{3,})(?:\s*([\w.+:-]+))?\s*$/);
     if (fence) {
       const closingFencePattern = new RegExp(`^ {0,3}${fence[1][0]}{${fence[1].length},}\\s*$`);
       const closingIndex = sourceLines.findIndex(

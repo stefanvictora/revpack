@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Guided Publish Markdown previews now render GitLab suggestion fences, including range offsets, as fenced code.
 - Guided Publish Markdown previews now style inline code containing underscores correctly inside bold or italic emphasis.
 
 ## [0.5.0] - 2026-07-27
