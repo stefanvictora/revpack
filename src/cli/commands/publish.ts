@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import chalk from 'chalk';
-import type { NewFinding, PublishSelection } from '../../core/types.js';
+import type { NewFinding, PublishAttribution, PublishSelection, ReplyDraft } from '../../core/types.js';
 import { sameCommitSha } from '../../core/commits.js';
 import { WorkspaceManager } from '../../workspace/workspace-manager.js';
 import { parsePatch } from '../../workspace/patch-parser.js';
@@ -19,6 +19,7 @@ import {
   type PublishPlanProgress,
 } from '../../orchestration/publish-plan.js';
 import type { ReviewOrchestrator } from '../../orchestration/orchestrator.js';
+import { generationPublishAttribution } from '../../orchestration/comment-attribution.js';
 import {
   createNodePublishTerminal,
   runGuidedPublish,
@@ -41,9 +42,7 @@ function workspacePath(filePath: string): string {
 
 // ─── JSON helpers ────────────────────────────────────────
 
-interface ReplyEntry {
-  threadId: string;
-  body: string;
+interface ReplyEntry extends Pick<ReplyDraft, 'threadId' | 'body' | 'generation'> {
   resolve?: boolean;
 }
 
@@ -150,6 +149,7 @@ async function publishReplies(opts: {
     // Single thread mode
     let body: string;
     let shouldResolve = opts.resolve ?? false;
+    let attribution: PublishAttribution = { kind: 'publication' };
     let entries: ReplyEntry[] | undefined;
     let matchedIdx = -1;
 
@@ -166,9 +166,10 @@ async function publishReplies(opts: {
       }
       body = entries[matchedIdx].body;
       shouldResolve = opts.resolve ?? entries[matchedIdx].resolve ?? false;
+      attribution = generationPublishAttribution(entries[matchedIdx].generation);
     }
 
-    await orchestrator.publishReply(undefined, opts.thread, body, defaultRepo);
+    await orchestrator.publishReply(undefined, opts.thread, body, attribution, defaultRepo);
     console.log(chalk.green(`✓ Replied to ${opts.thread}`));
 
     const ws = new WorkspaceManager(process.cwd());
@@ -204,7 +205,13 @@ async function publishReplies(opts: {
   const remaining: ReplyEntry[] = [...entries];
   for (const entry of entries) {
     try {
-      await orchestrator.publishReply(undefined, entry.threadId, entry.body, defaultRepo);
+      await orchestrator.publishReply(
+        undefined,
+        entry.threadId,
+        entry.body,
+        generationPublishAttribution(entry.generation),
+        defaultRepo,
+      );
       console.log(chalk.green(`  ✓ ${entry.threadId}`));
       posted++;
       const remainingIndex = remaining.indexOf(entry);

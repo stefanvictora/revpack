@@ -89,7 +89,13 @@ describe('shared publish plan', () => {
     });
 
     expect(orchestrator.publishReply).toHaveBeenCalledTimes(1);
-    expect(orchestrator.publishReply).toHaveBeenCalledWith(undefined, 'T-002', 'Selected reply', 'group/project');
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(
+      undefined,
+      'T-002',
+      'Selected reply',
+      { kind: 'generation' },
+      'group/project',
+    );
     await expect(fs.readFile(repliesPath, 'utf-8').then(JSON.parse)).resolves.toEqual([replies[0], replies[2]]);
     expect(result.failures).toEqual([]);
     expect(result.successes).toMatchObject([{ kind: 'reply', index: 1 }]);

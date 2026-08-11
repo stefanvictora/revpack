@@ -191,8 +191,11 @@ describe('WorkspaceManager', () => {
     expect(newFindingsSchema).toContain('Array of review findings to publish as provider diff threads.');
     expect(newFindingsSchema).toContain('oldStartLine');
     expect(newFindingsSchema).toContain('newStartLine');
+    expect(JSON.parse(newFindingsSchema).items.required).toContain('generation');
+    expect(JSON.parse(newFindingsSchema).items.properties.generation.properties.model.maxLength).toBe(80);
     expect(newFindingsSchema).not.toContain('GitLab/GitHub');
     expect(repliesSchema).toContain('Internal disposition tag (not published to the provider).');
+    expect(JSON.parse(repliesSchema).items.required).toContain('generation');
     expect(repliesSchema).not.toContain('not published to GitLab');
   });
 
@@ -1412,6 +1415,7 @@ describe('WorkspaceManager', () => {
       expect(replyInstructions).toContain(
         'Set `"resolve": true` when your reply conclusively completes the discussion.',
       );
+      expect(replyInstructions).toContain('Set `generation.model` to the exact runtime model name exposed to you.');
     });
 
     it('shows Previous Actions section when publishedActions are provided', async () => {

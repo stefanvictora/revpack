@@ -109,6 +109,8 @@ The bundle is local and disposable. Use `revpack clean` to remove it, then run `
 
 You decide what goes back to the provider.
 
+Agent-authored findings and replies carry per-item model attribution when the agent can report its exact runtime model. Revpack appends `AI-generated via revpack · Model: …` during publishing, falls back to a generic AI attribution when model metadata is unavailable, and shows the result in Guided Publish. Review notes retain the generic AI footer. A reply supplied directly with `revpack publish replies <thread> --body <text>` is labeled `Published via revpack` instead of being presented as AI-generated.
+
 Run bare `revpack publish` in an interactive terminal to open Guided Publish. It shows every category in a keyboard-navigable list and a complete preview of the highlighted item before anything is published. Findings and replies can be selected individually.
 
 - Use Up and Down to navigate.

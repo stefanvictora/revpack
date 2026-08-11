@@ -1,4 +1,5 @@
 import type {
+  GenerationAttribution,
   NewFinding,
   OutputState,
   ProviderType,
@@ -11,6 +12,11 @@ import { emitKeypressEvents } from 'node:readline';
 import { fitColumn, truncateColumn, visibleText, wrapText } from '../terminal-text.js';
 import { formatDiffPositionLabel } from '../../workspace/diff-context.js';
 import { renderMarkdownPreview, renderMarkdownPreviewLabel } from './publish-tui-markdown.js';
+import {
+  formatPublishAttributionLabel,
+  generationPublishAttribution,
+  missingGenerationModel,
+} from '../../orchestration/comment-attribution.js';
 
 export type PublishTerminalKey =
   | 'up'
@@ -270,6 +276,7 @@ function sanitizeGuidedPublishModel(model: GuidedPublishModel): GuidedPublishMod
         newPath: sanitizeTerminalText(value.newPath),
         body: sanitizeTerminalText(value.body),
         category: sanitizeTerminalText(value.category),
+        generation: value.generation ? { model: sanitizeTerminalText(value.generation.model) } : undefined,
       },
     })),
     findingContexts: new Map(
@@ -281,6 +288,7 @@ function sanitizeGuidedPublishModel(model: GuidedPublishModel): GuidedPublishMod
         ...value,
         threadId: sanitizeTerminalText(value.threadId),
         body: sanitizeTerminalText(value.body),
+        generation: value.generation ? { model: sanitizeTerminalText(value.generation.model) } : undefined,
       },
     })),
     replyContexts: new Map(
@@ -447,6 +455,24 @@ function warningWrapped(text: string, width: number): string[] {
   return wrapText(text, width).map((line) => chalk.yellow(line));
 }
 
+function generationAttributionLines(
+  generation: GenerationAttribution | undefined,
+  width: number,
+  warnWhenMissing = true,
+): string[] {
+  const attribution = generationPublishAttribution(generation);
+  return [
+    '',
+    ...dimWrapped(`🤖 ${formatPublishAttributionLabel(attribution)}`, width),
+    ...(warnWhenMissing && missingGenerationModel(attribution)
+      ? warningWrapped(
+          'Warning: model metadata is missing or invalid; generic AI attribution will be published.',
+          width,
+        )
+      : []),
+  ];
+}
+
 function wrapCodeContext(context: string, width: number): string[] {
   return context.split('\n').flatMap((line) => {
     const separator = ' │ ';
@@ -506,6 +532,7 @@ function renderPreview(
       ...(context ? ['', ...wrapCodeContext(context, width)] : []),
       '',
       ...renderMarkdownPreview(finding.body, width),
+      ...generationAttributionLines(finding.generation, width),
     ];
   }
   if (focus?.kind === 'reply') {
@@ -530,6 +557,7 @@ function renderPreview(
         : dimWrapped(`Thread context unavailable for ${reply.threadId}.`, width)),
       '',
       ...renderMarkdownPreview(reply.body, width),
+      ...generationAttributionLines(reply.generation, width),
     ];
   }
   if (focus?.kind === 'summary') {
@@ -550,6 +578,7 @@ function renderPreview(
       ...dimWrapped(delivery, width),
       '',
       ...renderMarkdownPreview(model.note.content, width),
+      ...generationAttributionLines(undefined, width, false),
     ];
   }
   if (focus?.kind === 'checkpoint') {

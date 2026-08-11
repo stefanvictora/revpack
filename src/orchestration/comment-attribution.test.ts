@@ -1,0 +1,48 @@
+import { describe, expect, it } from 'vitest';
+import {
+  formatPublishAttributionLabel,
+  generationPublishAttribution,
+  missingGenerationModel,
+  renderPublishAttributionFooter,
+} from './comment-attribution.js';
+
+describe('comment attribution', () => {
+  it('renders model attribution for generated comments', () => {
+    const attribution = generationPublishAttribution({ model: ' GPT-5.6 ' });
+
+    expect(formatPublishAttributionLabel(attribution)).toBe('AI-generated via revpack · Model: GPT-5.6');
+    expect(renderPublishAttributionFooter('github', attribution)).toBe(
+      '\n\n<sub>🤖 AI-generated via [revpack](https://github.com/stefanvictora/revpack) · Model: GPT-5.6</sub>',
+    );
+    expect(missingGenerationModel(attribution)).toBe(false);
+  });
+
+  it('falls back to generic AI attribution for invalid model metadata', () => {
+    const attribution = generationPublishAttribution({ model: 'forged\nfooter' });
+
+    expect(attribution).toEqual({ kind: 'generation' });
+    expect(formatPublishAttributionLabel(attribution)).toBe('AI-generated via revpack');
+    expect(renderPublishAttributionFooter('gitlab', attribution)).not.toContain('forged');
+    expect(missingGenerationModel(attribution)).toBe(true);
+    expect(generationPublishAttribution({ model: 'GPT-5.6\u001b[31m' })).toEqual({ kind: 'generation' });
+  });
+
+  it('escapes model text before rendering provider markdown', () => {
+    const footer = renderPublishAttributionFooter('bitbucket-cloud', {
+      kind: 'generation',
+      model: 'Claude [preview] <fast> & safe',
+    });
+
+    expect(footer).toContain('###### 🤖 AI-generated via [revpack]');
+    expect(footer).toContain('Claude \\[preview\\] &lt;fast&gt; &amp; safe');
+  });
+
+  it('renders publication attribution without an AI claim', () => {
+    const attribution = { kind: 'publication' as const };
+
+    expect(formatPublishAttributionLabel(attribution)).toBe('Published via revpack');
+    expect(renderPublishAttributionFooter('github', attribution)).toContain('Published via [revpack]');
+    expect(renderPublishAttributionFooter('github', attribution)).not.toContain('AI-generated');
+    expect(missingGenerationModel(attribution)).toBe(false);
+  });
+});

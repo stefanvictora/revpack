@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ReviewComment, ReviewTarget, ReviewTargetRef, ReviewThread, ReviewVersion } from '../../core/types.js';
@@ -380,7 +381,16 @@ export class LocalGitProvider implements ReviewProvider {
   }
 
   private async saveState(state: LocalReviewState): Promise<void> {
-    await fs.mkdir(path.dirname(this.statePath), { recursive: true });
-    await fs.writeFile(this.statePath, JSON.stringify(state, null, 2), 'utf-8');
+    const stateDir = path.dirname(this.statePath);
+    const temporaryPath = `${this.statePath}.${randomUUID()}.tmp`;
+    await fs.mkdir(stateDir, { recursive: true });
+
+    try {
+      await fs.writeFile(temporaryPath, JSON.stringify(state, null, 2), 'utf-8');
+      await fs.rename(temporaryPath, this.statePath);
+    } catch (err) {
+      await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw err;
+    }
   }
 }

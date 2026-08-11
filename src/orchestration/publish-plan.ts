@@ -9,6 +9,7 @@ import {
 import { renderPublishFindingBody } from '../workspace/finding-formatter.js';
 import { mergeWithMarkers } from '../workspace/description-summary.js';
 import { computeContentHash } from '../workspace/thread-digest.js';
+import { generationPublishAttribution } from './comment-attribution.js';
 
 export type PublishPlanItemKind = 'reply' | 'finding' | 'summary' | 'note' | 'checkpoint';
 
@@ -104,7 +105,13 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
     if (!selectedReplies.has(reply.index)) continue;
     const item = { kind: 'reply' as const, index: reply.index, label: reply.value.threadId };
     try {
-      await orchestrator.publishReply(undefined, reply.value.threadId, reply.value.body, repository);
+      await orchestrator.publishReply(
+        undefined,
+        reply.value.threadId,
+        reply.value.body,
+        generationPublishAttribution(reply.value.generation),
+        repository,
+      );
       const nextPublishedIndexes = new Set(publishedReplyIndexes).add(reply.index);
       await removePublishedDrafts(material.repliesPath, material.replies, nextPublishedIndexes, {
         deleteWhenEmpty: true,
