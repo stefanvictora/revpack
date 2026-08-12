@@ -1004,6 +1004,63 @@ describe('ReviewOrchestrator', () => {
       expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
     });
 
+    it('loads distinct historical Thread Revisions sequentially', async () => {
+      const historicalThread = (threadId: string, revision: string): ReviewThread => ({
+        ...mockThread,
+        threadId,
+        position: {
+          filePath: 'src/app.ts',
+          newLine: 2,
+          baseSha: `${revision}-base`,
+          headSha: `${revision}-head`,
+        },
+        comments: mockThread.comments.map((comment) => ({ ...comment, id: `${comment.id}-${threadId}` })),
+      });
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        historicalThread('thread-old-1', 'old-1'),
+        historicalThread('thread-old-2', 'old-2'),
+      ]);
+      (mockProvider.getDiffVersions as ReturnType<typeof vi.fn>).mockResolvedValue([
+        mockVersion,
+        {
+          ...mockVersion,
+          versionId: 'v-old-1',
+          baseCommitSha: 'old-1-base',
+          headCommitSha: 'old-1-head',
+        },
+        {
+          ...mockVersion,
+          versionId: 'v-old-2',
+          baseCommitSha: 'old-2-base',
+          headCommitSha: 'old-2-head',
+        },
+      ]);
+      let activeRequests = 0;
+      let maxActiveRequests = 0;
+      mockProvider.getDiffVersionDiffs = vi.fn().mockImplementation(async () => {
+        activeRequests += 1;
+        maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        activeRequests -= 1;
+        return [
+          {
+            oldPath: 'src/app.ts',
+            newPath: 'src/app.ts',
+            diff: '@@ -1 +1 @@\n+historical version',
+            newFile: false,
+            renamedFile: false,
+            deletedFile: false,
+          },
+        ];
+      });
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      expect(mockProvider.getDiffVersionDiffs).toHaveBeenCalledTimes(2);
+      expect(maxActiveRequests).toBe(1);
+    });
+
     it('reconstructs an older Thread Revision from local Git when no provider patch is available', async () => {
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         {

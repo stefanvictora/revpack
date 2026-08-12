@@ -775,32 +775,36 @@ export class ReviewOrchestrator {
     latestPatchContent: string,
   ): Promise<ReviewThread[]> {
     const contextByRevision = new Map<string, Promise<ThreadContext>>();
+    const threadsWithContext: ReviewThread[] = [];
 
-    return Promise.all(
-      threads.map(async (thread): Promise<ReviewThread> => {
-        const position = thread.position;
-        if (!position) return thread;
-        if (thread.threadContext?.patch?.trim()) return thread;
+    for (const thread of threads) {
+      const position = thread.position;
+      if (!position || thread.threadContext?.patch?.trim()) {
+        threadsWithContext.push(thread);
+        continue;
+      }
 
-        const { baseSha, headSha } = position;
-        if (!baseSha || !headSha) {
-          return {
-            ...thread,
-            threadContext: {
-              unavailableReason: 'The provider did not return a historical diff or complete Thread Revision.',
-            },
-          };
-        }
+      const { baseSha, headSha } = position;
+      if (!baseSha || !headSha) {
+        threadsWithContext.push({
+          ...thread,
+          threadContext: {
+            unavailableReason: 'The provider did not return a historical diff or complete Thread Revision.',
+          },
+        });
+        continue;
+      }
 
-        const revisionKey = `${baseSha.toLowerCase()}:${headSha.toLowerCase()}`;
-        let context = contextByRevision.get(revisionKey);
-        if (!context) {
-          context = this.loadThreadRevisionContext(target, baseSha, headSha, versions, latestPatchContent);
-          contextByRevision.set(revisionKey, context);
-        }
-        return { ...thread, threadContext: await context };
-      }),
-    );
+      const revisionKey = `${baseSha.toLowerCase()}:${headSha.toLowerCase()}`;
+      let context = contextByRevision.get(revisionKey);
+      if (!context) {
+        context = this.loadThreadRevisionContext(target, baseSha, headSha, versions, latestPatchContent);
+        contextByRevision.set(revisionKey, context);
+      }
+      threadsWithContext.push({ ...thread, threadContext: await context });
+    }
+
+    return threadsWithContext;
   }
 
   private async loadThreadRevisionContext(
