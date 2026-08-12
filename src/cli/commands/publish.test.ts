@@ -254,12 +254,12 @@ describe('publish command internals', () => {
     const orchestrator = { publishReply: vi.fn().mockResolvedValue(undefined), resolveThread: vi.fn() };
     vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
 
-    await expect(__testing.publishReplies({ thread: 'T-001', body: 'Human-authored reply' })).resolves.toBe(1);
+    await expect(__testing.publishReplies({ thread: 'T-001', body: 'Direct reply' })).resolves.toBe(1);
 
     expect(orchestrator.publishReply).toHaveBeenCalledWith(
       undefined,
       'T-001',
-      'Human-authored reply',
+      'Direct reply',
       { kind: 'publication' },
       'group/project',
     );

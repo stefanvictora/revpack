@@ -86,7 +86,7 @@ When a prospective finding appears to repeat earlier feedback, consult relevant 
 
 ## `outputs/new-findings.json`
 
-JSON array. Create this file only when you have at least one finding. Required fields: `oldPath`, `newPath`, `body`, `severity`, `category`, `generation`, and at least one of `oldLine`/`newLine`. Optional `oldStartLine`/`newStartLine` fields turn that endpoint into a multi-line Code Span. For non-renamed files, paths are usually identical.
+JSON array. Create this file only when you have at least one finding. Required fields: `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one of `oldLine`/`newLine`. Optional: `generation`; `oldStartLine`/`newStartLine` fields turn that endpoint into a multi-line Code Span. For non-renamed files, paths are usually identical.
 
 Set `generation.model` to the exact runtime model name exposed to you. Do not infer it from the agent product, adapter, provider, or model family, and never guess. If your runtime does not expose the model name, omit `generation`; revpack will publish a generic AI attribution instead.
 

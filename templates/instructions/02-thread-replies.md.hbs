@@ -31,8 +31,8 @@ Thread files may contain system events (e.g. "changed this line in version 3 of 
 
 JSON array of replies. Create this file only when at least one thread needs a useful reply. Only include threads you are actually replying to.
 
-Required fields: `threadId`, `body`, `resolve`, `generation`
-Optional: `disposition` — one of `already_fixed`, `explain`, `suggest_fix`, `disagree`, `escalate`
+Required fields: `threadId`, `body`, `resolve`
+Optional: `generation`; `disposition` — one of `already_fixed`, `explain`, `suggest_fix`, `disagree`, `escalate`
 
 Set `generation.model` to the exact runtime model name exposed to you. Do not infer it from the agent product, adapter, provider, or model family, and never guess. If your runtime does not expose the model name, omit `generation`; revpack will publish a generic AI attribution instead.
 

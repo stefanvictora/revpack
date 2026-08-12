@@ -285,15 +285,9 @@ describe('ReviewOrchestrator', () => {
       expect((mockProvider.postReply as ReturnType<typeof vi.fn>).mock.calls[0][2]).toContain('Model: GPT-5.6');
     });
 
-    it('labels manually supplied reply content as published rather than AI-generated', async () => {
+    it('labels directly supplied reply content as published rather than AI-generated', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
-      await orchestrator.publishReply(
-        '!42',
-        'thread-1',
-        'Human-authored reply',
-        { kind: 'publication' },
-        'group/project',
-      );
+      await orchestrator.publishReply('!42', 'thread-1', 'Direct reply', { kind: 'publication' }, 'group/project');
 
       const body = (mockProvider.postReply as ReturnType<typeof vi.fn>).mock.calls[0][2] as string;
       expect(body).toContain('Published via [revpack]');
@@ -526,6 +520,48 @@ describe('ReviewOrchestrator', () => {
   });
 
   describe('prepare', () => {
+    it('serializes snapshot reads for the stateful local provider', async () => {
+      const localRef: ReviewTargetRef = {
+        provider: 'local',
+        repository: '',
+        targetType: 'local_review',
+        targetId: 'main...feature/test',
+      };
+      const localTarget: ReviewTarget = {
+        ...mockTarget,
+        ...localRef,
+        webUrl: '',
+      };
+      const localVersion: ReviewVersion = {
+        ...mockVersion,
+        provider: 'local',
+        targetRef: localRef,
+      };
+      const calls: string[] = [];
+      let activeCall = false;
+      const tracked = async <T>(name: string, value: T): Promise<T> => {
+        if (activeCall) throw new Error(`Concurrent local provider call: ${name}`);
+        activeCall = true;
+        calls.push(name);
+        await Promise.resolve();
+        activeCall = false;
+        return value;
+      };
+      const localProvider: ReviewProvider = {
+        ...mockProvider,
+        providerType: 'local',
+        resolveTarget: vi.fn().mockReturnValue(localRef),
+        getTargetSnapshot: vi.fn(() => tracked('target', localTarget)),
+        listAllThreads: vi.fn(() => tracked('threads', [])),
+        getDiffVersions: vi.fn(() => tracked('versions', [localVersion])),
+      };
+      const orchestrator = new ReviewOrchestrator({ provider: localProvider, workingDir: tmpDir });
+
+      await orchestrator.prepare('main...feature/test');
+
+      expect(calls).toEqual(['target', 'threads', 'versions']);
+    });
+
     it('generates latest.patch from local git by default', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
       const onProgress = vi.fn();

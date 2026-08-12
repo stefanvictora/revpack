@@ -13,6 +13,8 @@ import type {
   BundleComparison,
   ReviewCommit,
   PublishAttribution,
+  ReviewThread,
+  ReviewVersion,
 } from '../core/types.js';
 import { formatTargetKind } from '../core/display.js';
 import { formatTargetDisplayId } from '../providers/display.js';
@@ -118,11 +120,7 @@ export class ReviewOrchestrator {
       }
     }
 
-    const [target, rawThreads, versions] = await Promise.all([
-      this.provider.getTargetSnapshot(targetRef),
-      this.provider.listAllThreads(targetRef),
-      this.provider.getDiffVersions(targetRef),
-    ]);
+    const [target, rawThreads, versions] = await this.loadReviewSnapshot(targetRef);
 
     // ─── Fetch remote checkpoint from MR/PR description body ──
     let remoteCheckpoint: RemoteCheckpoint | null = null;
@@ -613,11 +611,7 @@ export class ReviewOrchestrator {
   async publishCheckpoint(defaultRepo?: string): Promise<void> {
     const targetRef = await this.resolveRef(undefined, defaultRepo);
 
-    const [target, rawThreads, versions] = await Promise.all([
-      this.provider.getTargetSnapshot(targetRef),
-      this.provider.listAllThreads(targetRef),
-      this.provider.getDiffVersions(targetRef),
-    ]);
+    const [target, rawThreads, versions] = await this.loadReviewSnapshot(targetRef);
 
     const allThreads = filterReviewThreads(rawThreads);
     const currentThreadsDigest = computeAggregateThreadsDigest(allThreads);
@@ -642,6 +636,23 @@ export class ReviewOrchestrator {
   }
 
   // ─── Helpers ────────────────────────────────────────────
+
+  private async loadReviewSnapshot(
+    targetRef: ReviewTargetRef,
+  ): Promise<[ReviewTarget, ReviewThread[], ReviewVersion[]]> {
+    if (this.provider.providerType === 'local') {
+      const target = await this.provider.getTargetSnapshot(targetRef);
+      const threads = await this.provider.listAllThreads(targetRef);
+      const versions = await this.provider.getDiffVersions(targetRef);
+      return [target, threads, versions];
+    }
+
+    return Promise.all([
+      this.provider.getTargetSnapshot(targetRef),
+      this.provider.listAllThreads(targetRef),
+      this.provider.getDiffVersions(targetRef),
+    ]);
+  }
 
   private async resolveRef(ref?: string, defaultRepo?: string): Promise<ReviewTargetRef> {
     // 1. Explicit ref

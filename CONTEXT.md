@@ -73,7 +73,7 @@ Per-item provenance attached to agent output that identifies its AI origin and, 
 _Avoid_: Author identity, token owner, model identity
 
 **Publication Attribution**:
-Provenance attached to manually supplied review material that identifies revpack as its publication path without claiming AI origin.
+Provenance attached to review material supplied directly to Publish rather than loaded from Agent Output. It identifies revpack as the publication path without claiming AI origin.
 _Avoid_: Generation attribution, author identity
 
 **Finding**:

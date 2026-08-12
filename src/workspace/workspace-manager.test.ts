@@ -191,11 +191,16 @@ describe('WorkspaceManager', () => {
     expect(newFindingsSchema).toContain('Array of review findings to publish as provider diff threads.');
     expect(newFindingsSchema).toContain('oldStartLine');
     expect(newFindingsSchema).toContain('newStartLine');
-    expect(JSON.parse(newFindingsSchema).items.required).toContain('generation');
-    expect(JSON.parse(newFindingsSchema).items.properties.generation.properties.model.maxLength).toBe(80);
+    const parsedFindingsSchema = JSON.parse(newFindingsSchema);
+    const parsedRepliesSchema = JSON.parse(repliesSchema);
+    expect(parsedFindingsSchema.items.required).not.toContain('generation');
+    expect(parsedFindingsSchema.items.properties.generation.properties.model).toMatchObject({
+      maxLength: 80,
+      pattern: '^(?=.*\\S)[^\\r\\n]+$',
+    });
     expect(newFindingsSchema).not.toContain('GitLab/GitHub');
     expect(repliesSchema).toContain('Internal disposition tag (not published to the provider).');
-    expect(JSON.parse(repliesSchema).items.required).toContain('generation');
+    expect(parsedRepliesSchema.items.required).not.toContain('generation');
     expect(repliesSchema).not.toContain('not published to GitLab');
   });
 
@@ -1627,7 +1632,7 @@ describe('WorkspaceManager', () => {
       expect(content).toMatch(/T-002 \| REPLIED/);
     });
 
-    it('does not tag bot-authored threads as SELF without the revpack marker', async () => {
+    it('does not tag a thread SELF when feedback only discusses a revpack footer', async () => {
       const codeRabbitThread: ReviewThread = {
         ...makeThread(),
         provider: 'github',
@@ -1641,7 +1646,7 @@ describe('WorkspaceManager', () => {
         comments: [
           {
             id: 'coderabbit-note',
-            body: 'This check can report a false positive here.',
+            body: '`renderPublishAttributionFooter` emits `###### 🤖 AI-generated via [revpack]` for Bitbucket.',
             author: 'coderabbitai',
             createdAt: '2026-01-01T00:00:00Z',
             updatedAt: '2026-01-01T00:00:00Z',
@@ -1659,6 +1664,34 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       const row = content.match(/\| T-001 \|.*\| @coderabbitai \|/)?.[0] ?? '';
       expect(row).toMatch(/\| T-001 \| {2}\| @coderabbitai \|/);
+      expect(row).not.toContain('SELF');
+      expect(row).not.toContain('REPLIED');
+    });
+
+    it('does not tag a thread REPLIED when a follow-up only quotes a revpack footer', async () => {
+      const thread: ReviewThread = {
+        ...makeThread(),
+        comments: [
+          ...makeThread().comments,
+          {
+            id: 'review-follow-up',
+            body: 'Please preserve the `Published via [revpack]` footer.',
+            author: 'reviewer',
+            createdAt: '2026-01-01T01:00:00Z',
+            updatedAt: '2026-01-01T01:00:00Z',
+            origin: 'human',
+            system: false,
+          },
+        ],
+      };
+      const threads = [thread];
+      const threadIndex = WorkspaceManager.buildThreadIndex(threads);
+      await manager.createBundle(makeTarget(), threads, [], [], threadIndex);
+
+      const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex);
+
+      const content = await fs.readFile(contextPath, 'utf-8');
+      const row = content.match(/\| T-001 \|.*\| @alice \|/)?.[0] ?? '';
       expect(row).not.toContain('SELF');
       expect(row).not.toContain('REPLIED');
     });

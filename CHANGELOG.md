@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Agent-authored findings and replies now carry optional per-item model attribution. Publish appends a model-specific or generic AI footer, Guided Publish previews the footer and warns when model metadata is unavailable, and manually supplied reply bodies use publication-only attribution.
+- Agent-authored findings and replies now carry optional per-item model attribution. Publish appends a model-specific or generic AI footer, Guided Publish previews the footer and warns when model metadata is unavailable, and reply bodies supplied directly with `--body` use publication-only attribution.
 - Prepared GitHub, GitLab, and Bitbucket Cloud review threads now preserve multi-line Code Spans, and new findings can publish Code Spans on all three providers. Thread Markdown and Guided Publish code excerpts use a width-stable point marker, clearer Code Span gutters, symmetric context that stays within one diff hunk, visible condensation for long spans, and width-safe soft wrapping.
 
 ### Changed

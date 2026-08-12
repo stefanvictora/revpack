@@ -10,24 +10,6 @@ import { GitHelper } from '../../workspace/git-helper.js';
 import type { BundleState } from '../../core/types.js';
 import { LocalGitProvider } from './local-git-provider.js';
 
-type FsPromises = typeof fs;
-type WriteFileHook = (...args: Parameters<typeof fs.writeFile>) => ReturnType<typeof fs.writeFile>;
-
-const fsWriteHook = vi.hoisted(() => ({
-  writeFile: undefined as WriteFileHook | undefined,
-  originalWriteFile: undefined as WriteFileHook | undefined,
-}));
-
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const original = await importOriginal<FsPromises>();
-  fsWriteHook.originalWriteFile = original.writeFile as WriteFileHook;
-  return {
-    ...original,
-    writeFile: (...args: Parameters<typeof original.writeFile>) =>
-      fsWriteHook.writeFile ? fsWriteHook.writeFile(...args) : original.writeFile(...args),
-  };
-});
-
 const exec = promisify(execFile);
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -181,41 +163,6 @@ describe('LocalGitProvider unit', () => {
     expect(target.description).toBe('');
     const threads = await provider.listAllThreads(provider.resolveTarget('main'));
     expect(threads).toEqual([]);
-  });
-
-  it('does not expose an empty state file while saving', async () => {
-    const provider = new LocalGitProvider(tmpDir, 'main', { git: createMockGit() });
-    const ref = provider.resolveTarget('main');
-    const statePath = path.join(tmpDir, '.revpack', 'local', 'state.json');
-    let notifyWriteStarted!: () => void;
-    const writeStarted = new Promise<void>((resolve) => {
-      notifyWriteStarted = resolve;
-    });
-    let releaseWrite!: () => void;
-    const allowWrite = new Promise<void>((resolve) => {
-      releaseWrite = resolve;
-    });
-    fsWriteHook.writeFile = async (...args) => {
-      if (typeof args[0] === 'string' && args[0].startsWith(statePath)) {
-        await fsWriteHook.originalWriteFile!(args[0], '', 'utf-8');
-        notifyWriteStarted();
-        await allowWrite;
-      }
-      return fsWriteHook.originalWriteFile!(...args);
-    };
-
-    const snapshot = provider.getTargetSnapshot(ref);
-    try {
-      await writeStarted;
-      await expect(provider.listAllThreads(ref)).resolves.toEqual([]);
-    } finally {
-      releaseWrite();
-      try {
-        await snapshot;
-      } finally {
-        fsWriteHook.writeFile = undefined;
-      }
-    }
   });
 });
 
