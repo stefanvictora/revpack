@@ -1080,6 +1080,34 @@ describe('ReviewOrchestrator', () => {
       expect(diffForReviewSpy).toHaveBeenCalledWith('old-base', 'old-head');
     });
 
+    it('reports when a retrieved Thread Revision does not contain the thread position', async () => {
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          ...mockThread,
+          position: {
+            filePath: 'src/app.ts',
+            oldPath: 'src/app.ts',
+            newPath: 'src/app.ts',
+            newLine: 2,
+            baseSha: 'old-base',
+            headSha: 'old-head',
+          },
+        },
+      ]);
+      diffForReviewSpy.mockImplementation((baseSha: string) =>
+        Promise.resolve(
+          baseSha === 'old-base' ? 'diff --git a/src/other.ts b/src/other.ts\n@@ -1 +1 @@\n-old\n+new' : localPatch(),
+        ),
+      );
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const threadMd = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(threadMd).toContain('Diff for Thread Revision old-head does not contain this thread position.');
+      expect(threadMd).not.toContain('could not be retrieved from local Git');
+    });
+
     it('uses embedded thread context without a historical Git request when the Thread Revision is incomplete', async () => {
       (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
         {

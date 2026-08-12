@@ -805,7 +805,9 @@ export class ReviewOrchestrator {
       } else {
         const unavailableReason =
           baseSha && headSha
-            ? `Historical diff for Thread Revision ${shortSha(headSha)} could not be retrieved from local Git.`
+            ? localPatch
+              ? `Diff for Thread Revision ${shortSha(headSha)} does not contain this thread position.`
+              : `Historical diff for Thread Revision ${shortSha(headSha)} could not be retrieved from local Git.`
             : 'The provider did not return embedded context or a complete Thread Revision for local Git.';
         threadsWithContext.push({ ...thread, threadContext: { unavailableReason } });
       }
