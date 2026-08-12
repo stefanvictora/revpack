@@ -131,8 +131,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
       `${this.repoPath(ref.repository)}/pullrequests/${ref.targetId}/comments`,
       { pagelen: '100' },
     );
-    const contextPatches = await this.fetchThreadContextPatches(ref, comments);
-    return this.mapReviewThreads(ref, comments, contextPatches);
+    return this.mapReviewThreads(ref, comments);
   }
 
   async getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]> {
@@ -424,46 +423,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
     };
   }
 
-  private async fetchThreadContextPatches(
-    ref: ReviewTargetRef,
-    comments: BitbucketComment[],
-  ): Promise<Map<string, string>> {
-    const revisions = new Map<string, BitbucketCodeRevision>();
-    for (const comment of comments) {
-      if (!this.isVisibleComment(comment) || comment.parent || !comment.inline?.path) continue;
-      const revision = parseBitbucketCodeLink(
-        this.apiBaseUrl,
-        ref.repository,
-        comment.inline.path,
-        comment.links?.code?.href,
-      );
-      if (revision) revisions.set(revision.key, revision);
-    }
-
-    const entries = await Promise.all(
-      [...revisions.values()].map(async (revision): Promise<[string, string] | null> => {
-        try {
-          const response = await fetch(revision.diffUrl, {
-            headers: { ...this.headers(), Accept: 'text/plain' },
-            redirect: 'error',
-            ...(this.fetchDispatcher ? { dispatcher: this.fetchDispatcher } : {}),
-          } as RequestInit);
-          if (!response.ok) return null;
-          const patch = await response.text();
-          return patch.trim() ? [revision.key, patch] : null;
-        } catch {
-          return null;
-        }
-      }),
-    );
-    return new Map(entries.filter((entry): entry is [string, string] => entry !== null));
-  }
-
-  private mapReviewThreads(
-    ref: ReviewTargetRef,
-    comments: BitbucketComment[],
-    contextPatches: ReadonlyMap<string, string> = new Map(),
-  ): ReviewThread[] {
+  private mapReviewThreads(ref: ReviewTargetRef, comments: BitbucketComment[]): ReviewThread[] {
     const topLevel = new Map<number, BitbucketComment>();
     for (const comment of comments) {
       if (!this.isVisibleComment(comment) || comment.parent) continue;
@@ -485,7 +445,6 @@ export class BitbucketCloudProvider implements ReviewProvider {
       const revision = comment.inline?.path
         ? parseBitbucketCodeLink(this.apiBaseUrl, ref.repository, comment.inline.path, comment.links?.code?.href)
         : undefined;
-      const contextPatch = revision ? contextPatches.get(revision.key) : undefined;
       return {
         provider: 'bitbucket-cloud',
         targetRef: ref,
@@ -494,7 +453,6 @@ export class BitbucketCloudProvider implements ReviewProvider {
         resolvable: true,
         outdated: comment.inline?.outdated ?? undefined,
         position: this.mapCommentPosition(comment, revision),
-        ...(contextPatch ? { threadContext: { patch: contextPatch } } : {}),
         comments: threadComments.map((threadComment) => this.mapReviewComment(threadComment)),
       };
     });
@@ -637,10 +595,8 @@ interface BitbucketComment {
 }
 
 interface BitbucketCodeRevision {
-  key: string;
   baseSha: string;
   headSha: string;
-  diffUrl: string;
 }
 
 function parseBitbucketCodeLink(
@@ -678,12 +634,9 @@ function parseBitbucketCodeLink(
 
   const baseSha = revisionPair[1];
   const headSha = revisionPair[2];
-  url.searchParams.delete('path');
   return {
-    key: `${baseSha}:${headSha}`,
     baseSha,
     headSha,
-    diffUrl: url.toString(),
   };
 }
 

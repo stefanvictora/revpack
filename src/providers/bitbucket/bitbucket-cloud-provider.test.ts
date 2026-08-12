@@ -637,7 +637,7 @@ describe('BitbucketCloudProvider review comments', () => {
     ]);
   });
 
-  it('retrieves and preserves publication-era context from a validated code link', async () => {
+  it('maps a validated code link to a Thread Revision without fetching its diff', async () => {
     const baseSha = '0731551ad42031e97ee04a34c7fe40e3bd906833';
     const headSha = 'fb0aebbd3d5b858c6024745659c9f4211d186589';
     const codeLink =
@@ -646,33 +646,26 @@ describe('BitbucketCloudProvider review comments', () => {
     const urls: string[] = [];
     installFetch((url) => {
       urls.push(url);
-      if (url.includes('/pullrequests/42/comments')) {
-        return jsonResponse({
-          values: [
-            comment({
-              id: 201,
-              content: { raw: 'Historical inline comment' },
-              links: { code: { href: codeLink } },
-              inline: { path: 'src/app.ts', to: 2, outdated: true },
-            }),
-          ],
-        });
-      }
-      return new Response(
-        'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,2 +1,2 @@\n old\n+published',
-        { status: 200, headers: { 'content-type': 'text/plain' } },
-      );
+      return jsonResponse({
+        values: [
+          comment({
+            id: 201,
+            content: { raw: 'Historical inline comment' },
+            links: { code: { href: codeLink } },
+            inline: { path: 'src/app.ts', to: 2, outdated: true },
+          }),
+        ],
+      });
     });
 
     const [thread] = await provider.listAllThreads(ref);
 
     expect(urls).toEqual([
       'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments?pagelen=100',
-      `https://api.bitbucket.org/2.0/repositories/workspace/repo/diff/workspace/repo:${baseSha}..${headSha}`,
     ]);
     expect(thread.outdated).toBe(true);
     expect(thread.position).toMatchObject({ baseSha, headSha, startSha: baseSha, newLine: 2 });
-    expect(thread.threadContext?.patch).toContain('+published');
+    expect(thread.threadContext).toBeUndefined();
   });
 
   it('does not follow code links outside the configured Bitbucket API repository', async () => {

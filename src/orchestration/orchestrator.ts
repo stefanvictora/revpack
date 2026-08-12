@@ -14,14 +14,13 @@ import type {
   ReviewCommit,
   PublishAttribution,
   ReviewThread,
-  ReviewVersion,
-  ThreadContext,
 } from '../core/types.js';
 import { formatTargetKind } from '../core/display.js';
 import { formatTargetDisplayId } from '../providers/display.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
 import { parsePatch } from '../workspace/patch-parser.js';
+import { extractDiffContext } from '../workspace/diff-context.js';
 import {
   computeAggregateThreadsDigest,
   computeContentHash,
@@ -214,12 +213,7 @@ export class ReviewOrchestrator {
     // ─── Source consistency verified — proceed with writes ─
 
     const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
-    const allThreads = await this.resolveThreadContexts(
-      target,
-      filterReviewThreads(rawThreads),
-      versions,
-      latestPatchContent,
-    );
+    const allThreads = await this.resolveThreadContexts(target, filterReviewThreads(rawThreads), latestPatchContent);
 
     // Build position-based thread index
     const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
@@ -771,77 +765,67 @@ export class ReviewOrchestrator {
   private async resolveThreadContexts(
     target: ReviewTarget,
     threads: ReviewThread[],
-    versions: ReviewVersion[],
     latestPatchContent: string,
   ): Promise<ReviewThread[]> {
-    const contextByRevision = new Map<string, Promise<ThreadContext>>();
+    const localPatchByRevision = new Map<string, Promise<string | null>>();
     const threadsWithContext: ReviewThread[] = [];
 
     for (const thread of threads) {
       const position = thread.position;
-      if (!position || thread.threadContext?.patch?.trim()) {
+      if (!position) {
         threadsWithContext.push(thread);
         continue;
       }
 
-      const { baseSha, headSha } = position;
-      if (!baseSha || !headSha) {
-        threadsWithContext.push({
-          ...thread,
-          threadContext: {
-            unavailableReason: 'The provider did not return a historical diff or complete Thread Revision.',
-          },
-        });
-        continue;
+      const embeddedPatch = thread.threadContext?.patch;
+      const baseSha = position.baseSha;
+      const headSha = position.headSha;
+      let localPatch: string | null = null;
+
+      if (
+        headSha &&
+        sameCommitSha(headSha, target.diffRefs.headSha) &&
+        (!baseSha || sameCommitSha(baseSha, target.diffRefs.baseSha))
+      ) {
+        localPatch = latestPatchContent;
+      } else if (baseSha && headSha) {
+        const revisionKey = `${baseSha.toLowerCase()}:${headSha.toLowerCase()}`;
+        let patch = localPatchByRevision.get(revisionKey);
+        if (!patch) {
+          patch = this.loadLocalThreadRevisionPatch(target, baseSha, headSha);
+          localPatchByRevision.set(revisionKey, patch);
+        }
+        localPatch = await patch;
       }
 
-      const revisionKey = `${baseSha.toLowerCase()}:${headSha.toLowerCase()}`;
-      let context = contextByRevision.get(revisionKey);
-      if (!context) {
-        context = this.loadThreadRevisionContext(target, baseSha, headSha, versions, latestPatchContent);
-        contextByRevision.set(revisionKey, context);
+      if (localPatch && extractDiffContext(position, parsePatch(localPatch))) {
+        threadsWithContext.push({ ...thread, threadContext: { patch: localPatch } });
+      } else if (embeddedPatch && extractDiffContext(position, parsePatch(embeddedPatch))) {
+        threadsWithContext.push({ ...thread, threadContext: { patch: embeddedPatch } });
+      } else {
+        const unavailableReason =
+          baseSha && headSha
+            ? `Historical diff for Thread Revision ${shortSha(headSha)} could not be retrieved from local Git.`
+            : 'The provider did not return embedded context or a complete Thread Revision for local Git.';
+        threadsWithContext.push({ ...thread, threadContext: { unavailableReason } });
       }
-      threadsWithContext.push({ ...thread, threadContext: await context });
     }
 
     return threadsWithContext;
   }
 
-  private async loadThreadRevisionContext(
+  private async loadLocalThreadRevisionPatch(
     target: ReviewTarget,
     baseSha: string,
     headSha: string,
-    versions: ReviewVersion[],
-    latestPatchContent: string,
-  ): Promise<ThreadContext> {
-    if (sameCommitSha(baseSha, target.diffRefs.baseSha) && sameCommitSha(headSha, target.diffRefs.headSha)) {
-      return { patch: latestPatchContent };
-    }
-
-    const providerVersion = versions.find(
-      (version) => sameCommitSha(version.baseCommitSha, baseSha) && sameCommitSha(version.headCommitSha, headSha),
-    );
-    if (providerVersion && this.provider.getDiffVersionDiffs) {
-      try {
-        const diffs = await this.provider.getDiffVersionDiffs(target, providerVersion.versionId);
-        const patch = diffs?.map((diff) => WorkspaceManager.diffToGitPatch(diff)).join('\n') ?? '';
-        if (patch.trim()) return { patch };
-      } catch {
-        // Fall back to local Git below. Historical context failure is isolated to the thread.
-      }
-    }
-
+  ): Promise<string | null> {
     try {
       await this.ensureCommitsAvailableForDiff(target, baseSha, headSha);
       const patch = await this.git.diffForReview(baseSha, headSha);
-      if (patch.trim()) return { patch };
+      return patch.trim() ? patch : null;
     } catch {
-      // Render a per-thread unavailable notice below.
+      return null;
     }
-
-    return {
-      unavailableReason: `Historical diff for Thread Revision ${shortSha(headSha)} could not be retrieved.`,
-    };
   }
 
   private async ensureCommitsAvailableForDiff(
