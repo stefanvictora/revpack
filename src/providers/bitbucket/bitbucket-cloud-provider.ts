@@ -12,7 +12,7 @@ import type {
   ReviewVersion,
 } from '../../core/types.js';
 import { AuthenticationError, ProviderError } from '../../core/errors.js';
-import { isRevpackAuthoredComment } from '../../core/generation-attribution.js';
+import { isRevpackAuthoredComment } from '../comment-attribution.js';
 
 interface BitbucketRequestOptions {
   method?: string;

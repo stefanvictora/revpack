@@ -36,7 +36,8 @@ import {
   sanitizeDescriptionForAgent,
 } from '../workspace/checkpoint.js';
 import { ReviewAssistError } from '../core/errors.js';
-import { generationPublishAttribution, renderPublishAttributionFooter } from './comment-attribution.js';
+import { renderPublishAttributionFooter } from '../providers/comment-attribution.js';
+import { generationPublishAttribution } from './comment-attribution.js';
 
 export interface OrchestratorOptions {
   provider: ReviewProvider;

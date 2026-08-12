@@ -18,7 +18,7 @@ import type {
   WorkspaceBundle,
 } from '../core/types.js';
 import { formatTargetKind } from '../core/display.js';
-import { isRevpackAuthoredComment } from '../core/generation-attribution.js';
+import { isRevpackAuthoredComment } from '../providers/comment-attribution.js';
 import { formatTargetDisplayId } from '../providers/display.js';
 import { WorkspaceError } from '../core/errors.js';
 import { type FileEntry as PatchFileEntry, type LineMap, parsePatch } from './patch-parser.js';
