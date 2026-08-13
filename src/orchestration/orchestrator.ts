@@ -14,6 +14,7 @@ import type {
   ReviewCommit,
   PublishAttribution,
   ReviewThread,
+  ReviewVersion,
 } from '../core/types.js';
 import { formatTargetKind } from '../core/display.js';
 import { formatTargetDisplayId } from '../providers/display.js';
