@@ -442,13 +442,17 @@ export class BitbucketCloudProvider implements ReviewProvider {
 
     return [...topLevel.values()].map((comment): ReviewThread => {
       const threadComments = [comment, ...(replies.get(comment.id) ?? [])];
+      const revision = comment.inline?.path
+        ? parseBitbucketCodeLink(this.apiBaseUrl, ref.repository, comment.inline.path, comment.links?.code?.href)
+        : undefined;
       return {
         provider: 'bitbucket-cloud',
         targetRef: ref,
         threadId: String(comment.id),
         resolved: comment.resolution != null,
         resolvable: true,
-        position: this.mapCommentPosition(comment),
+        outdated: comment.inline?.outdated ?? undefined,
+        position: this.mapCommentPosition(comment, revision),
         comments: threadComments.map((threadComment) => this.mapReviewComment(threadComment)),
       };
     });
@@ -458,7 +462,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
     return !comment.deleted && !comment.pending;
   }
 
-  private mapCommentPosition(comment: BitbucketComment): DiffPosition | undefined {
+  private mapCommentPosition(comment: BitbucketComment, revision?: BitbucketCodeRevision): DiffPosition | undefined {
     const inline = comment.inline;
     if (!inline?.path) return undefined;
 
@@ -475,6 +479,9 @@ export class BitbucketCloudProvider implements ReviewProvider {
       newLine,
       oldPath: inline.path,
       newPath: inline.path,
+      baseSha: revision?.baseSha,
+      headSha: revision?.headSha,
+      startSha: revision?.baseSha,
     };
   }
 
@@ -573,14 +580,64 @@ interface BitbucketComment {
   deleted?: boolean | null;
   pending?: boolean | null;
   parent?: { id: number } | null;
+  links?: {
+    code?: { href?: string | null } | null;
+  } | null;
   inline?: {
     path?: string | null;
     from?: number | null;
     to?: number | null;
     start_from?: number | null;
     start_to?: number | null;
+    outdated?: boolean | null;
   } | null;
   resolution?: unknown;
+}
+
+interface BitbucketCodeRevision {
+  baseSha: string;
+  headSha: string;
+}
+
+function parseBitbucketCodeLink(
+  apiBaseUrl: string,
+  repository: string,
+  filePath: string,
+  href?: string | null,
+): BitbucketCodeRevision | undefined {
+  if (!href) return undefined;
+
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return undefined;
+  }
+
+  const apiUrl = new URL(apiBaseUrl);
+  if (url.origin !== apiUrl.origin) return undefined;
+
+  const { workspace, slug } = splitRepository(repository);
+  const repoPrefix = `${apiUrl.pathname.replace(/\/+$/, '')}/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}/diff/`;
+  if (!url.pathname.startsWith(repoPrefix)) return undefined;
+  const linkedPath = url.searchParams.get('path');
+  if (linkedPath && linkedPath !== filePath) return undefined;
+
+  let revspec: string;
+  try {
+    revspec = decodeURIComponent(url.pathname.slice(repoPrefix.length));
+  } catch {
+    return undefined;
+  }
+  const revisionPair = revspec.match(/(?:^|:)([0-9a-f]{7,64})\.\.([0-9a-f]{7,64})$/i);
+  if (!revisionPair) return undefined;
+
+  const baseSha = revisionPair[1];
+  const headSha = revisionPair[2];
+  return {
+    baseSha,
+    headSha,
+  };
 }
 
 interface BitbucketCommentCreatePayload {

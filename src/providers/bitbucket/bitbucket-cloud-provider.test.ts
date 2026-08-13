@@ -637,6 +637,66 @@ describe('BitbucketCloudProvider review comments', () => {
     ]);
   });
 
+  it('maps a validated code link to a Thread Revision without fetching its diff', async () => {
+    const baseSha = '0731551ad42031e97ee04a34c7fe40e3bd906833';
+    const headSha = 'fb0aebbd3d5b858c6024745659c9f4211d186589';
+    const codeLink =
+      `https://api.bitbucket.org/2.0/repositories/workspace/repo/diff/workspace/repo:${baseSha}..${headSha}` +
+      '?path=src/app.ts';
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      return jsonResponse({
+        values: [
+          comment({
+            id: 201,
+            content: { raw: 'Historical inline comment' },
+            links: { code: { href: codeLink } },
+            inline: { path: 'src/app.ts', to: 2, outdated: true },
+          }),
+        ],
+      });
+    });
+
+    const [thread] = await provider.listAllThreads(ref);
+
+    expect(urls).toEqual([
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments?pagelen=100',
+    ]);
+    expect(thread.outdated).toBe(true);
+    expect(thread.position).toMatchObject({ baseSha, headSha, startSha: baseSha, newLine: 2 });
+    expect(thread.threadContext).toBeUndefined();
+  });
+
+  it('does not follow code links outside the configured Bitbucket API repository', async () => {
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      return jsonResponse({
+        values: [
+          comment({
+            id: 202,
+            content: { raw: 'Inline comment with an unsafe link' },
+            links: {
+              code: {
+                href: 'https://example.com/2.0/repositories/workspace/repo/diff/aaaaaaa..bbbbbbb?path=src/app.ts',
+              },
+            },
+            inline: { path: 'src/app.ts', to: 2 },
+          }),
+        ],
+      });
+    });
+
+    const [thread] = await provider.listAllThreads(ref);
+
+    expect(urls).toEqual([
+      'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments?pagelen=100',
+    ]);
+    expect(thread.position?.headSha).toBeUndefined();
+    expect(thread.threadContext).toBeUndefined();
+  });
+
   it('maps valid Bitbucket code spans and ignores incomplete or non-increasing starts', async () => {
     installFetch(() =>
       jsonResponse({

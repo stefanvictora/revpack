@@ -322,6 +322,10 @@ describe('GitHubProvider GraphQL review threads', () => {
     expect(queries[0]).toContain('isOutdated');
     expect(queries[0]).toContain('startLine');
     expect(queries[0]).toContain('startDiffSide');
+    expect(queries[0]).toContain('originalLine');
+    expect(queries[0]).toContain('originalStartLine');
+    expect(queries[0]).toContain('originalCommit { oid }');
+    expect(queries[0]).toContain('diffHunk');
     expect(queries[0]).toContain('author { __typename login }');
     expect(calls).toEqual([
       { owner: 'octo', name: 'repo', number: 42, after: null },
@@ -397,6 +401,64 @@ describe('GitHubProvider GraphQL review threads', () => {
       },
     ]);
     await expect(provider.listUnresolvedThreads(ref)).resolves.toHaveLength(1);
+  });
+
+  it('preserves publication-era position and diff hunk metadata', async () => {
+    installFetch(() =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-historical',
+                    isResolved: false,
+                    isOutdated: true,
+                    path: 'src/current.ts',
+                    line: null,
+                    startLine: null,
+                    diffSide: 'RIGHT',
+                    startDiffSide: 'RIGHT',
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'comment-historical',
+                          databaseId: 1100,
+                          body: 'This refers to the original code',
+                          diffHunk: '@@ -8,3 +8,4 @@\n context\n+published line\n after',
+                          path: 'src/original.ts',
+                          originalLine: 9,
+                          originalStartLine: null,
+                          originalCommit: { oid: '0123456789abcdef0123456789abcdef01234567' },
+                          author: { login: 'reviewer' },
+                          createdAt: '2026-01-01T01:00:00Z',
+                          updatedAt: '2026-01-01T01:00:00Z',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    const [thread] = await provider.listAllThreads(ref);
+
+    expect(thread.position).toEqual({
+      filePath: 'src/original.ts',
+      oldLine: undefined,
+      newLine: 9,
+      oldPath: 'src/original.ts',
+      newPath: 'src/original.ts',
+      headSha: '0123456789abcdef0123456789abcdef01234567',
+    });
+    expect(thread.threadContext?.patch).toContain('diff --git a/src/original.ts b/src/original.ts');
+    expect(thread.threadContext?.patch).toContain('+published line');
   });
 
   it('posts replies and resolves threads through GraphQL thread IDs', async () => {

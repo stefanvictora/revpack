@@ -151,6 +151,11 @@ export class GitHubProvider implements ReviewProvider {
                       id
                       databaseId
                       body
+                      diffHunk
+                      path
+                      originalLine
+                      originalStartLine
+                      originalCommit { oid }
                       author { __typename login }
                       createdAt
                       updatedAt
@@ -436,6 +441,8 @@ export class GitHubProvider implements ReviewProvider {
   }
 
   private mapReviewThread(ref: ReviewTargetRef, thread: GitHubReviewThread): ReviewThread {
+    const anchorComment = thread.comments.nodes[0];
+    const anchorPath = anchorComment?.path ?? thread.path;
     return {
       provider: 'github',
       targetRef: ref,
@@ -446,26 +453,34 @@ export class GitHubProvider implements ReviewProvider {
       resolvedBy: undefined,
       resolvedAt: undefined,
       position: this.mapThreadPosition(thread),
+      ...(anchorPath && anchorComment?.diffHunk
+        ? { threadContext: { patch: githubDiffHunkPatch(anchorPath, anchorComment.diffHunk) } }
+        : {}),
       comments: thread.comments.nodes.map((comment) => this.mapReviewComment(comment)),
     };
   }
 
   private mapThreadPosition(thread: GitHubReviewThread): DiffPosition | undefined {
-    if (!thread.path) return undefined;
+    const anchorComment = thread.comments.nodes[0];
+    const filePath = anchorComment?.path ?? thread.path;
+    if (!filePath) return undefined;
     const side = thread.diffSide ?? 'RIGHT';
     const startSide = thread.startDiffSide ?? side;
+    const endLine = anchorComment?.originalLine ?? (thread.isOutdated ? null : thread.line);
+    const originalStartLine = anchorComment?.originalStartLine ?? (thread.isOutdated ? null : thread.startLine);
     const startLine =
-      startSide === side && thread.startLine != null && thread.line != null && thread.startLine < thread.line
-        ? thread.startLine
+      startSide === side && originalStartLine != null && endLine != null && originalStartLine < endLine
+        ? originalStartLine
         : undefined;
     return {
-      filePath: thread.path,
+      filePath,
       ...(side === 'LEFT' && startLine !== undefined ? { oldStartLine: startLine } : {}),
       ...(side === 'RIGHT' && startLine !== undefined ? { newStartLine: startLine } : {}),
-      oldLine: side === 'LEFT' ? (thread.line ?? undefined) : undefined,
-      newLine: side === 'RIGHT' ? (thread.line ?? undefined) : undefined,
-      oldPath: thread.path,
-      newPath: thread.path,
+      oldLine: side === 'LEFT' ? (endLine ?? undefined) : undefined,
+      newLine: side === 'RIGHT' ? (endLine ?? undefined) : undefined,
+      oldPath: filePath,
+      newPath: filePath,
+      headSha: anchorComment?.originalCommit?.oid ?? undefined,
     };
   }
 
@@ -614,9 +629,18 @@ interface GitHubReviewComment {
   id: string;
   databaseId?: number | null;
   body: string;
+  diffHunk?: string | null;
+  path?: string | null;
+  originalLine?: number | null;
+  originalStartLine?: number | null;
+  originalCommit?: { oid: string } | null;
   author?: { __typename?: string; login: string } | null;
   createdAt: string;
   updatedAt: string;
+}
+
+function githubDiffHunkPatch(filePath: string, diffHunk: string): string {
+  return [`diff --git a/${filePath} b/${filePath}`, `--- a/${filePath}`, `+++ b/${filePath}`, diffHunk].join('\n');
 }
 
 interface GitHubThreadReplyMutation {

@@ -21,6 +21,7 @@ import { formatTargetDisplayId } from '../providers/display.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import { GitHelper } from '../workspace/git-helper.js';
 import { parsePatch } from '../workspace/patch-parser.js';
+import { extractDiffContext } from '../workspace/diff-context.js';
 import {
   computeAggregateThreadsDigest,
   computeContentHash,
@@ -212,8 +213,8 @@ export class ReviewOrchestrator {
 
     // ─── Source consistency verified — proceed with writes ─
 
-    // Filter out provider/system-only threads.
-    const allThreads = filterReviewThreads(rawThreads);
+    const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
+    const allThreads = await this.resolveThreadContexts(target, filterReviewThreads(rawThreads), latestPatchContent);
 
     // Build position-based thread index
     const threadIndex = WorkspaceManager.buildThreadIndex(allThreads);
@@ -222,7 +223,6 @@ export class ReviewOrchestrator {
     const activeThreads = activeReviewThreads(allThreads);
     const resolvedThreads = allThreads.filter((thread) => thread.resolvable && thread.resolved);
 
-    const latestPatchContent = await this.generateReviewPatchFromGit(target, progress);
     let commits: ReviewCommit[];
     try {
       commits = await this.git.listReviewCommits(target.diffRefs.baseSha, target.diffRefs.headSha);
@@ -760,6 +760,74 @@ export class ReviewOrchestrator {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw this.localPatchFailure(baseSha, headSha, message);
+    }
+  }
+
+  private async resolveThreadContexts(
+    target: ReviewTarget,
+    threads: ReviewThread[],
+    latestPatchContent: string,
+  ): Promise<ReviewThread[]> {
+    const localPatchByRevision = new Map<string, Promise<string | null>>();
+    const threadsWithContext: ReviewThread[] = [];
+
+    for (const thread of threads) {
+      const position = thread.position;
+      if (!position) {
+        threadsWithContext.push(thread);
+        continue;
+      }
+
+      const embeddedPatch = thread.threadContext?.patch;
+      const baseSha = position.baseSha;
+      const headSha = position.headSha;
+      let localPatch: string | null = null;
+
+      if (
+        headSha &&
+        sameCommitSha(headSha, target.diffRefs.headSha) &&
+        (!baseSha || sameCommitSha(baseSha, target.diffRefs.baseSha))
+      ) {
+        localPatch = latestPatchContent;
+      } else if (baseSha && headSha) {
+        const revisionKey = `${baseSha.toLowerCase()}:${headSha.toLowerCase()}`;
+        let patch = localPatchByRevision.get(revisionKey);
+        if (!patch) {
+          patch = this.loadLocalThreadRevisionPatch(target, baseSha, headSha);
+          localPatchByRevision.set(revisionKey, patch);
+        }
+        localPatch = await patch;
+      }
+
+      if (localPatch && extractDiffContext(position, parsePatch(localPatch))) {
+        threadsWithContext.push({ ...thread, threadContext: { patch: localPatch } });
+      } else if (embeddedPatch && extractDiffContext(position, parsePatch(embeddedPatch))) {
+        threadsWithContext.push({ ...thread, threadContext: { patch: embeddedPatch } });
+      } else {
+        const unavailableReason =
+          baseSha && headSha
+            ? localPatch
+              ? `Diff for Thread Revision ${shortSha(headSha)} does not contain this thread position.`
+              : `Historical diff for Thread Revision ${shortSha(headSha)} could not be retrieved from local Git.`
+            : 'The provider did not return embedded context or a complete Thread Revision for local Git.';
+        threadsWithContext.push({ ...thread, threadContext: { unavailableReason } });
+      }
+    }
+
+    return threadsWithContext;
+  }
+
+  private async loadLocalThreadRevisionPatch(
+    target: ReviewTarget,
+    baseSha: string,
+    headSha: string,
+  ): Promise<string | null> {
+    try {
+      await this.ensureCommitsAvailableForDiff(target, baseSha, headSha);
+      const patch = await this.git.diffForReview(baseSha, headSha);
+      return patch.trim() ? patch : null;
+    } catch {
+      return null;
     }
   }
 

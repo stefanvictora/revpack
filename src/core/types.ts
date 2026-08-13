@@ -113,6 +113,9 @@ export interface DiffPosition {
   startSha?: string;
 }
 
+/** In-memory publication-era patch used to render a positional thread. */
+export type ThreadContext = { patch: string; unavailableReason?: never } | { patch?: never; unavailableReason: string };
+
 export interface ReviewComment {
   id: string;
   body: string;
@@ -136,6 +139,8 @@ export interface ReviewThread extends ReviewThreadRef {
   resolvedBy?: string;
   resolvedAt?: string;
   position?: DiffPosition;
+  /** Transient rendering input; omitted from persisted thread JSON. */
+  threadContext?: ThreadContext;
   comments: ReviewComment[];
 }
 

@@ -108,6 +108,14 @@ _Avoid_: Resolve flag, resolvable state
 A provider-neutral, addressable review conversation containing one or more comments and attached to the review target, a file, or a line. It can receive replies; its placement and support for resolution are independent properties.
 _Avoid_: Discussion, conversation, comment thread, review item
 
+**Thread Revision**:
+The review-target code revision against which a positional Review Thread was created. It remains the reference point for interpreting the thread after the Review Target changes.
+_Avoid_: Publication version, comment commit, current revision
+
+**Thread Context**:
+A code excerpt from the Thread Revision that shows a positional Review Thread's Code Span and nearby diff lines.
+_Avoid_: Diff context, code preview, current code
+
 **Active Review Thread**:
 A review thread containing authored feedback that remains part of the current review work because it has not been resolved. Provider system events alone do not create an active review thread.
 _Avoid_: Active/general thread, unresolved thread as an umbrella term, general comment

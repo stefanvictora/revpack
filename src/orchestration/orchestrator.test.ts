@@ -952,6 +952,287 @@ describe('ReviewOrchestrator', () => {
       await expect(fs.access(incrementalPath)).rejects.toThrow();
     });
 
+    it('prefers a local historical patch and loads it once per Thread Revision', async () => {
+      const historicalThread = (threadId: string, uppercaseRevision = false): ReviewThread => ({
+        ...mockThread,
+        threadId,
+        position: {
+          filePath: 'src/app.ts',
+          oldPath: 'src/app.ts',
+          newPath: 'src/app.ts',
+          newLine: 2,
+          baseSha: uppercaseRevision ? 'OLD-BASE' : 'old-base',
+          headSha: uppercaseRevision ? 'OLD-HEAD' : 'old-head',
+          startSha: 'old-base',
+        },
+        threadContext: {
+          patch: [
+            'diff --git a/src/app.ts b/src/app.ts',
+            '--- a/src/app.ts',
+            '+++ b/src/app.ts',
+            '@@ -1,2 +1,2 @@',
+            ' context',
+            '+embedded provider version',
+          ].join('\n'),
+        },
+        comments: mockThread.comments.map((comment) => ({ ...comment, id: `${comment.id}-${threadId}` })),
+      });
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        historicalThread('thread-old-1'),
+        historicalThread('thread-old-2', true),
+      ]);
+      diffForReviewSpy.mockImplementation((baseSha: string, headSha: string) =>
+        Promise.resolve(
+          baseSha === 'old-base' && headSha === 'old-head'
+            ? [
+                'diff --git a/src/app.ts b/src/app.ts',
+                '--- a/src/app.ts',
+                '+++ b/src/app.ts',
+                '@@ -1,2 +1,2 @@',
+                ' context',
+                '+local historical version',
+              ].join('\n')
+            : localPatch(),
+        ),
+      );
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const firstThread = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      const secondThread = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-002.md'), 'utf-8');
+      expect(firstThread).toContain('local historical version');
+      expect(secondThread).toContain('local historical version');
+      expect(firstThread).not.toContain('embedded provider version');
+      expect(diffForReviewSpy).toHaveBeenCalledTimes(2);
+      expect(diffForReviewSpy).toHaveBeenCalledWith('old-base', 'old-head');
+    });
+
+    it('prefers the generated local patch for a current-revision thread with embedded context', async () => {
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          ...mockThread,
+          position: {
+            filePath: 'src/app.ts',
+            oldPath: 'src/app.ts',
+            newPath: 'src/app.ts',
+            newLine: 1,
+            headSha: 'bbb',
+          },
+          threadContext: {
+            patch: [
+              'diff --git a/src/app.ts b/src/app.ts',
+              '--- a/src/app.ts',
+              '+++ b/src/app.ts',
+              '@@ -1 +1 @@',
+              '-old',
+              '+embedded provider version',
+            ].join('\n'),
+          },
+        },
+      ]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const threadMd = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(threadMd).toContain('+ |    1 │ new');
+      expect(threadMd).not.toContain('embedded provider version');
+      expect(diffForReviewSpy).toHaveBeenCalledTimes(1);
+      expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
+    });
+
+    it('falls back to embedded thread context when the local patch cannot reproduce the anchor', async () => {
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          ...mockThread,
+          position: {
+            filePath: 'src/app.ts',
+            oldPath: 'src/app.ts',
+            newPath: 'src/app.ts',
+            newLine: 2,
+            baseSha: 'old-base',
+            headSha: 'old-head',
+          },
+          threadContext: {
+            patch: [
+              'diff --git a/src/app.ts b/src/app.ts',
+              '--- a/src/app.ts',
+              '+++ b/src/app.ts',
+              '@@ -1,2 +1,2 @@',
+              ' context',
+              '+embedded provider version',
+            ].join('\n'),
+          },
+        },
+      ]);
+      diffForReviewSpy.mockImplementation((baseSha: string) =>
+        Promise.resolve(
+          baseSha === 'old-base' ? 'diff --git a/src/other.ts b/src/other.ts\n@@ -1 +1 @@\n-old\n+new' : localPatch(),
+        ),
+      );
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const threadMd = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(threadMd).toContain('embedded provider version');
+      expect(diffForReviewSpy).toHaveBeenCalledWith('old-base', 'old-head');
+    });
+
+    it('reports when a retrieved Thread Revision does not contain the thread position', async () => {
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          ...mockThread,
+          position: {
+            filePath: 'src/app.ts',
+            oldPath: 'src/app.ts',
+            newPath: 'src/app.ts',
+            newLine: 2,
+            baseSha: 'old-base',
+            headSha: 'old-head',
+          },
+        },
+      ]);
+      diffForReviewSpy.mockImplementation((baseSha: string) =>
+        Promise.resolve(
+          baseSha === 'old-base' ? 'diff --git a/src/other.ts b/src/other.ts\n@@ -1 +1 @@\n-old\n+new' : localPatch(),
+        ),
+      );
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const threadMd = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(threadMd).toContain('Diff for Thread Revision old-head does not contain this thread position.');
+      expect(threadMd).not.toContain('could not be retrieved from local Git');
+    });
+
+    it('uses embedded thread context without a historical Git request when the Thread Revision is incomplete', async () => {
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          ...mockThread,
+          position: {
+            filePath: 'src/app.ts',
+            oldPath: 'src/app.ts',
+            newPath: 'src/app.ts',
+            newLine: 2,
+            headSha: 'old-head',
+          },
+          threadContext: {
+            patch: [
+              'diff --git a/src/app.ts b/src/app.ts',
+              '--- a/src/app.ts',
+              '+++ b/src/app.ts',
+              '@@ -1,2 +1,2 @@',
+              ' context',
+              '+embedded provider version',
+            ].join('\n'),
+          },
+        },
+      ]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const threadMd = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(threadMd).toContain('embedded provider version');
+      expect(diffForReviewSpy).toHaveBeenCalledTimes(1);
+      expect(diffForReviewSpy).toHaveBeenCalledWith('aaa', 'bbb');
+    });
+
+    it('loads distinct historical Thread Revisions sequentially from local Git', async () => {
+      const historicalThread = (threadId: string, revision: string): ReviewThread => ({
+        ...mockThread,
+        threadId,
+        position: {
+          filePath: `${revision}.ts`,
+          oldPath: `${revision}.ts`,
+          newPath: `${revision}.ts`,
+          newLine: 1,
+          baseSha: `${revision}-base`,
+          headSha: `${revision}-head`,
+        },
+        comments: mockThread.comments.map((comment) => ({ ...comment, id: `${comment.id}-${threadId}` })),
+      });
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        historicalThread('thread-old-1', 'old-1'),
+        historicalThread('thread-old-2', 'old-2'),
+      ]);
+      let activeDiffs = 0;
+      let maxActiveDiffs = 0;
+      diffForReviewSpy.mockImplementation(async (baseSha: string) => {
+        if (baseSha === 'aaa') return localPatch();
+        activeDiffs += 1;
+        maxActiveDiffs = Math.max(maxActiveDiffs, activeDiffs);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        activeDiffs -= 1;
+        const revision = baseSha.replace(/-base$/, '');
+        return `diff --git a/${revision}.ts b/${revision}.ts\n--- a/${revision}.ts\n+++ b/${revision}.ts\n@@ -1 +1 @@\n-old\n+historical version`;
+      });
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      expect(diffForReviewSpy).toHaveBeenCalledTimes(3);
+      expect(maxActiveDiffs).toBe(1);
+    });
+
+    it('reconstructs an older Thread Revision from local Git when no provider patch is available', async () => {
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          ...mockThread,
+          position: {
+            filePath: 'src/app.ts',
+            oldPath: 'src/app.ts',
+            newPath: 'src/app.ts',
+            newLine: 2,
+            baseSha: 'old-base',
+            headSha: 'old-head',
+            startSha: 'old-base',
+          },
+        },
+      ]);
+      diffForReviewSpy.mockImplementation((baseSha: string, headSha: string) =>
+        Promise.resolve(
+          baseSha === 'old-base' && headSha === 'old-head'
+            ? [
+                'diff --git a/src/app.ts b/src/app.ts',
+                '--- a/src/app.ts',
+                '+++ b/src/app.ts',
+                '@@ -1,2 +1,2 @@',
+                ' context',
+                '+local historical version',
+              ].join('\n')
+            : localPatch(),
+        ),
+      );
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await orchestrator.prepare('!42', 'group/project');
+
+      const threadMd = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(threadMd).toContain('local historical version');
+      expect(diffForReviewSpy).toHaveBeenCalledWith('old-base', 'old-head');
+    });
+
+    it('degrades only a positional thread when its Thread Revision is unavailable', async () => {
+      (mockProvider.listAllThreads as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          ...mockThread,
+          position: { filePath: 'src/app.ts', newLine: 2 },
+        },
+      ]);
+
+      const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
+      await expect(orchestrator.prepare('!42', 'group/project')).resolves.toBeDefined();
+
+      const threadMd = await fs.readFile(path.join(tmpDir, '.revpack', 'threads', 'T-001.md'), 'utf-8');
+      expect(threadMd).toContain('## Thread Context');
+      expect(threadMd).toContain('provider did not return embedded context or a complete Thread Revision');
+      expect(threadMd).toContain('This has a security vulnerability');
+    });
+
     it('detects refresh mode from existing bundle.json', async () => {
       const orchestrator = new ReviewOrchestrator({ provider: mockProvider, workingDir: tmpDir });
 

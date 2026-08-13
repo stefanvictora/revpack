@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { ReviewComment, ReviewTarget, ReviewTargetRef, ReviewThread, ReviewVersion } from '../../core/types.js';
 import type { NewThreadPosition, ReviewProvider } from '../provider.js';
 import { GitHelper } from '../../workspace/git-helper.js';
@@ -133,15 +134,16 @@ export class LocalGitProvider implements ReviewProvider {
   }
 
   async getDiffVersions(ref: ReviewTargetRef): Promise<ReviewVersion[]> {
-    const target = await this.getTargetSnapshot(ref);
+    const state = await this.loadState();
+    const target = await this.computeTargetState(state.target);
     return [
       {
         provider: 'local',
         targetRef: ref,
-        versionId: target.diffRefs.headSha,
-        headCommitSha: target.diffRefs.headSha,
-        baseCommitSha: target.diffRefs.baseSha,
-        startCommitSha: target.diffRefs.startSha,
+        versionId: target.headSha,
+        headCommitSha: target.headSha,
+        baseCommitSha: target.baseSha,
+        startCommitSha: target.baseSha,
         createdAt: target.updatedAt,
       },
     ];
@@ -380,7 +382,16 @@ export class LocalGitProvider implements ReviewProvider {
   }
 
   private async saveState(state: LocalReviewState): Promise<void> {
-    await fs.mkdir(path.dirname(this.statePath), { recursive: true });
-    await fs.writeFile(this.statePath, JSON.stringify(state, null, 2), 'utf-8');
+    const stateDir = path.dirname(this.statePath);
+    const temporaryPath = path.join(stateDir, `.${path.basename(this.statePath)}.${process.pid}.${randomUUID()}.tmp`);
+    let renamed = false;
+    await fs.mkdir(stateDir, { recursive: true });
+    try {
+      await fs.writeFile(temporaryPath, JSON.stringify(state, null, 2), { encoding: 'utf-8', flag: 'wx' });
+      await fs.rename(temporaryPath, this.statePath);
+      renamed = true;
+    } finally {
+      if (!renamed) await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+    }
   }
 }
