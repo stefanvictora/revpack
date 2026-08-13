@@ -346,3 +346,14 @@ export function renderMarkdownPreviewLabel(text: string, emptyLabel: string): st
     return firstLine;
   }
 }
+
+export function renderMarkdownTitleLabel(text: string, emptyLabel: string): string {
+  const firstLine =
+    text
+      .split('\n')
+      .find((line) => line.trim())
+      ?.trim() || emptyLabel;
+  const boldTitle = firstLine.match(/^(\*\*|__)(.+?)\1\s*:/);
+  const title = boldTitle?.[2] ?? firstLine;
+  return renderMarkdownPreviewLabel(title, emptyLabel);
+}

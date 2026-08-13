@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { stripVTControlCharacters } from 'node:util';
 import chalk from 'chalk';
 import stringWidth from 'string-width';
-import { renderMarkdownPreview } from './publish-tui-markdown.js';
+import { renderMarkdownPreview, renderMarkdownTitleLabel } from './publish-tui-markdown.js';
 
 describe('publish TUI Markdown', () => {
   it('renders the supported Markdown subset without source markers', () => {
@@ -90,6 +90,20 @@ describe('publish TUI Markdown', () => {
     } finally {
       chalk.level = previousLevel;
     }
+  });
+
+  it.each([
+    ['bold title', '**Potential null dereference**: The changed access can throw.', 'Potential null dereference'],
+    ['underscored bold title', '__Missing rollback__   : Partial state remains.', 'Missing rollback'],
+    ['standalone bold title', '**Unsafe fallback**', 'Unsafe fallback'],
+    ['heading title', '### Incorrect cache key ###', 'Incorrect cache key'],
+    ['title after blank lines', '\n  \n  ## Late heading  \n\nDetails.', 'Late heading'],
+    ['embedded bold text', 'Prefix **Embedded title**: details.', 'Prefix Embedded title: details.'],
+    ['bold text without title separator', '**Not only a title** trailing detail.', 'Not only a title trailing detail.'],
+    ['plain first line', 'Plain finding summary.\n\nDetails.', 'Plain finding summary.'],
+    ['empty body', '\n  \n', '(untitled finding)'],
+  ])('extracts a finding title from a %s', (_label, source, expected) => {
+    expect(stripVTControlCharacters(renderMarkdownTitleLabel(source, '(untitled finding)'))).toBe(expected);
   });
 
   it.each([

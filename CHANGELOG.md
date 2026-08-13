@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Guided Publish now gives the preview more horizontal space on modest-width terminals, leads finding rows with their extracted Markdown title, and sorts reply rows naturally by thread ID.
 - Thread Markdown now reconstructs Thread Context from local Git, falls back to context already embedded in normal provider thread responses, and reports unavailable history per thread instead of making additional provider requests or substituting current code.
 - Formal revpack reviews now use a lightweight internal Risk Inventory to focus effort on higher-impact areas, trace intended behavior and required follow-through, validate concerns against surrounding evidence, and discard candidate findings that do not survive an active attempt to disprove them.
 - Default Review Guidance now includes a concise simplicity lens for disproportionate complexity with concrete maintenance or correctness risk.

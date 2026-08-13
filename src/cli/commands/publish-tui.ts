@@ -11,7 +11,7 @@ import chalk from 'chalk';
 import { emitKeypressEvents } from 'node:readline';
 import { fitColumn, truncateColumn, visibleText, wrapText } from '../terminal-text.js';
 import { formatDiffPositionLabel } from '../../workspace/diff-context.js';
-import { renderMarkdownPreview, renderMarkdownPreviewLabel } from './publish-tui-markdown.js';
+import { renderMarkdownPreview, renderMarkdownPreviewLabel, renderMarkdownTitleLabel } from './publish-tui-markdown.js';
 import {
   formatPublishAttributionLabel,
   generationPublishAttribution,
@@ -340,6 +340,8 @@ function sanitizeTerminalText(value: string): string {
   return sanitized;
 }
 
+const THREAD_ID_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
 function sanitizeGuidedPublishModel(model: GuidedPublishModel): GuidedPublishModel {
   return {
     ...model,
@@ -357,15 +359,17 @@ function sanitizeGuidedPublishModel(model: GuidedPublishModel): GuidedPublishMod
     findingContexts: new Map(
       [...model.findingContexts].map(([index, context]) => [index, sanitizeTerminalText(context)]),
     ),
-    replies: model.replies.map(({ index, value }) => ({
-      index,
-      value: {
-        ...value,
-        threadId: sanitizeTerminalText(value.threadId),
-        body: sanitizeTerminalText(value.body),
-        generation: value.generation ? { model: sanitizeTerminalText(value.generation.model) } : undefined,
-      },
-    })),
+    replies: model.replies
+      .map(({ index, value }) => ({
+        index,
+        value: {
+          ...value,
+          threadId: sanitizeTerminalText(value.threadId),
+          body: sanitizeTerminalText(value.body),
+          generation: value.generation ? { model: sanitizeTerminalText(value.generation.model) } : undefined,
+        },
+      }))
+      .sort((left, right) => THREAD_ID_COLLATOR.compare(left.value.threadId, right.value.threadId)),
     replyContexts: new Map(
       [...model.replyContexts].map(([index, context]) => [
         index,
@@ -718,7 +722,7 @@ function selectionLayout(
   materialHeight: number,
 ): SelectionLayout {
   const wide = dimensions.columns >= 100;
-  const listWidth = wide ? Math.min(52, Math.max(36, Math.floor(dimensions.columns * 0.42))) : dimensions.columns;
+  const listWidth = wide ? Math.min(48, Math.max(34, Math.floor(dimensions.columns * 0.38))) : dimensions.columns;
   const previewWidth = wide ? Math.max(20, dimensions.columns - listWidth - 3) : Math.max(20, dimensions.columns - 2);
   const availableHeight = Math.max(6, dimensions.rows - footerHeight);
   const previewChromeHeight = (wide ? 0 : 1) + Number(showPreviewHeading);
@@ -826,11 +830,11 @@ function selectionMaterialLines(
       const focused = focus?.kind === 'finding' && focus.index === index;
       const position = value.newLine ?? value.oldLine ?? '?';
       const displayPath = value.newPath || value.oldPath;
-      const label = renderMarkdownPreviewLabel(value.body, '(untitled finding)');
+      const label = renderMarkdownTitleLabel(value.body, '(untitled finding)');
       return boldWhenFocused(
         ` ${focusMarker(focused)}${
           selection.findingIndexes.has(index) ? '[x]' : '[ ]'
-        } ${displayPath}:${position} ${label}`,
+        } ${label} · ${displayPath}:${position}`,
         focused,
       );
     }),

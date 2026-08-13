@@ -214,7 +214,7 @@ describe('guided publish TUI', () => {
     const frame = terminal.frames.at(-1)!;
     expect(frame).toContain('New findings — 2/2 selected');
     expect(frame).not.toContain('> New findings —');
-    expect(frame).toContain('> [x] src/new.ts:17');
+    expect(frame).toContain('> [x] The complete finding body.');
     expect(frame).toContain('The complete finding body.');
   });
 
@@ -304,8 +304,8 @@ describe('guided publish TUI', () => {
     }
 
     for (const [label, expectedColumn] of [
-      ['src/new.ts:17', 7],
-      ['src/other.ts:5', 7],
+      ['The complete finding body.', 7],
+      ['Another finding.', 7],
       ['T-001', 7],
       ['Summary —', 7],
       ['Review note —', 7],
@@ -342,8 +342,8 @@ describe('guided publish TUI', () => {
     }
 
     const lines = terminal.frames[0].split('\n');
-    const focused = lines.find((line) => stripVTControlCharacters(line).includes('> [x] src/new.ts:17'))!;
-    const unfocused = lines.find((line) => stripVTControlCharacters(line).includes('[x] src/other.ts:5'))!;
+    const focused = lines.find((line) => stripVTControlCharacters(line).includes('> [x] The complete finding body.'))!;
+    const unfocused = lines.find((line) => stripVTControlCharacters(line).includes('[x] Another finding.'))!;
     expect(stripVTControlCharacters(focused).indexOf('>')).toBe(1);
     expect(focused).toContain('\u001b[1m');
     expect(unfocused).not.toContain('\u001b[1m');
@@ -375,7 +375,7 @@ describe('guided publish TUI', () => {
 
     const focused = terminal.frames[0]
       .split('\n')
-      .find((line) => stripVTControlCharacters(line).includes('> [x] src/'))!;
+      .find((line) => stripVTControlCharacters(line).includes('> [x] The complete finding body.'))!;
     expect(stripVTControlCharacters(focused.split('│')[0])).toContain('…');
     expect(focused).toContain('\u001b[1m');
   });
@@ -584,7 +584,7 @@ describe('guided publish TUI', () => {
 
     expect(terminal.frames[0]).toContain('🤖 AI-generated via revpack');
     expect(terminal.frames[0]).toContain('Warning: model metadata is missing or invalid; generic AI');
-    expect(terminal.frames[0]).toContain('attribution will be published.');
+    expect(terminal.frames[0]).toContain('will be published.');
   });
 
   it('keeps an unselected reply preview independent of publish state', async () => {
@@ -874,8 +874,61 @@ describe('guided publish TUI', () => {
 
     await runGuidedPublish(guidedModel(), terminal);
 
-    expect(stripVTControlCharacters(terminal.frames[0].split('\n')[0])).toMatch(/^Selection\s+│ Preview$/);
+    const heading = stripVTControlCharacters(terminal.frames[0].split('\n')[0]);
+    expect(heading).toMatch(/^Selection\s+│ Preview$/);
+    expect(heading.indexOf('│')).toBe(46);
     expect(terminal.frames[0]).toContain('HIGH · correctness');
+  });
+
+  it('shows extracted finding titles before their source positions', async () => {
+    const [first, second] = guidedModel().findings;
+    const terminal = new FakeTerminal(['escape'], { columns: 120, rows: 30 });
+
+    await runGuidedPublish(
+      guidedModel({
+        findings: [
+          {
+            ...first,
+            value: {
+              ...first.value,
+              body: '**Potential null dereference**: The changed access can throw.',
+            },
+          },
+          {
+            ...second,
+            value: {
+              ...second.value,
+              body: '## Missing rollback\n\nThe failed operation leaves partial state.',
+            },
+          },
+        ],
+      }),
+      terminal,
+    );
+
+    const frame = stripVTControlCharacters(terminal.frames[0]);
+    const focusedFinding = frame.split('\n').find((line) => line.includes('Potential null dereference'))!;
+    expect(focusedFinding).toContain('> [x] Potential null dereference');
+    expect(focusedFinding.indexOf('Potential null dereference')).toBeLessThan(focusedFinding.indexOf('src/new'));
+    expect(frame).toContain('[x] Missing rollback · src/other.ts:5');
+  });
+
+  it('orders reply drafts naturally by thread ID instead of file position', async () => {
+    const replies = ['T-010', 'T-002', 'T-001'].map((threadId, index) => ({
+      index,
+      value: {
+        threadId,
+        body: `Reply for ${threadId}`,
+        resolve: false,
+      },
+    }));
+    const terminal = new FakeTerminal(['escape'], { columns: 120, rows: 30 });
+
+    await runGuidedPublish(guidedModel({ findings: [], replies }), terminal);
+
+    const frame = stripVTControlCharacters(terminal.frames[0]);
+    expect(frame.indexOf('T-001')).toBeLessThan(frame.indexOf('T-002'));
+    expect(frame.indexOf('T-002')).toBeLessThan(frame.indexOf('T-010'));
   });
 
   it('renders both pane titles in bold', async () => {
@@ -1018,7 +1071,8 @@ describe('guided publish TUI', () => {
       terminal,
     );
 
-    expect(terminal.frames[0]).toContain('src/deleted.ts:17');
+    expect(terminal.frames[0]).toContain('src/deleted.ts →');
+    expect(terminal.frames[0]).toContain('old lines 14–17');
   });
 
   it('scrolls a long list while keeping the highlighted item visible', async () => {
@@ -1041,7 +1095,7 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel({ findings }), terminal);
 
     expect(terminal.frames[0]).not.toContain('src/file-11.ts:12');
-    expect(terminal.frames.at(-1)).toContain('> [x] src/file-11.ts:12');
+    expect(terminal.frames.at(-1)).toContain('> [x] Finding number 11 · src/file-11.ts:12');
     expect(terminal.frames.at(-1)).not.toContain('src/file-0.ts:1');
   });
 
@@ -1062,7 +1116,7 @@ describe('guided publish TUI', () => {
 
     expect(terminal.frames[0]).not.toContain('body-line-10');
     expect(terminal.frames.at(-1)).toContain('body-line-11');
-    expect(terminal.frames.at(-1)).toContain('> [x] src/new.ts:17');
+    expect(terminal.frames.at(-1)).toContain('> [x] body-line-01 · src/new.ts:17');
   });
 
   it('scrolls the preview with the mouse wheel when the pointer is over the preview', async () => {
@@ -1098,7 +1152,7 @@ describe('guided publish TUI', () => {
 
     await runGuidedPublish(guidedModel(), terminal);
 
-    expect(terminal.frames.at(-1)).toContain('> [x] src/other.ts:5 Another finding.');
+    expect(terminal.frames.at(-1)).toContain('> [x] Another finding. · src/other.ts:5');
     expect(terminal.frames.at(-1)).toContain('LOW · testing');
   });
 
