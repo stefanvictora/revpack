@@ -9,10 +9,12 @@ import {
   runStalePublishPrompt,
   type GuidedPublishModel,
   type PublishTerminal,
+  type PublishTerminalInput,
   type PublishTerminalKey,
 } from './publish-tui.js';
 
-type FakeTerminalInput = PublishTerminalKey | { key: PublishTerminalKey; size: { columns: number; rows: number } };
+type FakeTerminalInput =
+  PublishTerminalKey | PublishTerminalInput | { key: PublishTerminalKey; size: { columns: number; rows: number } };
 
 class FakeTerminal implements PublishTerminal {
   interactive = true;
@@ -37,10 +39,11 @@ class FakeTerminal implements PublishTerminal {
     this.stops += 1;
   }
 
-  readKey(): Promise<PublishTerminalKey> {
+  readKey(): Promise<PublishTerminalInput> {
     const input = this.keys.shift();
     if (!input) return Promise.reject(new Error('Fake terminal ran out of keys.'));
     if (typeof input === 'string') return Promise.resolve(input);
+    if ('kind' in input) return Promise.resolve(input);
     Object.assign(this.size, input.size);
     return Promise.resolve(input.key);
   }
@@ -389,7 +392,7 @@ describe('guided publish TUI', () => {
 
     const lines = terminal.frames[0].split('\n');
     const status = lines.find((line) => stripVTControlCharacters(line).includes('items selected'))!;
-    const hints = lines.find((line) => stripVTControlCharacters(line).includes('↑↓ navigate'))!;
+    const hints = lines.find((line) => stripVTControlCharacters(line).includes('↑↓/wheel navigate'))!;
     expect(status).not.toContain('\u001b[2m');
     expect(hints).toContain('\u001b[2m');
   });
@@ -1062,6 +1065,43 @@ describe('guided publish TUI', () => {
     expect(terminal.frames.at(-1)).toContain('> [x] src/new.ts:17');
   });
 
+  it('scrolls the preview with the mouse wheel when the pointer is over the preview', async () => {
+    const body = [
+      'Preview-only opening line',
+      ...Array.from({ length: 20 }, (_, index) => `body-line-${String(index + 1).padStart(2, '0')}`),
+    ].join('\n');
+    const baseFinding = guidedModel().findings[0];
+    const terminal = new FakeTerminal(
+      [
+        ...Array.from({ length: 5 }, () => ({ kind: 'mouse-wheel', direction: 'down', x: 80, y: 5 }) as const),
+        ...Array.from({ length: 5 }, () => ({ kind: 'mouse-wheel', direction: 'up', x: 80, y: 5 }) as const),
+        'escape',
+      ],
+      { columns: 120, rows: 12 },
+    );
+
+    await runGuidedPublish(
+      guidedModel({
+        findings: [{ ...baseFinding, value: { ...baseFinding.value, body } }],
+        findingContexts: new Map(),
+      }),
+      terminal,
+    );
+
+    expect(terminal.frames[0]).not.toContain('body-line-10');
+    expect(terminal.frames[5]).toContain('body-line-10');
+    expect(terminal.frames.at(-1)).toContain('body-line-01');
+  });
+
+  it('moves selection focus with the mouse wheel when the pointer is over the list', async () => {
+    const terminal = new FakeTerminal([{ kind: 'mouse-wheel', direction: 'down', x: 10, y: 5 }, 'escape']);
+
+    await runGuidedPublish(guidedModel(), terminal);
+
+    expect(terminal.frames.at(-1)).toContain('> [x] src/other.ts:5 Another finding.');
+    expect(terminal.frames.at(-1)).toContain('LOW · testing');
+  });
+
   it('scrolls back from the end of a preview with Page Up', async () => {
     const body = Array.from({ length: 20 }, (_, index) => `body-line-${String(index + 1).padStart(2, '0')}`).join('\n');
     const baseFinding = guidedModel().findings[0];
@@ -1153,6 +1193,21 @@ describe('guided publish TUI', () => {
     expect(output.write).toHaveBeenCalledWith('\u001b[?25h');
     expect(output.write).toHaveBeenLastCalledWith('\u001b[?1049l');
     expect(output.write).toHaveBeenCalledTimes(writesAfterStop);
+  });
+
+  it('decodes split SGR mouse-wheel input and restores mouse tracking', async () => {
+    const { input, output, terminal } = createFixture({ readableFlowing: true });
+
+    await terminal.start();
+    const event = terminal.readKey();
+    input.emit('data', '\u001b[<65;80;');
+    input.emit('data', '5M');
+
+    await expect(event).resolves.toEqual({ kind: 'mouse-wheel', direction: 'down', x: 80, y: 5 });
+    await terminal.stop();
+
+    expect(output.write).toHaveBeenCalledWith('\u001b[?1000h\u001b[?1006h');
+    expect(output.write).toHaveBeenCalledWith('\u001b[?1006l\u001b[?1000l');
   });
 
   it.each([
