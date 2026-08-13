@@ -216,9 +216,53 @@ describe('publish command internals', () => {
       undefined,
       'T-001',
       'Leave the thread unresolved',
+      { kind: 'generation' },
       'group/project',
     );
     expect(orchestrator.resolveThread).not.toHaveBeenCalled();
+  });
+
+  it('forwards model attribution from a reply draft', async () => {
+    const repliesPath = path.join(tmpDir, 'replies.json');
+    await fs.writeFile(
+      repliesPath,
+      JSON.stringify([
+        {
+          threadId: 'T-001',
+          body: 'Generated reply',
+          resolve: false,
+          generation: { model: 'GPT-5.6' },
+        },
+      ]),
+      'utf-8',
+    );
+    const orchestrator = { publishReply: vi.fn().mockResolvedValue(undefined), resolveThread: vi.fn() };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishReplies({ from: repliesPath })).resolves.toBe(1);
+
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(
+      undefined,
+      'T-001',
+      'Generated reply',
+      { kind: 'generation', model: 'GPT-5.6' },
+      'group/project',
+    );
+  });
+
+  it('uses publication attribution for an explicitly supplied reply body', async () => {
+    const orchestrator = { publishReply: vi.fn().mockResolvedValue(undefined), resolveThread: vi.fn() };
+    vi.mocked(createOrchestrator).mockResolvedValue(orchestrator as never);
+
+    await expect(__testing.publishReplies({ thread: 'T-001', body: 'Direct reply' })).resolves.toBe(1);
+
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(
+      undefined,
+      'T-001',
+      'Direct reply',
+      { kind: 'publication' },
+      'group/project',
+    );
   });
 
   it('skips empty summaries instead of publishing an empty description section', async () => {
@@ -831,7 +875,13 @@ describe('publish command internals', () => {
     );
 
     expect(orchestrator.open).toHaveBeenCalledTimes(2);
-    expect(orchestrator.publishReply).toHaveBeenCalledWith(undefined, 'T-001', 'Confirmed reply', 'group/project');
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(
+      undefined,
+      'T-001',
+      'Confirmed reply',
+      { kind: 'generation' },
+      'group/project',
+    );
     expect(orchestrator.prepare).not.toHaveBeenCalled();
     await expect(fs.access(repliesPath)).rejects.toThrow();
     expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Publishing cancelled'));
@@ -1054,7 +1104,13 @@ describe('publish command internals', () => {
     await expect(__testing.publishAllPending({ refresh: false })).resolves.toBeUndefined();
 
     expect(getRepoFromGit).not.toHaveBeenCalled();
-    expect(orchestrator.publishReply).toHaveBeenCalledWith(undefined, '100', 'Reply body', 'group/project');
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(
+      undefined,
+      '100',
+      'Reply body',
+      { kind: 'generation' },
+      'group/project',
+    );
     expect(orchestrator.publishFinding).toHaveBeenCalledTimes(1);
     expect(orchestrator.publishReviewBatch).not.toHaveBeenCalled();
     expect(orchestrator.updateDescription).toHaveBeenCalledWith(
@@ -1165,7 +1221,13 @@ describe('publish command internals', () => {
 
     await program.parseAsync(['publish', '--no-refresh', 'all'], { from: 'user' });
 
-    expect(orchestrator.publishReply).toHaveBeenCalledWith(undefined, 'T-001', 'Automation reply', 'group/project');
+    expect(orchestrator.publishReply).toHaveBeenCalledWith(
+      undefined,
+      'T-001',
+      'Automation reply',
+      { kind: 'generation' },
+      'group/project',
+    );
     expect(orchestrator.prepare).not.toHaveBeenCalled();
     expect(handleError).not.toHaveBeenCalled();
   });

@@ -86,7 +86,9 @@ When a prospective finding appears to repeat earlier feedback, consult relevant 
 
 ## `outputs/new-findings.json`
 
-JSON array. Create this file only when you have at least one finding. Required fields: `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one of `oldLine`/`newLine`. Optional `oldStartLine`/`newStartLine` fields turn that endpoint into a multi-line Code Span. For non-renamed files, paths are usually identical.
+JSON array. Create this file only when you have at least one finding. Required fields: `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one of `oldLine`/`newLine`. Optional: `generation`; `oldStartLine`/`newStartLine` fields turn that endpoint into a multi-line Code Span. For non-renamed files, paths are usually identical.
+
+Set `generation.model` to the exact runtime model name exposed to you. Do not infer it from the agent product, adapter, provider, or model family, and never guess. If your runtime does not expose the model name, omit `generation`; revpack will publish a generic AI attribution instead.
 
 <example>
 
@@ -96,6 +98,7 @@ JSON array. Create this file only when you have at least one finding. Required f
     "oldPath": "src/app.ts",
     "newPath": "src/app.ts",
     "newLine": 42,
+    "generation": { "model": "Claude Fable 5" },
     "body": "**Potential null dereference**: `user.name` is accessed without a null check.\n\nThe changed code reads `user.name` before validating that `user` exists. If the API receives a request without a resolved user, this fails with a runtime error instead of the expected validation response.\n\nSuggested fix: guard the access or return the existing validation response before reading the property.{{#if useBitbucketHandoverMarkdown}}\n\n#### 🤖 Prompt for AI Agents\n\n> Verify this issue against the current code and only fix it if still applicable.\n>\n> In `@src/app.ts` around line 42, guard `user.name` access for missing users.{{else}}\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/app.ts` around line 42, guard `user.name` access for missing users.\n\n</details>{{/if}}",
     "severity": "high",
     "category": "correctness"

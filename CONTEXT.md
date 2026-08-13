@@ -68,6 +68,14 @@ _Avoid_: Offline review, branch review
 Draft review material written by an agent for later inspection and publishing.
 _Avoid_: Bot comment, generated result
 
+**Generation Attribution**:
+Per-item provenance attached to agent output that identifies its AI origin and, when available, the generating model, independently of the provider identity used to publish it. It remains attached when a person edits the draft before publishing.
+_Avoid_: Author identity, token owner, model identity
+
+**Publication Attribution**:
+Provenance attached to review material supplied directly to Publish rather than loaded from Agent Output. It identifies revpack as the publication path without claiming AI origin.
+_Avoid_: Generation attribution, author identity
+
 **Finding**:
 A new agent-proposed line comment about code changed in the review target. A finding must have one valid Positional Anchor.
 _Avoid_: Issue, defect, annotation

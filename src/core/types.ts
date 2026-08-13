@@ -167,6 +167,14 @@ export interface Learning {
 
 // ─── New Finding (agent-generated) ───────────────────────
 
+/** Optional provenance supplied with agent-authored review material. */
+export interface GenerationAttribution {
+  model: string;
+}
+
+/** Attribution intent passed to the publication layer. */
+export type PublishAttribution = { kind: 'generation'; model?: string } | { kind: 'publication' };
+
 /**
  * A new finding created by an agent during proactive code review.
  * Written to outputs/new-findings.json for publishing via `publish findings`.
@@ -190,6 +198,8 @@ export interface NewFinding {
   severity: Severity;
   /** Category tag. Prefer FindingCategory values, but allow custom labels from agents. */
   category: string;
+  /** Generation provenance used to render publication attribution. */
+  generation?: GenerationAttribution;
 }
 
 /**
@@ -205,6 +215,7 @@ export interface ReplyDraft {
   body: string;
   resolve: boolean;
   disposition?: ReplyDisposition;
+  generation?: GenerationAttribution;
 }
 
 /** Stable item-level selection returned by Guided Publish. */

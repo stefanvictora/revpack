@@ -66,6 +66,7 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
           body: 'The complete finding body.',
           severity: 'high',
           category: 'correctness',
+          generation: { model: 'GPT-5.6' },
         },
       },
       {
@@ -77,6 +78,7 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
           body: 'Another finding.',
           severity: 'low',
           category: 'testing',
+          generation: { model: 'GPT-5.6' },
         },
       },
     ],
@@ -96,7 +98,12 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
     replies: [
       {
         index: 3,
-        value: { threadId: 'T-001', body: 'The complete draft reply.', resolve: true },
+        value: {
+          threadId: 'T-001',
+          body: 'The complete draft reply.',
+          resolve: true,
+          generation: { model: 'GPT-5.6' },
+        },
       },
     ],
     replyContexts: new Map(),
@@ -462,6 +469,8 @@ describe('guided publish TUI', () => {
     expect(terminal.frames[0]).toContain('new lines 15–17');
     expect(terminal.frames[0]).toContain('+ ▶   17 │ replacement();');
     expect(terminal.frames[0]).toContain('The complete finding body.');
+    expect(terminal.frames[0]).toContain('🤖 AI-generated via revpack · Model: GPT-5.6');
+    expect(terminal.frames[0]).not.toContain('model metadata is missing');
     expect(terminal.frames[0]).not.toContain('Finding —');
     expect(terminal.frames[0]).not.toContain('Anchor context');
     expect(terminal.frames[0]).not.toContain('Finding body');
@@ -554,12 +563,25 @@ describe('guided publish TUI', () => {
     expect(frame).not.toContain('**Original**');
     expect(frame).not.toContain('`inline code`');
     expect(frame).toContain('The complete draft reply.');
+    expect(frame).toContain('🤖 AI-generated via revpack · Model: GPT-5.6');
     expect(frame).not.toContain('Thread context — not published');
     expect(frame).not.toContain('Thread state:');
     expect(frame).not.toContain('will be published');
     expect(stripVTControlCharacters(frame).indexOf('> • Original reviewer context with inline code.')).toBeLessThan(
       frame.lastIndexOf('The complete draft reply.'),
     );
+  });
+
+  it('warns when a draft has no usable model attribution', async () => {
+    const model = guidedModel();
+    model.findings[0].value.generation = undefined;
+    const terminal = new FakeTerminal(['escape']);
+
+    await runGuidedPublish(model, terminal);
+
+    expect(terminal.frames[0]).toContain('🤖 AI-generated via revpack');
+    expect(terminal.frames[0]).toContain('Warning: model metadata is missing or invalid; generic AI');
+    expect(terminal.frames[0]).toContain('attribution will be published.');
   });
 
   it('keeps an unselected reply preview independent of publish state', async () => {
@@ -689,6 +711,8 @@ describe('guided publish TUI', () => {
     expect(frame).toContain('Included in the GitHub review with selected findings.');
     expect(frame).toContain('Complete target note.');
     expect(frame).toContain('Handover: keep this final prompt.');
+    expect(frame).toContain('🤖 AI-generated via revpack');
+    expect(frame).not.toContain('Model:');
   });
 
   it('keeps an unselected review note preview independent of publish state', async () => {
@@ -935,7 +959,7 @@ describe('guided publish TUI', () => {
       }
     }
     expect(terminal.frames[0]).not.toContain('TAIL_OF_COMPLETE_PREVIEW');
-    expect(terminal.frames.at(-1)).toContain('TAIL_OF_COMPLETE_PREVIEW');
+    expect(terminal.frames.some((frame) => frame.includes('TAIL_OF_COMPLETE_PREVIEW'))).toBe(true);
   });
 
   it('wraps emoji and CJK content without splitting graphemes or exceeding the terminal width', async () => {
@@ -1034,7 +1058,7 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(guidedModel({ findings }), terminal);
 
     expect(terminal.frames[0]).not.toContain('body-line-10');
-    expect(terminal.frames.at(-1)).toContain('body-line-10');
+    expect(terminal.frames.at(-1)).toContain('body-line-11');
     expect(terminal.frames.at(-1)).toContain('> [x] src/new.ts:17');
   });
 
@@ -1053,7 +1077,7 @@ describe('guided publish TUI', () => {
 
     expect(terminal.frames.at(-2)).toContain('body-line-20');
     expect(terminal.frames.at(-2)).not.toContain('body-line-10');
-    expect(terminal.frames.at(-1)).toContain('body-line-10');
+    expect(terminal.frames.at(-1)).toContain('body-line-11');
     expect(terminal.frames.at(-1)).not.toContain('body-line-20');
   });
 

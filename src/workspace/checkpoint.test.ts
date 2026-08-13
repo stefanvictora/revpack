@@ -6,13 +6,11 @@ import {
   buildDescriptionStateBlock,
   patchDescriptionWithState,
   sanitizeDescriptionForAgent,
-  stripReviewNoteFooter,
   CHECKPOINT_MARKER_START,
   CHECKPOINT_MARKER_END,
   CHECKPOINT_STATE_BLOCK_REGEX,
   CHECKPOINT_MARKDOWN_LINK_TEXT,
   CHECKPOINT_MARKDOWN_LINK_STATE_BLOCK_REGEX,
-  REVIEW_NOTE_FOOTER,
 } from './checkpoint.js';
 import type { ReviewTargetRef } from '../core/types.js';
 
@@ -330,11 +328,6 @@ describe('checkpoint constants', () => {
     expect(CHECKPOINT_MARKER_END).toBe('-->');
   });
 
-  it('REVIEW_NOTE_FOOTER contains the expected content', () => {
-    expect(REVIEW_NOTE_FOOTER).toContain('<sub>');
-    expect(REVIEW_NOTE_FOOTER).toContain('revpack');
-  });
-
   it('CHECKPOINT_STATE_BLOCK_REGEX matches state blocks', () => {
     const block = '<!-- revpack:state\nSOME_DATA\n-->';
     const matches = block.match(CHECKPOINT_STATE_BLOCK_REGEX);
@@ -347,34 +340,6 @@ describe('checkpoint constants', () => {
     const matches = [...block.matchAll(CHECKPOINT_MARKDOWN_LINK_STATE_BLOCK_REGEX)];
     expect(matches).toHaveLength(1);
     expect(matches[0][1]).toBe('SOME_DATA');
-  });
-});
-
-// ─── stripReviewNoteFooter ───────────────────────────────
-
-describe('stripReviewNoteFooter', () => {
-  it('removes the footer from content that has it', () => {
-    const content = `## Review Notes\n\nLooks good.${REVIEW_NOTE_FOOTER}`;
-    const stripped = stripReviewNoteFooter(content);
-    expect(stripped).toBe('## Review Notes\n\nLooks good.');
-    expect(stripped).not.toContain('<sub>');
-  });
-
-  it('returns content unchanged when no footer present', () => {
-    const content = '## Review Notes\n\nLooks good.';
-    const stripped = stripReviewNoteFooter(content);
-    expect(stripped).toBe(content);
-  });
-
-  it('trims trailing whitespace from result', () => {
-    const content = '## Review Notes   ';
-    const stripped = stripReviewNoteFooter(content);
-    expect(stripped).toBe('## Review Notes');
-  });
-
-  it('handles content that is just the footer', () => {
-    const stripped = stripReviewNoteFooter(REVIEW_NOTE_FOOTER.trimStart());
-    expect(stripped).toBe('');
   });
 });
 

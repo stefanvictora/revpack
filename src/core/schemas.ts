@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeGenerationModel } from './generation-attribution.js';
 
 // Zod schemas for validation at system boundaries.
 
@@ -17,6 +18,15 @@ export const severitySchema = z.enum(['blocker', 'high', 'medium', 'low', 'nit']
 
 export const findingCategorySchema = z.string().trim().min(1);
 
+export const generationAttributionSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'object' || value === null) return undefined;
+    const model = normalizeGenerationModel((value as { model?: unknown }).model);
+    return model ? { model } : undefined;
+  },
+  z.object({ model: z.string() }).optional(),
+);
+
 export const newFindingSchema = z
   .object({
     oldPath: z.string().min(1),
@@ -28,6 +38,7 @@ export const newFindingSchema = z
     body: z.string().min(1),
     severity: severitySchema,
     category: findingCategorySchema,
+    generation: generationAttributionSchema,
   })
   .refine((f) => f.oldLine != null || f.newLine != null, { message: 'At least one of oldLine or newLine is required' })
   .refine((f) => f.oldStartLine == null || (f.oldLine != null && f.oldStartLine < f.oldLine), {
@@ -44,6 +55,7 @@ export const replyDraftSchema = z.object({
   body: z.string().min(1),
   resolve: z.boolean(),
   disposition: replyDispositionSchema.optional(),
+  generation: generationAttributionSchema,
 });
 
 export const newFindingsArraySchema = z.array(newFindingSchema);

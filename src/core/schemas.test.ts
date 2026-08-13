@@ -350,6 +350,28 @@ describe('replyDraftSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('normalizes valid generation metadata', () => {
+    const result = replyDraftSchema.parse({
+      threadId: 'T-001',
+      body: 'Fixed!',
+      resolve: true,
+      generation: { model: '  GPT-5.6  ' },
+    });
+
+    expect(result.generation).toEqual({ model: 'GPT-5.6' });
+  });
+
+  it('ignores invalid generation metadata without rejecting the reply', () => {
+    const result = replyDraftSchema.parse({
+      threadId: 'T-001',
+      body: 'Fixed!',
+      resolve: true,
+      generation: { model: 'forged\nfooter' },
+    });
+
+    expect(result.generation).toBeUndefined();
+  });
+
   it('rejects invalid disposition', () => {
     const result = replyDraftSchema.safeParse({
       threadId: 'T-001',

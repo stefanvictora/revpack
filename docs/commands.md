@@ -103,6 +103,8 @@ This publish-triggered refresh preserves other pending output files; run `revpac
 Missing default queue files such as `.revpack/outputs/replies.json` and `.revpack/outputs/new-findings.json` are treated as having no pending items.
 Malformed queue files stop both Guided Publish and `revpack publish all` before any material or checkpoint is selected or any provider action is performed.
 
+New findings and replies include a `generation.model` value when the agent knows its exact runtime model. Publishing appends a model-specific AI attribution when that value is usable and otherwise uses a generic AI attribution; missing or invalid model metadata does not block publishing. Guided Publish displays the attribution and warns about the generic fallback. Review notes keep the generic AI footer without extra metadata. Inline reply text passed with `--body` is labeled `Published via revpack` rather than AI-generated.
+
 Bare `revpack publish` starts Guided Publish, a TTY-only preview-and-selection screen. Pending material starts selected, while empty categories remain visible but disabled. The controls are:
 
 - Up and Down move the highlight through groups and items.

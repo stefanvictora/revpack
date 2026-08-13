@@ -32,7 +32,9 @@ Thread files may contain system events (e.g. "changed this line in version 3 of 
 JSON array of replies. Create this file only when at least one thread needs a useful reply. Only include threads you are actually replying to.
 
 Required fields: `threadId`, `body`, `resolve`
-Optional: `disposition` — one of `already_fixed`, `explain`, `suggest_fix`, `disagree`, `escalate`
+Optional: `generation`; `disposition` — one of `already_fixed`, `explain`, `suggest_fix`, `disagree`, `escalate`
+
+Set `generation.model` to the exact runtime model name exposed to you. Do not infer it from the agent product, adapter, provider, or model family, and never guess. If your runtime does not expose the model name, omit `generation`; revpack will publish a generic AI attribution instead.
 
 <example>
 
@@ -41,6 +43,7 @@ Optional: `disposition` — one of `already_fixed`, `explain`, `suggest_fix`, `d
   {
     "threadId": "T-001",
     "disposition": "suggest_fix",
+    "generation": { "model": "Claude Fable 5" },
     "body": "Good catch. The endpoint should preserve the existing audit call.{{#if useBitbucketHandoverMarkdown}}\n\n#### 🤖 Prompt for AI Agents\n\n> Verify this issue against the current code and only fix it if still applicable.\n>\n> In `@src/app.ts` around `exportData(...)`, restore audit logging before returning.{{else}}\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/app.ts` around `exportData(...)`, restore audit logging before returning.\n\n</details>{{/if}}",
     "resolve": false
   }
