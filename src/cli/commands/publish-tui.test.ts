@@ -92,11 +92,11 @@ function guidedModel(overrides: Partial<GuidedPublishModel> = {}): GuidedPublish
           '      14 │ before();',
           '      15 │ validate();',
           '-     16 │ previous();',
-          '+ ▶   17 │ replacement();',
+          '+ |   17 │ replacement();',
           '      18 │ after();',
         ].join('\n'),
       ],
-      [9, '- ▶    5 │ removed();'],
+      [9, '- |    5 │ removed();'],
     ]),
     replies: [
       {
@@ -470,26 +470,26 @@ describe('guided publish TUI', () => {
     expect(terminal.frames[0]).toContain('HIGH · correctness');
     expect(terminal.frames[0]).toContain('old lines 14–16');
     expect(terminal.frames[0]).toContain('new lines 15–17');
-    expect(terminal.frames[0]).toContain('+ ▶   17 │ replacement();');
+    expect(terminal.frames[0]).toContain('+ |   17 │ replacement();');
     expect(terminal.frames[0]).toContain('The complete finding body.');
     expect(terminal.frames[0]).toContain('🤖 AI-generated via revpack · Model: GPT-5.6');
     expect(terminal.frames[0]).not.toContain('model metadata is missing');
     expect(terminal.frames[0]).not.toContain('Finding —');
     expect(terminal.frames[0]).not.toContain('Anchor context');
     expect(terminal.frames[0]).not.toContain('Finding body');
-    expect(terminal.frames[0].indexOf('+ ▶   17 │ replacement();')).toBeLessThan(
+    expect(terminal.frames[0].indexOf('+ |   17 │ replacement();')).toBeLessThan(
       terminal.frames[0].lastIndexOf('The complete finding body.'),
     );
   });
 
   it('soft-wraps long code rows beneath the code gutter without losing content', async () => {
-    const longContext = `+ ▶   17 │ ${'segment '.repeat(20)}tail`;
+    const longContext = `+ |   17 │ ${'segment '.repeat(20)}tail`;
     const terminal = new FakeTerminal(['escape'], { columns: 100, rows: 24 });
 
     await runGuidedPublish(guidedModel({ findingContexts: new Map([[4, longContext]]) }), terminal);
 
     const frame = terminal.frames[0];
-    expect(frame).toContain('+ ▶   17 │ segment');
+    expect(frame).toContain('+ |   17 │ segment');
     expect(frame.match(/\bsegment\b/g)).toHaveLength(20);
     expect(frame).toContain('tail');
     expect(
@@ -502,6 +502,77 @@ describe('guided publish TUI', () => {
     for (const line of frame.split('\n')) {
       expect(stringWidth(stripVTControlCharacters(line))).toBeLessThanOrEqual(100);
     }
+  });
+
+  it('preserves indentation and spacing when wrapping code rows', async () => {
+    const indentation = '    ';
+    const code = `${indentation}${'identifier'.repeat(10)}  tail`;
+    const terminal = new FakeTerminal(['escape'], { columns: 64, rows: 40 });
+
+    await runGuidedPublish(guidedModel({ findingContexts: new Map([[4, `+ |   17 │ ${code}`]]) }), terminal);
+
+    const frameLines = stripVTControlCharacters(terminal.frames[0]).split('\n');
+    const firstCodeRow = frameLines.findIndex((line) => line.startsWith('+ |   17 │ '));
+    expect(firstCodeRow).toBeGreaterThanOrEqual(0);
+
+    const wrappedRows: string[] = [];
+    for (const line of frameLines.slice(firstCodeRow)) {
+      if (!line.startsWith('+ |   17 │ ') && !/^\s+│ /.test(line)) break;
+      wrappedRows.push(line);
+    }
+    expect(wrappedRows.slice(1)).not.toHaveLength(0);
+    expect(wrappedRows.slice(1).every((line) => line.slice(line.indexOf('│ ') + 2).startsWith(indentation))).toBe(true);
+    expect(wrappedRows.every((line) => stringWidth(line) <= 62)).toBe(true);
+
+    const reconstructed = wrappedRows
+      .map((line, index) => {
+        const content = line.slice(line.indexOf('│ ') + 2);
+        return index === 0 ? content : content.slice(indentation.length);
+      })
+      .join('');
+    expect(reconstructed).toBe(code);
+  });
+
+  it('wraps interior Code Span rows after the line-number separator', async () => {
+    const indentation = '  ';
+    const code = `${indentation}${'identifier'.repeat(10)}  tail`;
+    const context = [`+ ┌   16 │ ${code}`, `+ │   17 │ ${code}`, `+ └   18 │ ${code}`].join('\n');
+    const terminal = new FakeTerminal(['escape'], { columns: 64, rows: 40 });
+
+    await runGuidedPublish(guidedModel({ findingContexts: new Map([[4, context]]) }), terminal);
+
+    const frameLines = stripVTControlCharacters(terminal.frames[0]).split('\n');
+    const startCodeRow = frameLines.findIndex((line) => line.startsWith('+ ┌   16 │ '));
+    const firstCodeRow = frameLines.findIndex((line) => line.startsWith('+ │   17 │ '));
+    const endCodeRow = frameLines.findIndex((line) => /^\+ [│└] {3}18 │ /u.test(line));
+    const afterContext = frameLines.findIndex((line, index) => index > endCodeRow && line === '');
+    expect(startCodeRow).toBeGreaterThanOrEqual(0);
+    expect(firstCodeRow).toBeGreaterThanOrEqual(0);
+    expect(endCodeRow).toBeGreaterThanOrEqual(0);
+    expect(afterContext).toBeGreaterThan(endCodeRow);
+
+    const startWrappedRows = frameLines.slice(startCodeRow + 1, firstCodeRow);
+    const wrappedRows = frameLines.slice(firstCodeRow + 1, endCodeRow);
+    const endRows = frameLines.slice(endCodeRow, afterContext);
+    expect(startWrappedRows).not.toHaveLength(0);
+    expect(wrappedRows).not.toHaveLength(0);
+    expect(endRows).not.toHaveLength(1);
+    expect(startWrappedRows.every((line) => /^ {2}│ {6}│ {3}\S/u.test(line))).toBe(true);
+    expect(wrappedRows.every((line) => /^ {2}│ {6}│ {3}\S/u.test(line))).toBe(true);
+    expect(endRows.slice(0, -1).every((line) => line[2] === '│')).toBe(true);
+    expect(endRows.at(-1)?.[2]).toBe('└');
+    expect([...startWrappedRows, ...wrappedRows, ...endRows].every((line) => stringWidth(line) <= 62)).toBe(true);
+  });
+
+  it('keeps an unwrapped Code Span closing corner on its source row', async () => {
+    const context = ['+ ┌   16 │ first();', '+ └   17 │ last();'].join('\n');
+    const terminal = new FakeTerminal(['escape'], { columns: 64, rows: 40 });
+
+    await runGuidedPublish(guidedModel({ findingContexts: new Map([[4, context]]) }), terminal);
+
+    const frame = stripVTControlCharacters(terminal.frames[0]);
+    expect(frame).toContain('+ └   17 │ last();');
+    expect(frame).not.toContain('+ │   17 │ last();');
   });
 
   it('keeps an unselected finding preview independent of publish state', async () => {
@@ -681,7 +752,7 @@ describe('guided publish TUI', () => {
             },
           },
         ],
-        findingContexts: new Map([[4, '+ ▶   17 │ **context remains literal**']]),
+        findingContexts: new Map([[4, '+ |   17 │ **context remains literal**']]),
       }),
       terminal,
     );
@@ -844,7 +915,7 @@ describe('guided publish TUI', () => {
     await runGuidedPublish(
       guidedModel({
         findings,
-        findingContexts: new Map([[4, `+ ▶   17 │ context ${poison}safe`]]),
+        findingContexts: new Map([[4, `+ |   17 │ context ${poison}safe`]]),
         replies,
         replyContexts: new Map([[3, baseContext]]),
         summary: { state: 'pending', content: `summary line one\nsummary ${poison}line two` },

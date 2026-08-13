@@ -9,7 +9,7 @@ import type {
 } from '../../core/types.js';
 import chalk from 'chalk';
 import { emitKeypressEvents } from 'node:readline';
-import { fitColumn, truncateColumn, visibleText, wrapText } from '../terminal-text.js';
+import { fitColumn, truncateColumn, visibleText, wrapText, wrapTextPreservingWhitespace } from '../terminal-text.js';
 import { formatDiffPositionLabel } from '../../workspace/diff-context.js';
 import { renderMarkdownPreview, renderMarkdownPreviewLabel, renderMarkdownTitleLabel } from './publish-tui-markdown.js';
 import {
@@ -555,16 +555,32 @@ function generationAttributionLines(
 function wrapCodeContext(context: string, width: number): string[] {
   return context.split('\n').flatMap((line) => {
     const separator = ' │ ';
-    const contentStart = line.indexOf(separator) + separator.length;
+    const contentStart = line.lastIndexOf(separator) + separator.length;
     if (contentStart < separator.length) return wrapText(line, width);
 
     const prefix = line.slice(0, contentStart);
     const prefixWidth = visibleText(prefix).length;
     if (prefixWidth >= width) return wrapText(line, width);
 
-    const contentLines = wrapText(line.slice(contentStart), width - prefixWidth);
-    const continuationPrefix = `${' '.repeat(Math.max(0, prefixWidth - 2))}│ `;
-    return contentLines.map((contentLine, index) => `${index === 0 ? prefix : continuationPrefix}${contentLine}`);
+    const content = line.slice(contentStart);
+    const contentWidth = width - prefixWidth;
+    const leadingSpaces = /^ */u.exec(content)?.[0] ?? '';
+    const continuationIndent = leadingSpaces.slice(0, Math.max(0, contentWidth - 1));
+    const contentLines = wrapTextPreservingWhitespace(content, contentWidth, contentWidth - continuationIndent.length);
+    const spanMarker = /^([-+ ] )([┌│└]) /u.exec(prefix)?.[2];
+    const replaceSpanMarker = (value: string, marker: string): string =>
+      `${value.slice(0, 2)}${marker}${value.slice(3)}`;
+    const firstPrefix = spanMarker === '└' && contentLines.length > 1 ? replaceSpanMarker(prefix, '│') : prefix;
+
+    return contentLines.map((contentLine, index) => {
+      if (index === 0) return `${firstPrefix}${contentLine}`;
+
+      const continuationMarker =
+        spanMarker === undefined ? undefined : spanMarker === '└' && index === contentLines.length - 1 ? '└' : '│';
+      const blankGutter = ' '.repeat(Math.max(0, prefixWidth - 2));
+      const continuationGutter = continuationMarker ? replaceSpanMarker(blankGutter, continuationMarker) : blankGutter;
+      return `${continuationGutter}│ ${continuationIndent}${contentLine}`;
+    });
   });
 }
 
