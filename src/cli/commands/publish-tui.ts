@@ -556,7 +556,7 @@ function generationAttributionLines(
 function wrapCodeContext(context: string, width: number): string[] {
   return context.split('\n').flatMap((line) => {
     const separator = ' │ ';
-    const contentStart = line.lastIndexOf(separator) + separator.length;
+    const contentStart = line.indexOf(separator, 3) + separator.length;
     if (contentStart < separator.length) return wrapText(line, width);
 
     const prefix = line.slice(0, contentStart);

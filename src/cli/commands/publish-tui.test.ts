@@ -504,6 +504,28 @@ describe('guided publish TUI', () => {
     }
   });
 
+  it('keeps gutter glyphs inside long source lines in the code content', async () => {
+    const code = `const separator = ' │ '; ${'segment '.repeat(12)}tail`;
+    const terminal = new FakeTerminal(['escape'], { columns: 64, rows: 40 });
+
+    await runGuidedPublish(guidedModel({ findingContexts: new Map([[4, `+ |   17 │ ${code}`]]) }), terminal);
+
+    const frameLines = stripVTControlCharacters(terminal.frames[0]).split('\n');
+    const firstCodeRow = frameLines.findIndex((line) => line.startsWith('+ |   17 │ '));
+    expect(firstCodeRow).toBeGreaterThanOrEqual(0);
+
+    const wrappedRows: string[] = [];
+    for (const line of frameLines.slice(firstCodeRow)) {
+      if (!line.startsWith('+ |   17 │ ') && !/^ {9}│ /u.test(line)) break;
+      wrappedRows.push(line);
+    }
+    expect(wrappedRows.slice(1)).not.toHaveLength(0);
+    expect(wrappedRows.slice(1).every((line) => /^ {9}│ /u.test(line))).toBe(true);
+
+    const reconstructed = wrappedRows.map((line) => line.slice(line.indexOf('│ ') + 2)).join('');
+    expect(reconstructed).toBe(code);
+  });
+
   it('preserves indentation and spacing when wrapping code rows', async () => {
     const indentation = '    ';
     const code = `${indentation}${'identifier'.repeat(10)}  tail`;
