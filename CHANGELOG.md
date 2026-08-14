@@ -8,11 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Guided Publish now supports mouse-wheel scrolling: the preview scrolls when the pointer is over it, while the selection list navigates when the pointer is over the list.
 - Agent-authored findings and replies now carry optional per-item model attribution. Publish appends a model-specific or generic AI footer, Guided Publish previews the footer and warns when model metadata is unavailable, and reply bodies supplied directly with `--body` use publication-only attribution.
-- Prepared GitHub, GitLab, and Bitbucket Cloud review threads now preserve multi-line Code Spans, and new findings can publish Code Spans on all three providers. Thread Markdown and Guided Publish code excerpts use a width-stable point marker, clearer Code Span gutters, symmetric context that stays within one diff hunk, visible condensation for long spans, and width-safe soft wrapping.
+- Prepared GitHub, GitLab, and Bitbucket Cloud review threads now preserve multi-line Code Spans, and new findings can publish Code Spans on all three providers. Thread Markdown and Guided Publish code excerpts use a width-stable point marker, clearer and unbroken Code Span gutters, symmetric context that stays within one diff hunk, visible condensation for long spans, and width-safe, whitespace-preserving wrapping with aligned continuation indentation.
 
 ### Changed
 
+- Guided Publish now gives the preview more horizontal space on modest-width terminals, leads finding rows with their extracted Markdown title, and sorts reply rows naturally by thread ID.
 - Thread Markdown now reconstructs Thread Context from local Git, falls back to context already embedded in normal provider thread responses, and reports unavailable history per thread instead of making additional provider requests or substituting current code.
 - Formal revpack reviews now use a lightweight internal Risk Inventory to focus effort on higher-impact areas, trace intended behavior and required follow-through, validate concerns against surrounding evidence, and discard candidate findings that do not survive an active attempt to disprove them.
 - Default Review Guidance now includes a concise simplicity lens for disproportionate complexity with concrete maintenance or correctness risk.

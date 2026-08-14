@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import chalk from 'chalk';
-import { fitColumn, truncateColumn, visibleText, wrapText } from './terminal-text.js';
+import { fitColumn, truncateColumn, visibleText, wrapText, wrapTextPreservingWhitespace } from './terminal-text.js';
 
 describe('terminal text', () => {
   it('wraps on usable word boundaries and hard-wraps complete wide graphemes', () => {
@@ -9,8 +9,26 @@ describe('terminal text', () => {
     expect(wrapText('12345678901', 10)).toEqual(['1234567890', '1']);
     expect(wrapText('abc', 1)).toEqual(['a', 'b', 'c']);
     expect(wrapText('abcdef', 3)).toEqual(['abc', 'def']);
+    expect(wrapText(' abc', 1)).toEqual([' ', 'a', 'b', 'c']);
+    expect(wrapText('alpha   beta', 6)).toEqual(['alpha ', 'beta']);
+    expect(wrapText('alpha\r\nbeta', 10)).toEqual(['alpha', 'beta']);
     expect(wrapText('審査対象確認', 10)).toEqual(['審査対象確', '認']);
     expect(wrapText('123456789👩‍💻界B', 10)).toEqual(['123456789', '👩‍💻界B']);
+  });
+
+  it('hard-wraps without consuming whitespace or splitting graphemes', () => {
+    const source = '    alpha  beta';
+    const wrapped = wrapTextPreservingWhitespace(source, 6);
+
+    expect(wrapped).toEqual(['    al', 'pha  b', 'eta']);
+    expect(wrapped.join('')).toBe(source);
+    expect(wrapTextPreservingWhitespace(source, 6, 2)).toEqual(['    al', 'ph', 'a ', ' b', 'et', 'a']);
+    expect(wrapTextPreservingWhitespace('12345👩‍💻界B', 6)).toEqual(['12345', '👩‍💻界B']);
+    expect(wrapTextPreservingWhitespace('abcdef', 6)).toEqual(['abcdef']);
+    expect(wrapTextPreservingWhitespace('alpha\r\nbeta', 10)).toEqual(['alpha', 'beta']);
+    expect(wrapTextPreservingWhitespace('alpha\n\nbeta', 10)).toEqual(['alpha', '', 'beta']);
+    expect(wrapTextPreservingWhitespace('', 10)).toEqual(['']);
+    expect(wrapTextPreservingWhitespace('界', 1)).toEqual(['界']);
   });
 
   it('fits and truncates columns by display width', () => {

@@ -78,6 +78,34 @@ export function wrapText(text: string, width: number): string[] {
   return result;
 }
 
+export function wrapTextPreservingWhitespace(
+  text: string,
+  firstLineWidth: number,
+  continuationLineWidth = firstLineWidth,
+): string[] {
+  const safeFirstLineWidth = Math.max(1, firstLineWidth);
+  const safeContinuationLineWidth = Math.max(1, continuationLineWidth);
+  const result: string[] = [];
+  for (const sourceLine of text.replace(/\r\n/g, '\n').split('\n')) {
+    let remaining = sourceLine;
+    let availableWidth = safeFirstLineWidth;
+    while (stringWidth(remaining) > availableWidth) {
+      let line = sliceByDisplayWidth(remaining, availableWidth);
+      if (line === '') {
+        for (const { segment } of GRAPHEME_SEGMENTER.segment(remaining)) {
+          line = segment;
+          break;
+        }
+      }
+      result.push(line);
+      remaining = remaining.slice(line.length);
+      availableWidth = safeContinuationLineWidth;
+    }
+    if (remaining !== '' || sourceLine === '') result.push(remaining);
+  }
+  return result;
+}
+
 export function visibleText(value: string): string {
   return value.replace(ANSI_PATTERN, '');
 }

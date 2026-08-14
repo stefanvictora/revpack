@@ -9,9 +9,9 @@ import type {
 } from '../../core/types.js';
 import chalk from 'chalk';
 import { emitKeypressEvents } from 'node:readline';
-import { fitColumn, truncateColumn, visibleText, wrapText } from '../terminal-text.js';
+import { fitColumn, truncateColumn, visibleText, wrapText, wrapTextPreservingWhitespace } from '../terminal-text.js';
 import { formatDiffPositionLabel } from '../../workspace/diff-context.js';
-import { renderMarkdownPreview, renderMarkdownPreviewLabel } from './publish-tui-markdown.js';
+import { renderMarkdownPreview, renderMarkdownPreviewLabel, renderMarkdownTitleLabel } from './publish-tui-markdown.js';
 import {
   formatPublishAttributionLabel,
   generationPublishAttribution,
@@ -31,12 +31,21 @@ export type PublishTerminalKey =
   | 'resize'
   | 'other';
 
+export interface PublishTerminalMouseWheel {
+  kind: 'mouse-wheel';
+  direction: 'up' | 'down';
+  x: number;
+  y: number;
+}
+
+export type PublishTerminalInput = PublishTerminalKey | PublishTerminalMouseWheel;
+
 export interface PublishTerminal {
   readonly interactive: boolean;
   dimensions(): { columns: number; rows: number };
   start(): void | Promise<void>;
   stop(): void | Promise<void>;
-  readKey(): Promise<PublishTerminalKey>;
+  readKey(): Promise<PublishTerminalInput>;
   writeFrame(frame: string): void;
 }
 
@@ -75,6 +84,47 @@ class NodePublishTerminal implements PublishTerminal {
   private wasRaw = false;
   private shouldPauseOnStop = false;
   private alternateScreen = false;
+  private mouseTracking = false;
+  private mouseBuffer = '';
+  private mouseSequencePending = false;
+  private queuedMouseEvents: PublishTerminalMouseWheel[] = [];
+  private pendingMouseResolver: ((event: PublishTerminalMouseWheel) => void) | undefined;
+  private readonly mouseSequencePrefix = '\u001b[<';
+
+  private readonly onInputData = (chunk: Buffer | string): void => {
+    this.mouseBuffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+
+    while (true) {
+      const start = this.mouseBuffer.indexOf(this.mouseSequencePrefix);
+      if (start < 0) {
+        this.mouseBuffer = this.mouseBuffer.slice(-2);
+        this.mouseSequencePending = false;
+        return;
+      }
+      if (start > 0) this.mouseBuffer = this.mouseBuffer.slice(start);
+
+      const match = /^(\d+);(\d+);(\d+)([Mm])/.exec(this.mouseBuffer.slice(this.mouseSequencePrefix.length));
+      if (!match) {
+        this.mouseSequencePending = true;
+        return;
+      }
+
+      this.mouseBuffer = this.mouseBuffer.slice(this.mouseSequencePrefix.length + match[0].length);
+      this.mouseSequencePending = this.mouseBuffer.startsWith(this.mouseSequencePrefix);
+      const button = Number(match[1]);
+      const buttonWithoutModifiers = button & ~(4 | 8 | 16);
+      if (buttonWithoutModifiers !== 64 && buttonWithoutModifiers !== 65) continue;
+
+      const event: PublishTerminalMouseWheel = {
+        kind: 'mouse-wheel',
+        direction: buttonWithoutModifiers === 64 ? 'up' : 'down',
+        x: Number(match[2]),
+        y: Number(match[3]),
+      };
+      if (this.pendingMouseResolver) this.pendingMouseResolver(event);
+      else this.queuedMouseEvents.push(event);
+    }
+  };
 
   constructor(
     private readonly input: NodeJS.ReadStream,
@@ -96,14 +146,18 @@ class NodePublishTerminal implements PublishTerminal {
     this.shouldPauseOnStop = this.input.readableFlowing !== true;
     this.started = true;
     try {
+      this.input.on('data', this.onInputData);
       emitKeypressEvents(this.input);
       this.input.setRawMode?.(true);
       this.input.resume();
       this.alternateScreen = true;
       this.output.write('\u001b[?1049h');
       this.output.write('\u001b[?25l');
+      this.output.write('\u001b[?1000h\u001b[?1006h');
+      this.mouseTracking = true;
     } catch (error) {
       this.started = false;
+      this.input.off('data', this.onInputData);
       try {
         this.input.setRawMode?.(this.wasRaw);
       } catch {
@@ -113,6 +167,14 @@ class NodePublishTerminal implements PublishTerminal {
         if (this.shouldPauseOnStop) this.input.pause();
       } catch {
         // Preserve the startup error while making every cleanup step best-effort.
+      }
+      try {
+        if (this.mouseTracking) {
+          this.output.write('\u001b[?1006l\u001b[?1000l');
+          this.mouseTracking = false;
+        }
+      } catch {
+        // Preserve the startup error even when restoring mouse tracking also fails.
       }
       try {
         this.output.write('\u001b[?25h');
@@ -136,37 +198,51 @@ class NodePublishTerminal implements PublishTerminal {
     if (!this.started) return;
     this.started = false;
     try {
+      this.input.off('data', this.onInputData);
       this.input.setRawMode?.(this.wasRaw);
     } finally {
       try {
         if (this.shouldPauseOnStop) this.input.pause();
       } finally {
         try {
-          this.output.write('\u001b[?25h');
+          if (this.mouseTracking) {
+            this.output.write('\u001b[?1006l\u001b[?1000l');
+            this.mouseTracking = false;
+          }
         } finally {
           try {
-            this.output.write('\u001b[?1049l');
+            this.output.write('\u001b[?25h');
           } finally {
-            this.alternateScreen = false;
+            try {
+              this.output.write('\u001b[?1049l');
+            } finally {
+              this.alternateScreen = false;
+            }
           }
         }
       }
     }
   }
 
-  readKey(): Promise<PublishTerminalKey> {
+  readKey(): Promise<PublishTerminalInput> {
+    const queuedMouseEvent = this.queuedMouseEvents.shift();
+    if (queuedMouseEvent) return Promise.resolve(queuedMouseEvent);
+
     return new Promise((resolve) => {
-      const finish = (key: PublishTerminalKey): void => {
+      const finish = (input: PublishTerminalInput): void => {
         this.input.off('keypress', onKeypress);
         this.output.off('resize', onResize);
-        resolve(key);
+        this.pendingMouseResolver = undefined;
+        resolve(input);
       };
       const onKeypress = (value: string | undefined, key: KeypressDetails | undefined): void => {
+        if (this.mouseSequencePending) return;
         finish(decodeNodeKey(value, key));
       };
       const onResize = (): void => {
         finish('resize');
       };
+      this.pendingMouseResolver = (event): void => finish(event);
       this.input.once('keypress', onKeypress);
       this.output.once('resize', onResize);
     });
@@ -265,6 +341,8 @@ function sanitizeTerminalText(value: string): string {
   return sanitized;
 }
 
+const THREAD_ID_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
 function sanitizeGuidedPublishModel(model: GuidedPublishModel): GuidedPublishModel {
   return {
     ...model,
@@ -282,15 +360,17 @@ function sanitizeGuidedPublishModel(model: GuidedPublishModel): GuidedPublishMod
     findingContexts: new Map(
       [...model.findingContexts].map(([index, context]) => [index, sanitizeTerminalText(context)]),
     ),
-    replies: model.replies.map(({ index, value }) => ({
-      index,
-      value: {
-        ...value,
-        threadId: sanitizeTerminalText(value.threadId),
-        body: sanitizeTerminalText(value.body),
-        generation: value.generation ? { model: sanitizeTerminalText(value.generation.model) } : undefined,
-      },
-    })),
+    replies: model.replies
+      .map(({ index, value }) => ({
+        index,
+        value: {
+          ...value,
+          threadId: sanitizeTerminalText(value.threadId),
+          body: sanitizeTerminalText(value.body),
+          generation: value.generation ? { model: sanitizeTerminalText(value.generation.model) } : undefined,
+        },
+      }))
+      .sort((left, right) => THREAD_ID_COLLATOR.compare(left.value.threadId, right.value.threadId)),
     replyContexts: new Map(
       [...model.replyContexts].map(([index, context]) => [
         index,
@@ -476,16 +556,32 @@ function generationAttributionLines(
 function wrapCodeContext(context: string, width: number): string[] {
   return context.split('\n').flatMap((line) => {
     const separator = ' │ ';
-    const contentStart = line.indexOf(separator) + separator.length;
+    const contentStart = line.indexOf(separator, 3) + separator.length;
     if (contentStart < separator.length) return wrapText(line, width);
 
     const prefix = line.slice(0, contentStart);
     const prefixWidth = visibleText(prefix).length;
     if (prefixWidth >= width) return wrapText(line, width);
 
-    const contentLines = wrapText(line.slice(contentStart), width - prefixWidth);
-    const continuationPrefix = `${' '.repeat(Math.max(0, prefixWidth - 2))}│ `;
-    return contentLines.map((contentLine, index) => `${index === 0 ? prefix : continuationPrefix}${contentLine}`);
+    const content = line.slice(contentStart);
+    const contentWidth = width - prefixWidth;
+    const leadingSpaces = /^ */u.exec(content)?.[0] ?? '';
+    const continuationIndent = leadingSpaces.slice(0, Math.max(0, contentWidth - 1));
+    const contentLines = wrapTextPreservingWhitespace(content, contentWidth, contentWidth - continuationIndent.length);
+    const spanMarker = /^([-+ ] )([┌│└]) /u.exec(prefix)?.[2];
+    const replaceSpanMarker = (value: string, marker: string): string =>
+      `${value.slice(0, 2)}${marker}${value.slice(3)}`;
+    const firstPrefix = spanMarker === '└' && contentLines.length > 1 ? replaceSpanMarker(prefix, '│') : prefix;
+
+    return contentLines.map((contentLine, index) => {
+      if (index === 0) return `${firstPrefix}${contentLine}`;
+
+      const continuationMarker =
+        spanMarker === undefined ? undefined : spanMarker === '└' && index === contentLines.length - 1 ? '└' : '│';
+      const blankGutter = ' '.repeat(Math.max(0, prefixWidth - 2));
+      const continuationGutter = continuationMarker ? replaceSpanMarker(blankGutter, continuationMarker) : blankGutter;
+      return `${continuationGutter}│ ${continuationIndent}${contentLine}`;
+    });
   });
 }
 
@@ -613,7 +709,8 @@ interface SelectionLayout {
   previewHeight: number;
 }
 
-const SELECTION_KEY_HELP = '↑↓ navigate  Space toggle  a toggle section  PgUp/PgDn preview  Enter continue  Esc cancel';
+const SELECTION_KEY_HELP =
+  '↑↓/wheel navigate  Space toggle  a toggle section  PgUp/PgDn preview  Enter continue  Esc cancel';
 
 function selectionFooterLines(model: GuidedPublishModel, selection: SelectionState, columns: number): string[] {
   const selectedCount =
@@ -642,7 +739,7 @@ function selectionLayout(
   materialHeight: number,
 ): SelectionLayout {
   const wide = dimensions.columns >= 100;
-  const listWidth = wide ? Math.min(52, Math.max(36, Math.floor(dimensions.columns * 0.42))) : dimensions.columns;
+  const listWidth = wide ? Math.min(48, Math.max(34, Math.floor(dimensions.columns * 0.38))) : dimensions.columns;
   const previewWidth = wide ? Math.max(20, dimensions.columns - listWidth - 3) : Math.max(20, dimensions.columns - 2);
   const availableHeight = Math.max(6, dimensions.rows - footerHeight);
   const previewChromeHeight = (wide ? 0 : 1) + Number(showPreviewHeading);
@@ -655,6 +752,44 @@ function selectionLayout(
       );
   const previewHeight = Math.max(1, availableHeight - (wide ? 0 : listHeight) - previewChromeHeight);
   return { wide, listWidth, previewWidth, availableHeight, listHeight, previewHeight };
+}
+
+function mouseWheelRegion(
+  model: GuidedPublishModel,
+  selection: SelectionState,
+  focus: FocusTarget | undefined,
+  dimensions: { columns: number; rows: number },
+  event: PublishTerminalMouseWheel,
+): 'list' | 'preview' | undefined {
+  const footerLines = selectionFooterLines(model, selection, dimensions.columns);
+  const materialHeight = selectionMaterialLines(model, selection, focus).length;
+  const previewHeading = showPreviewHeading(focus);
+  const layout = selectionLayout(dimensions, footerLines.length, previewHeading, materialHeight);
+  const row = event.y - 1;
+  const column = event.x - 1;
+  if (row < 0 || row >= layout.availableHeight || column < 0 || column >= dimensions.columns) return undefined;
+
+  if (layout.wide) {
+    if (column < layout.listWidth) return 'list';
+    if (column >= layout.listWidth + 3) return 'preview';
+    return undefined;
+  }
+  if (row < layout.listHeight) return 'list';
+
+  const previewTop = layout.listHeight + 1 + Number(previewHeading);
+  return row >= previewTop && row < previewTop + layout.previewHeight ? 'preview' : undefined;
+}
+
+function previewWheelStep(
+  model: GuidedPublishModel,
+  selection: SelectionState,
+  focus: FocusTarget | undefined,
+  dimensions: { columns: number; rows: number },
+): number {
+  const footerLines = selectionFooterLines(model, selection, dimensions.columns);
+  const materialHeight = selectionMaterialLines(model, selection, focus).length;
+  const layout = selectionLayout(dimensions, footerLines.length, showPreviewHeading(focus), materialHeight);
+  return Math.max(1, Math.floor(layout.previewHeight / 3));
 }
 
 function showPreviewHeading(focus: FocusTarget | undefined): boolean {
@@ -712,11 +847,11 @@ function selectionMaterialLines(
       const focused = focus?.kind === 'finding' && focus.index === index;
       const position = value.newLine ?? value.oldLine ?? '?';
       const displayPath = value.newPath || value.oldPath;
-      const label = renderMarkdownPreviewLabel(value.body, '(untitled finding)');
+      const label = renderMarkdownTitleLabel(value.body, '(untitled finding)');
       return boldWhenFocused(
         ` ${focusMarker(focused)}${
           selection.findingIndexes.has(index) ? '[x]' : '[ ]'
-        } ${displayPath}:${position} ${label}`,
+        } ${label} · ${displayPath}:${position}`,
         focused,
       );
     }),
@@ -954,6 +1089,19 @@ export async function runGuidedPublish(
           maximumPreviewOffset(displayModel, selection, focus, terminal.dimensions()),
           previewOffset + Math.max(1, Math.floor(terminal.dimensions().rows / 3)),
         );
+      } else if (typeof key !== 'string') {
+        const region = mouseWheelRegion(displayModel, selection, focus, dimensions, key);
+        if (region === 'list') {
+          focusIndex = Math.min(targets.length - 1, Math.max(0, focusIndex + (key.direction === 'down' ? 1 : -1)));
+          previewOffset = 0;
+        } else if (region === 'preview') {
+          const step = previewWheelStep(displayModel, selection, focus, dimensions);
+          const maximumOffset = maximumPreviewOffset(displayModel, selection, focus, dimensions);
+          previewOffset = Math.min(
+            maximumOffset,
+            Math.max(0, previewOffset + (key.direction === 'down' ? step : -step)),
+          );
+        }
       }
     }
   } finally {
