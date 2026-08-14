@@ -112,11 +112,12 @@ class NodePublishTerminal implements PublishTerminal {
       this.mouseBuffer = this.mouseBuffer.slice(this.mouseSequencePrefix.length + match[0].length);
       this.mouseSequencePending = this.mouseBuffer.startsWith(this.mouseSequencePrefix);
       const button = Number(match[1]);
-      if (button < 64) continue;
+      const buttonWithoutModifiers = button & ~(4 | 8 | 16);
+      if (buttonWithoutModifiers !== 64 && buttonWithoutModifiers !== 65) continue;
 
       const event: PublishTerminalMouseWheel = {
         kind: 'mouse-wheel',
-        direction: button % 2 === 0 ? 'up' : 'down',
+        direction: buttonWithoutModifiers === 64 ? 'up' : 'down',
         x: Number(match[2]),
         y: Number(match[3]),
       };

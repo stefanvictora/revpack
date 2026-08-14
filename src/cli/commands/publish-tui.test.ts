@@ -1335,6 +1335,22 @@ describe('guided publish TUI', () => {
     expect(output.write).toHaveBeenCalledWith('\u001b[?1006l\u001b[?1000l');
   });
 
+  it.each([66, 67, 128])('does not decode SGR mouse button code %i as vertical scrolling', async (button) => {
+    const { input, terminal } = createFixture({ readableFlowing: true });
+
+    await terminal.start();
+    const ignoredEvent = terminal.readKey();
+    input.emit('data', `\u001b[<${button};80;5M`);
+
+    await expect(ignoredEvent).resolves.toBe('other');
+
+    const verticalEvent = terminal.readKey();
+    input.emit('data', '\u001b[<64;10;3M');
+
+    await expect(verticalEvent).resolves.toEqual({ kind: 'mouse-wheel', direction: 'up', x: 10, y: 3 });
+    await terminal.stop();
+  });
+
   it.each([
     ['up', undefined, { name: 'up' }, 'up'],
     ['down', undefined, { name: 'down' }, 'down'],
