@@ -35,9 +35,11 @@ export REVPACK_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 export REVPACK_GITLAB_TOKEN=glpat-xxxxxxxxxxxx
 # or
 export REVPACK_BITBUCKET_EMAIL=you@example.com
-export REVPACK_BITBUCKET_TOKEN=ATBBTxxxxxxxxxxxx
+export REVPACK_BITBUCKET_TOKEN=ATATTxxxxxxxxxxxx
 revpack auth doctor
 ```
+
+For Bitbucket Cloud, create an Atlassian API token via **Create API token with scopes** and select the **Bitbucket** app, with at least `read:user:bitbucket`, `read:repository:bitbucket`, `read:pullrequest:bitbucket`, and `write:pullrequest:bitbucket` (needed to publish). Unscoped Atlassian API tokens (even if they work for Jira) and Bitbucket app passwords are rejected with `401`. Pair the token with your Atlassian account email, not your Bitbucket username.
 
 `auth setup` stores provider settings such as the provider type, host URL, and token environment variable name. It does not store your provider token directly.
 

@@ -237,6 +237,7 @@ provider, url, tokenEnv, emailEnv, remotePatterns, caFile, tlsVerify, sshClone
 - `provider` is `gitlab`, `github`, or `bitbucket-cloud`.
 - `url` is the provider base URL. Bitbucket Cloud profiles must use `https://bitbucket.org`.
 - `tokenEnv` names the environment variable that contains the provider token.
+  For Bitbucket Cloud, this must be an Atlassian API token created with scopes for the Bitbucket app; unscoped API tokens and app passwords fail with `401`.
 - `emailEnv` names the environment variable that contains the Atlassian account email. It is required for Bitbucket Cloud Basic Auth together with the API token; it is not a Bitbucket username.
 
 `revpack auth setup` stores provider settings such as the provider type, host URL, and token environment variable name. It does not store your provider token directly.

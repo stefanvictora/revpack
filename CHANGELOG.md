@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Bitbucket Cloud setup documentation now shows an Atlassian API token example and explains that the token must be created with Bitbucket scopes; unscoped API tokens and app passwords fail with `401`.
 - Local review state files are now replaced atomically, preventing concurrent prepare calls from observing partial JSON.
 - Guided Publish Markdown previews now render GitLab suggestion fences, including range offsets, as fenced code.
 - Guided Publish Markdown previews now style inline code containing underscores correctly inside bold or italic emphasis.
