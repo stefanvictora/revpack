@@ -12,6 +12,7 @@ Check from your current work that:
 - `summary.md` was written for fresh or incremental code review runs
 - conditional output files were omitted when they have no useful draft material
 - any JSON output files you wrote are valid JSON arrays
+- each finding or reply you drafted in this run records the exact model ID in `generation.model` when the harness supplies it for that draft, and omits `generation` otherwise
 - every finding has `oldPath`, `newPath`, `body`, `severity`, `category`, and at least one line field
 - every finding is anchored to a record in the corresponding per-file Anchor Map listed in `.revpack/diffs/files.json`
 - no finding duplicates an active review thread, a continuously applicable issue in a relevant resolved thread, a Previous Action, or another finding

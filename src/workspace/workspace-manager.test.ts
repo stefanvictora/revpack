@@ -265,6 +265,10 @@ describe('WorkspaceManager', () => {
     expect(findingsInstructions).toContain('Looking up the required records is an input step');
     expect(finalChecks).toContain('revisit the Risk Inventory');
     expect(finalChecks).toContain('try to disprove each remaining candidate finding');
+    expect(finalChecks).toContain(
+      'each finding or reply you drafted in this run records the exact model ID in `generation.model` ' +
+        'when the harness supplies it for that draft, and omits `generation` otherwise',
+    );
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
   });
 
