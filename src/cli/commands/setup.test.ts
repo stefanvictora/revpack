@@ -102,6 +102,9 @@ describe('runSetup', () => {
     expect(contextContent).toContain('# Revpack Context');
     expect(contextContent).toContain('without performing a formal code review');
     expect(contextContent).toContain('fix or address active review threads');
+    expect(contextContent).toContain('BUNDLE_ROOT/outputs/new-findings.json');
+    expect(contextContent).toContain('BUNDLE_ROOT/resolved-threads/');
+    expect(contextContent).toContain('publishedActions');
     expect(contextContent).toContain('treat it as authoritative');
     expect(contextContent).toContain('Do not fall back to candidate discovery');
     expect(contextContent).not.toContain('Write only under');

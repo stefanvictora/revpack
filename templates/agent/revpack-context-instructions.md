@@ -31,6 +31,10 @@ The developer's request and the reviewed project's repository instructions gover
 
 Do not create new findings, perform a proactive code review, publish anything, or run `revpack prepare` unless the developer explicitly asks.
 
+When asked to fix an earlier finding, match its file and concern against pending drafts in `BUNDLE_ROOT/outputs/new-findings.json` (if present) and active threads in `BUNDLE_ROOT/threads/`. Publishing a finding creates a review thread and consumes that draft. After verifying a fix, remove only the matching obsolete draft if it is still pending. For a matching active thread, use its thread ID in the reply workflow below.
+
+If neither matches, check `BUNDLE_ROOT/resolved-threads/` and the `publishedActions` in `BUNDLE_ROOT/bundle.json`. A missing draft alone leaves publication unconfirmed. If publication is confirmed but the thread is missing from the bundle, suggest `revpack prepare` to refresh it before drafting a reply.
+
 When asked to fix or address active review threads, implement and verify accepted changes, then reconcile useful publishable replies into `BUNDLE_ROOT/outputs/replies.json` as directed by `BUNDLE_ROOT/CONTEXT.md`. Preserve drafts for unrelated threads. Do not publish the replies.
 
 When asked only to show, summarize, discuss, or challenge threads, do not create reply drafts by default.

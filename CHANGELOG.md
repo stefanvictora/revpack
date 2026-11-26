@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Formal revpack reviews now use a lightweight internal Risk Inventory to focus effort on higher-impact areas, trace intended behavior and required follow-through, validate concerns against surrounding evidence, and discard candidate findings that do not survive an active attempt to disprove them.
 - Default Review Guidance now includes a concise simplicity lens for disproportionate complexity with concrete maintenance or correctness risk.
 - Review findings now prefer `reliability`, `compatibility`, and `observability` categories while continuing to accept custom categories.
+- `revpack-context` now guides agents from an earlier finding to its pending draft or published review thread when asked to fix it.
 
 ### Fixed
 
