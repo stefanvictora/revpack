@@ -153,6 +153,7 @@ function buildInstructionRoute(
 
   if (proactiveReview) {
     required.push('`.revpack/instructions/03-new-findings-and-anchors.md`');
+    required.push('`.revpack/instructions/04-suggestions-and-agent-handover.md`');
     required.push('`.revpack/instructions/05-review-note.md`');
     required.push('`.revpack/instructions/06-summary.md`');
   } else {

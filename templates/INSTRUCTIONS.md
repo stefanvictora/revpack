@@ -14,7 +14,7 @@ Use this index only when you need to understand what an instruction file covers 
 | `01-review-workflow-and-outputs.md`    | Yes          | Yes                     | Yes              | Yes                    | Review goal, execution model, required outputs, validation, input-file order |
 | `02-thread-replies.md`                 | If threads   | If threads              | Yes              | No                     | Deciding whether to reply, writing `outputs/replies.json`                    |
 | `03-new-findings-and-anchors.md`       | Yes          | Yes                     | No               | No                     | Quality bar, diff navigation, positional anchors, severity, categories       |
-| `04-suggestions-and-agent-handover.md` | On demand    | On demand               | On demand        | On demand              | Provider formatting for a code suggestion or coding-agent handover           |
+| `04-suggestions-and-agent-handover.md` | Yes          | Yes                     | On demand        | On demand              | Provider formatting for a code suggestion or coding-agent handover           |
 | `05-review-note.md`                    | Yes          | Yes                     | No               | No                     | Optional MR/PR-level `outputs/note.md` synthesis                             |
 | `06-summary.md`                        | Yes          | Yes                     | No               | No                     | Changelog-style `outputs/summary.md`                                         |
 | `07-final-checks.md`                   | Yes          | Yes                     | Yes              | Yes                    | Lightweight final self-check                                                 |

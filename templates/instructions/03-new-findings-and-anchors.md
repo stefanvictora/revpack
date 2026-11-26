@@ -2,11 +2,11 @@
 
 ## Review the change in context
 
-What problem remains without this change? Use the stated intent when available. If it is unstated, review the observable behavior. Use applicable `REVIEW.md` guidance to form a lightweight internal Risk Inventory and focus on changes where a mistake would matter most.
+What problem remains without this change? Use the stated intent when available. If it is unstated, review the observable behavior. Form a lightweight internal Risk Inventory of what changed and where a mistake would matter most. Use applicable `REVIEW.md` guidance when present. If it is absent, continue with the quality bar below.
 
 For a new capability or changed business rule, look where the project handles that use case. Does an existing path already meet the need? Does the proposed approach deliver the intended outcome end to end? Raise a design concern when you can show a missed requirement, a conflict with a documented decision or a concrete cost of maintaining two paths.
 
-In higher-risk areas, trace affected callers and consumers through relevant edge cases or failure paths. Compare the resulting behavior with existing tests and documented contracts or architecture decisions. A test added alongside an implementation can encode the same mistaken assumption.
+In higher-risk areas, trace affected callers and consumers through relevant edge cases or failure paths. Check the guarantees they rely on and any companion updates the change requires elsewhere. Compare the resulting behavior with existing tests and documented contracts or architecture decisions. A test added alongside an implementation can encode the same mistaken assumption.
 
 For changed source comments, consider what a future maintainer learns about a decision or constraint. Flag a misleading claim or a retelling of the implementation discussion when it obscures how the code works.
 
@@ -14,9 +14,11 @@ For changed source comments, consider what a future maintainer learns about a de
 
 Before reporting a finding, try to disprove it. For a behavior claim, trace a reachable scenario and check whether a caller, guard or fallback already handles it. For a design or documentation concern, compare the specific code and project evidence involved. Keep a finding only when all of the following hold.
 
-- This MR/PR introduces, exposes or worsens the issue, and the current diff has a valid positional anchor for it.
-- You can identify who or what is affected and how. For a test gap, name the specific regression it could miss.
+- This MR/PR introduces, exposes or worsens the issue. Show which changed code makes it relevant, how that leads to the consequence, and where the finding has a valid positional anchor in the current diff.
+- You can identify who or what is affected and how, for example incorrect behavior, a security risk, data loss, a broken contract, a performance regression or a concrete maintenance cost. For a test gap, name the specific regression it could miss.
 - The author can act on it and the existing discussion has not already covered it.
+
+Prefer fewer, higher-value findings. Leave out broad refactoring preferences, style opinions without a readability impact, unrelated pre-existing problems and theoretical performance concerns without evidence.
 
 If a merge decision depends on intent that the available evidence leaves open, check the existing discussion before raising a focused question in the optional Review Note. An absent rationale alone does not warrant a comment.
 
@@ -88,13 +90,16 @@ Set `generation.model` to the exact runtime model name exposed to you. Do not in
 
 <example>
 
+In this example the runtime explicitly reports `Claude Fable 5`. Use the model identifier your own runtime reports.
+
 ```json
 [
   {
     "oldPath": "src/app.ts",
     "newPath": "src/app.ts",
     "newLine": 42,
-    "body": "**Anonymous requests return 500**: This handler reads `user.name` before checking whether the request has a user. Return the existing 401 response before accessing the name.",
+    "generation": { "model": "Claude Fable 5" },
+    "body": "**Anonymous requests return 500**: This handler reads `user.name` before checking whether the request has a user.\n\nReturn the existing 401 response before accessing the name.",
     "severity": "high",
     "category": "correctness"
   }
@@ -105,7 +110,7 @@ Set `generation.model` to the exact runtime model name exposed to you. Do not in
 
 ## Finding body format
 
-Lead with a short bold title. Explain the trigger and consequence in 1–3 short paragraphs. Give a fix direction when one is clear. For a directly applicable code suggestion or a fix that needs a coding-agent handover, read `.revpack/instructions/04-suggestions-and-agent-handover.md`.
+Use the opening `**Short issue title**:` shown in the example. Explain the trigger and consequence in 1–3 short paragraphs. Give a fix direction when one is clear. For a safe local replacement, include a code suggestion. If the fix needs work elsewhere, append a self-contained handover for that work in the same `body`. Use the provider's format in `.revpack/instructions/04-suggestions-and-agent-handover.md`.
 
 ## Severity
 

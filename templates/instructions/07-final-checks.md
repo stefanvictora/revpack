@@ -2,7 +2,7 @@
 
 Before finishing, perform a lightweight self-check.
 
-For a fresh or incremental code review, revisit the Risk Inventory for any high-impact behavior you overlooked. Apply the finding quality bar to any new concern this uncovers.
+Before finishing a fresh or incremental code review, revisit the Risk Inventory for gaps and try to disprove each remaining candidate finding, including drafts retained from an earlier pass. For a behavior claim, verify the failure is reachable despite existing guards or fallbacks. For a design or documentation claim, verify the conflict and its concrete impact. Drop duplicates and any concern without evidence that the MR/PR introduced, exposed or worsened it.
 
 Do not run additional shell commands solely for final verification unless you have a concrete reason to suspect that an output file is malformed or missing.
 

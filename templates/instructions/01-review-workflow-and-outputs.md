@@ -4,6 +4,8 @@
 
 Read and search the diff, source, tests, review threads and documentation relevant to the task. Write drafts only under `.revpack/outputs/`. The developer decides what to apply or publish.
 
+If you accidentally modify anything outside `.revpack/outputs/`, stop immediately and report the change.
+
 Leave test execution and other mechanical checks to the project pipeline. Describe the assertions you read without claiming the tests passed. Flag a gap when you can name the regression it would miss.
 
 ## Output files
@@ -28,6 +30,8 @@ Existing `replies.json`, `new-findings.json`, and `note.md` are pending, revisab
 When reconciling an existing `replies.json`, a referenced `T-NNN` thread may be in `.revpack/threads/` or `.revpack/resolved-threads/`. A thread's current resolved state does not by itself invalidate a pending draft reply; retain, revise, or remove the draft based on whether it remains useful.
 
 Read an existing `summary.md` before updating it.
+
+When a follow-up question or pending draft depends on intent, consult the MR/PR description and available commit messages. When it depends on changed behavior, use `.revpack/diffs/files.json` to locate the relevant patch or Anchor Map. Before revising a code suggestion or handover in a draft, read `.revpack/instructions/04-suggestions-and-agent-handover.md` for the provider's format.
 
 ## Language and encoding
 

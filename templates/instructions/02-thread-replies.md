@@ -25,7 +25,7 @@ For a fix made with `revpack-context`, describe the verified change in terms tha
 
 Keep `"resolve": false` for questions, partial fixes, suggested future work, or any reply that should continue the discussion.
 
-For a reply that offers a directly applicable code suggestion or needs a coding-agent handover, read `.revpack/instructions/04-suggestions-and-agent-handover.md`.
+When proposing a fix, read `.revpack/instructions/04-suggestions-and-agent-handover.md` before drafting a code suggestion or a coding-agent handover. A safe local replacement can be paired with a handover for tests, imports or changes elsewhere.
 
 ## System events
 
@@ -42,10 +42,19 @@ Set `generation.model` to the exact runtime model name exposed to you. Do not in
 
 <example>
 
+These drafts come from successive runs. The first runtime reported `Claude Fable 5`. The second did not expose a model name.
+
 ```json
 [
   {
     "threadId": "T-001",
+    "disposition": "suggest_fix",
+    "generation": { "model": "Claude Fable 5" },
+    "body": "The CSV writer still treats a zero balance as missing. Check for null here so zero is included in the export.",
+    "resolve": false
+  },
+  {
+    "threadId": "T-002",
     "disposition": "already_fixed",
     "body": "Both export handlers now call `recordAuditEvent` before sending the response, including the early return for an empty export.",
     "resolve": true
