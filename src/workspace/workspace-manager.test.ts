@@ -1193,6 +1193,14 @@ describe('WorkspaceManager', () => {
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Incremental Review Rules');
+      expect(content).toMatch(/^\d+\. `\.revpack\/instructions\/06-summary\.md`$/m);
+      const summaryInstructions = await fs.readFile(
+        path.join(manager.bundlePath, 'instructions', '06-summary.md'),
+        'utf-8',
+      );
+      expect(summaryInstructions).toContain('Compare the final behavior with the MR/PR base.');
+      expect(summaryInstructions).toContain('Fold a later fix or refinement into its `Added` bullet');
+      expect(summaryInstructions).toContain('Remove any separate `Changed` or `Fixed` entry for the same correction.');
       expect(content).toContain('Incremental mode limits required review effort. It does not limit valid reporting.');
       expect(content).toContain(
         'Do not remove or suppress a valid finding solely because the relevant line is outside `.revpack/diffs/incremental.patch`.',
