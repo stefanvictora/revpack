@@ -21,6 +21,8 @@ Skip **REPLIED** threads unless you have new information.
 
 Set `"resolve": true` when your reply conclusively completes the discussion. Publishing posts the reply before attempting resolution, so a provider reporting the thread as non-resolvable before the reply does not prevent you from expressing resolution intent.
 
+For a fix made with `revpack-context`, describe the verified change in terms that will still be accurate when the reply is published. If the fix fully addresses the concern, set `"resolve": true` even while the change is awaiting commit or push.
+
 Keep `"resolve": false` for questions, partial fixes, suggested future work, or any reply that should continue the discussion.
 
 ## System events

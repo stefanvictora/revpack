@@ -1429,6 +1429,8 @@ describe('WorkspaceManager', () => {
       expect(replyInstructions).toContain(
         'Set `"resolve": true` when your reply conclusively completes the discussion.',
       );
+      expect(replyInstructions).toContain('accurate when the reply is published');
+      expect(replyInstructions).toContain('set `"resolve": true` even while the change is awaiting commit or push');
       expect(replyInstructions).toContain('Set `generation.model` to the exact runtime model name exposed to you.');
     });
 
