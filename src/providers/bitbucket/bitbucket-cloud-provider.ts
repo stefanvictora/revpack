@@ -18,6 +18,7 @@ interface BitbucketRequestOptions {
   method?: string;
   body?: unknown;
   params?: Record<string, string>;
+  badRequestMessage?: string;
 }
 
 interface BitbucketCloudProviderOptions {
@@ -157,7 +158,10 @@ export class BitbucketCloudProvider implements ReviewProvider {
   }
 
   async resolveThread(ref: ReviewTargetRef, threadId: string): Promise<void> {
-    await this.request(`${this.commentPath(ref, threadId)}/resolve`, { method: 'POST' });
+    await this.request(`${this.commentPath(ref, threadId)}/resolve`, {
+      method: 'POST',
+      badRequestMessage: 'Bitbucket Cloud rejected the request to resolve the thread (400).',
+    });
   }
 
   async updateDescription(ref: ReviewTargetRef, body: string): Promise<void> {
@@ -198,10 +202,13 @@ export class BitbucketCloudProvider implements ReviewProvider {
 
     let res: Response;
     try {
+      const body = JSON.stringify(options?.body);
+      const headers = this.headers();
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
       res = await fetch(url, {
         method: options?.method ?? 'GET',
-        headers: this.headers(),
-        body: options?.body ? JSON.stringify(options.body) : undefined,
+        headers,
+        body,
         ...(this.fetchDispatcher ? { dispatcher: this.fetchDispatcher } : {}),
       } as RequestInit);
     } catch (err) {
@@ -215,7 +222,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
       );
     }
 
-    await this.ensureOk(res);
+    await this.ensureOk(res, options?.badRequestMessage);
     if (res.status === 204) return undefined as T;
     return res.json() as Promise<T>;
   }
@@ -255,11 +262,13 @@ export class BitbucketCloudProvider implements ReviewProvider {
     return {
       Accept: 'application/json',
       Authorization: `Basic ${Buffer.from(`${this.email}:${this.token}`, 'utf8').toString('base64')}`,
-      'Content-Type': 'application/json',
     };
   }
 
-  private async ensureOk(res: Response): Promise<void> {
+  private async ensureOk(
+    res: Response,
+    badRequestMessage = 'Bitbucket Cloud rejected the request (400).',
+  ): Promise<void> {
     if (res.status === 401) {
       throw new AuthenticationError('Bitbucket Cloud authentication failed (401)', 'bitbucket-cloud');
     }
@@ -279,11 +288,7 @@ export class BitbucketCloudProvider implements ReviewProvider {
 
     if (res.status === 400) {
       const text = await res.text().catch(() => '');
-      throw new ProviderError(
-        `Bitbucket Cloud rejected the request (400). Check pull request comment fields and inline anchors. ${this.redact(text)}`.trim(),
-        'bitbucket-cloud',
-        res.status,
-      );
+      throw new ProviderError(`${badRequestMessage} ${this.redact(text)}`.trim(), 'bitbucket-cloud', res.status);
     }
 
     if (res.status === 409) {
@@ -330,6 +335,9 @@ export class BitbucketCloudProvider implements ReviewProvider {
     return this.request<BitbucketComment>(this.commentsPath(ref), {
       method: 'POST',
       body: payload,
+      badRequestMessage: payload.inline
+        ? 'Bitbucket Cloud rejected the inline comment (400). Check the comment fields and inline anchors.'
+        : 'Bitbucket Cloud rejected the comment (400).',
     });
   }
 

@@ -587,6 +587,26 @@ describe('publish command internals', () => {
     expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('review bundle could not be refreshed'));
   });
 
+  it('reports the posted reply and the failed resolution separately', () => {
+    expect(() =>
+      __testing.reportPublishResult({
+        successes: [],
+        failures: [{ kind: 'reply', label: 'T-002', failedToResolve: true, error: 'Bad Request' }],
+        remainingReplies: 0,
+        remainingFindings: 0,
+        checkpoint: 'blocked',
+        refresh: 'skipped',
+      }),
+    ).toThrow('1 selected publish action(s) failed');
+
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Succeeded: T-002 (reply)'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Failed: T-002 (resolve)'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('will not retry resolution automatically'));
+    expect(console.error).not.toHaveBeenCalledWith(
+      expect.stringContaining('Provider actions may already have succeeded'),
+    );
+  });
+
   it('strictly validates queues before creating a provider or opening the selector', async () => {
     await writeBundleState('gitlab');
     await fs.mkdir(path.join(tmpDir, '.revpack', 'outputs'), { recursive: true });

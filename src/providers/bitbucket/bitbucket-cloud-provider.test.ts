@@ -312,6 +312,7 @@ describe('BitbucketCloudProvider target reads', () => {
     installFetch((url, init) => {
       expect(url).toBe('https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/42/comments');
       expect(init?.method).toBe('POST');
+      expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
       expect(requestBodyJson(init)).toEqual({
         content: { raw: 'reply body' },
         parent: { id: 100 },
@@ -330,6 +331,7 @@ describe('BitbucketCloudProvider target reads', () => {
       );
       expect(init?.method).toBe('POST');
       expect(init?.body).toBeUndefined();
+      expect(new Headers(init?.headers).has('Content-Type')).toBe(false);
       return new Response(null, { status: 204 });
     });
 
@@ -926,6 +928,20 @@ describe('BitbucketCloudProvider errors and clone URLs', () => {
     await expect(publish).rejects.toThrow('inline anchors');
     await expect(publish).rejects.not.toThrow('secret-email@example.com');
     await expect(publish).rejects.not.toThrow('secret-token');
+  });
+
+  it('identifies a rejected resolve request and preserves the redacted Bitbucket response', async () => {
+    const provider = new BitbucketCloudProvider('secret-email@example.com', 'secret-token');
+    installFetch(() => new Response('Bad Request: secret-token', { status: 400 }));
+
+    const resolve = provider.resolveThread(ref, '100');
+
+    await expect(resolve).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining('rejected the request to resolve the thread (400). Bad Request'),
+    });
+    await expect(resolve).rejects.not.toThrow('inline anchors');
+    await expect(resolve).rejects.not.toThrow('secret-token');
   });
 
   it('redacts credentials from generic provider errors', async () => {

@@ -21,6 +21,7 @@ export interface PublishPlanItemResult {
 
 export interface PublishPlanFailure extends PublishPlanItemResult {
   error: string;
+  failedToResolve?: boolean;
 }
 
 export interface PublishExecutionResult {
@@ -104,6 +105,7 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
   for (const reply of material.replies) {
     if (!selectedReplies.has(reply.index)) continue;
     const item = { kind: 'reply' as const, index: reply.index, label: reply.value.threadId };
+    let resolving = false;
     try {
       await orchestrator.publishReply(
         undefined,
@@ -125,7 +127,9 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
       });
       if (!tracked) throw new Error(`Could not record the published reply ${reply.value.threadId}.`);
       if (reply.value.resolve) {
+        resolving = true;
         await orchestrator.resolveThread(undefined, reply.value.threadId, repository);
+        resolving = false;
         const resolutionTracked = await orchestrator.workspace.appendPublishedAction({
           type: 'resolve',
           providerThreadId: reply.value.threadId,
@@ -139,11 +143,11 @@ export async function executePublishPlan(options: ExecutePublishPlanOptions): Pr
       onProgress?.({ type: 'success', ...item });
     } catch (error) {
       const detail = errorMessage(error);
+      const replyStatus = publishedReplyIndexes.has(reply.index) ? 'Reply published and removed from the queue. ' : '';
       const failure = {
         ...item,
-        error: publishedReplyIndexes.has(reply.index)
-          ? `${detail} (the reply was published and removed from the queue; resolution will not be retried automatically)`
-          : detail,
+        ...(resolving ? { failedToResolve: true } : {}),
+        error: `${replyStatus}${resolving ? 'Thread resolution failed. ' : ''}${detail}`,
       };
       failures.push(failure);
       onProgress?.({ type: 'failure', ...failure });

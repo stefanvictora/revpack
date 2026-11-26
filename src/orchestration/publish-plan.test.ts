@@ -290,10 +290,10 @@ describe('shared publish plan', () => {
       {
         kind: 'reply',
         index: 0,
-        error: expect.stringContaining('resolve failed'),
+        failedToResolve: true,
+        error: 'Reply published and removed from the queue. Thread resolution failed. resolve failed',
       },
     ]);
-    expect(result.failures[0].error).toContain('resolution will not be retried automatically');
     expect(result.successes).not.toContainEqual(expect.objectContaining({ kind: 'reply', index: 0 }));
     expect(result.checkpoint).toBe('blocked');
     expect(orchestrator.publishCheckpoint).not.toHaveBeenCalled();
@@ -333,6 +333,7 @@ describe('shared publish plan', () => {
     expect(result.failures).toMatchObject([
       { kind: 'reply', index: 0, error: expect.stringContaining('Could not record the resolved thread') },
     ]);
+    expect(result.failures[0].failedToResolve).toBeUndefined();
     expect(result.successes).not.toContainEqual(expect.objectContaining({ kind: 'reply', index: 0 }));
   });
 

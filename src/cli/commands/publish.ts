@@ -647,6 +647,11 @@ function reportPublishResult(result: PublishExecutionResult): void {
   const remainingDrafts = result.remainingReplies + result.remainingFindings;
   const successfulLabels = result.successes.map((item) => item.label);
   if (result.failures.length > 0) {
+    const failedResolutions = result.failures.filter((failure) => failure.failedToResolve);
+    successfulLabels.push(...failedResolutions.map((failure) => `${failure.label} (reply)`));
+    const failedLabels = result.failures.map((failure) =>
+      failure.failedToResolve ? `${failure.label} (resolve)` : failure.label,
+    );
     const failureSummary =
       result.checkpoint === 'failed'
         ? 'The checkpoint failed and the review bundle was not refreshed.'
@@ -654,14 +659,23 @@ function reportPublishResult(result: PublishExecutionResult): void {
           ? 'Publishing stopped before the checkpoint and refresh because selected review material failed.'
           : 'Publishing stopped before refresh because selected review material failed.';
     console.error('');
-    console.error(
-      chalk.yellow(
-        `${failureSummary}\n` +
+    console.error(chalk.yellow(failureSummary));
+    if (failedResolutions.length > 0) {
+      console.error(
+        chalk.yellow(
+          'Check the threads marked (resolve) below and resolve them manually if still open. Revpack will not retry resolution automatically.',
+        ),
+      );
+    }
+    if (failedResolutions.length < result.failures.length) {
+      console.error(
+        chalk.yellow(
           'Provider actions may already have succeeded. Review the target before retrying to avoid duplicate comments.',
-      ),
-    );
+        ),
+      );
+    }
     console.error(chalk.dim(`Succeeded: ${successfulLabels.length > 0 ? successfulLabels.join(', ') : 'none'}`));
-    console.error(chalk.dim(`Failed: ${result.failures.map((failure) => failure.label).join(', ')}`));
+    console.error(chalk.dim(`Failed: ${failedLabels.join(', ')}`));
     console.error(
       chalk.dim(`Remaining drafts: ${result.remainingFindings} finding(s), ${result.remainingReplies} reply/replies.`),
     );
