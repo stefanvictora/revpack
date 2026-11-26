@@ -107,6 +107,8 @@ The bundle is local and disposable. Use `revpack clean` to remove it, then run `
 
 `CONTEXT.md` explains two task paths. A formal revpack review follows the generated Review Contract and writes draft material only to `.revpack/outputs/`. Bundle context use instead follows the developer's task and repository instructions, so the agent may discuss threads, edit source or documentation, and run appropriate verification. Fixing or addressing active threads also drafts useful replies in `.revpack/outputs/replies.json`. Missing conditional draft files mean there is nothing pending for that output.
 
+In a code review, the agent compares the intended outcome with existing behavior and traces higher-risk changes through affected callers, documentation, and tests. When the evidence leaves a product or design decision open and the answer matters for merge, the agent can ask the author in a Review Note.
+
 ## Publishing
 
 You decide what goes back to the provider.

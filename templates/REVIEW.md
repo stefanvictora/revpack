@@ -89,18 +89,10 @@ Do not flag:
 - Broad refactoring suggestions unrelated to the changed behavior.
 - Theoretical performance issues without realistic impact.
 - Missing documentation for internal/private code unless the lack of documentation makes changed behavior hard to use or maintain.
-- Unrelated pre-existing problems.
+- Unrelated pre-existing problems. When a change exposes or worsens an existing issue, explain what made it relevant.
 - Generated files, vendored files, lockfiles, snapshots, and build artifacts unless they introduce a severe runtime, security, or compatibility risk.
 - Test-only shortcuts unless they make the tests misleading, flaky, or unable to catch the intended regression.
 - Cleaner local alternatives that differ from old code but do not create inconsistency, risk, or confusion.
-
-## Pre-existing issues
-
-Do not treat unrelated pre-existing issues as normal review findings.
-
-If a pre-existing issue is important enough to mention, clearly mark it as pre-existing and avoid implying that the MR/PR author introduced it.
-
-If the change exposes, worsens, or relies on a pre-existing issue, it is in scope. Explain how the changed behavior makes the issue relevant.
 
 ## Testing feedback
 

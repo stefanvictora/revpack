@@ -12,7 +12,7 @@ Use a suggestion block when:
 
 Do not use suggestion blocks for pseudocode, incomplete fragments, large rewrites, changes across multiple unrelated locations, or fixes you are not confident about.
 
-A fix may still need tests, imports, or follow-up elsewhere — that does not disqualify a suggestion block. Include both a suggestion block for the local fix and a handover prompt for remaining work.
+A local suggestion can be useful even when a fix also needs a test, import or companion edit elsewhere. Use a handover prompt for that remaining work when the implementer needs more context.
 
 Default syntax — replaces only the anchored line:
 
@@ -34,7 +34,7 @@ For GitHub, Bitbucket Cloud, and local reviews, the finding's positional anchor 
 
 ## Agent handover prompts
 
-Include a handover prompt when the fix is clear and a developer may want an AI coding agent to implement it. Especially useful for multi-file edits, test additions, or fixes too large for a suggestion block.
+Include a handover prompt when the fix is clear and a coding agent needs implementation details beyond the finding or reply. For example, name a second caller that needs the same change or a compatibility guarantee the fix must preserve. A self-contained local suggestion is enough on its own.
 
 ### Writing effective handover prompts
 

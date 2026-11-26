@@ -16,13 +16,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Guided Publish now gives the preview more horizontal space on modest-width terminals, leads finding rows with their extracted Markdown title, and sorts reply rows naturally by thread ID.
 - Thread Markdown now reconstructs Thread Context from local Git, falls back to context already embedded in normal provider thread responses, and reports unavailable history per thread instead of making additional provider requests or substituting current code.
-- Formal revpack reviews now use a lightweight internal Risk Inventory to focus effort on higher-impact areas, trace intended behavior and required follow-through, validate concerns against surrounding evidence, and discard candidate findings that do not survive an active attempt to disprove them.
+- Formal revpack reviews now use an internal Risk Inventory to compare the stated goal with existing behavior, check for duplicated capabilities or conflicting project decisions, and trace higher-risk changes across callers, documentation, and tests. Agents check candidate findings against counterevidence and raise consequential questions about intent in a Review Note.
+- Review instructions now call out misleading source comments and load provider-specific formatting for code suggestions and coding-agent handovers on demand.
 - Default Review Guidance now includes a concise simplicity lens for disproportionate complexity with concrete maintenance or correctness risk.
 - Review findings now prefer `reliability`, `compatibility`, and `observability` categories while continuing to accept custom categories.
 - `revpack-context` now guides agents from an earlier finding to its pending draft or published review thread. Replies describe the verified fix and propose resolution when it fully addresses the concern, even before commit or push.
 
 ### Fixed
 
+- Prepared review bundles now identify Bitbucket Cloud pull requests correctly in the agent context.
 - Bitbucket Cloud thread resolution now sends an empty POST without a JSON content-type header. If resolution fails after a reply is posted, the publish report identifies the posted reply and the failed resolution separately. Revpack only suggests checking inline anchors for rejected inline comments.
 - Bitbucket Cloud setup documentation now shows an Atlassian API token example and explains that the token must be created with Bitbucket scopes; unscoped API tokens and app passwords fail with `401`.
 - Local review state files are now replaced atomically, preventing concurrent prepare calls from observing partial JSON.

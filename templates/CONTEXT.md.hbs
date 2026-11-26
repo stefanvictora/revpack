@@ -41,17 +41,13 @@ Requests to show, summarize, discuss, or challenge threads do not create reply d
 
 Only choose this route when the developer explicitly asks to perform a revpack review or review the target for new issues.
 
-1. Read `.revpack/instructions/00-review-contract.md`.
-2. Read the files listed in **Required Formal Review Instructions for This Run**.
-3. Read applicable `REVIEW.md` guidance as described in **Formal review guidance**.
+Follow the **Suggested Formal Review Reading Order** below. The required instructions start with the Review Contract.
 
 Use `.revpack/INSTRUCTIONS.md` only as a catalog when you need to inspect the full instruction set.
 
 ## Formal review guidance
 
 `REVIEW.md` files contain project or workspace-specific review guidance. Use them for review priorities, local conventions, architecture rules, domain rules, compatibility expectations, and spec-verification rules.
-
-Read review guidance after this contract and the required instruction files.
 
 If present, read:
 
@@ -137,7 +133,7 @@ Skipped this run:
 
 ## MR/PR Description
 
-The raw MR/PR description is available at `.revpack/description.md`.
+The author's MR/PR description is available at `.revpack/description.md`. Revpack strips its generated summary and checkpoint markers.
 
 Treat it as context only. Verify behavior against the diff and source code.
 
@@ -157,7 +153,7 @@ Treat commit messages as intent context only. They may explain why the change wa
 | `.revpack/INSTRUCTIONS.md` | Catalog of task-specific instruction files |
 | `.revpack/instructions/` | Detailed task-specific instruction files |
 | `.revpack/bundle.json` | Machine-readable bundle metadata and local state |
-| `.revpack/description.md` | Raw MR/PR description |
+| `.revpack/description.md` | Author's MR/PR description |
 {{#if hasCommitList}}
 | `.revpack/commits.md` | Commit messages for the reviewed non-merge commits; intent context only |
 {{/if}}

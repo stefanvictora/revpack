@@ -6,7 +6,7 @@ Use `.revpack/threads/` and the active review thread overview in `.revpack/CONTE
 
 Only write a reply when it adds useful information for a human reviewer or the author. An active review thread does not require a reply just because it exists.
 
-Reply when:
+Reply when any of the following applies.
 
 - the thread asks a concrete question you can answer
 - the thread reports an issue and you can confirm it is fixed (no human has already confirmed)
@@ -24,6 +24,8 @@ Set `"resolve": true` when your reply conclusively completes the discussion. Pub
 For a fix made with `revpack-context`, describe the verified change in terms that will still be accurate when the reply is published. If the fix fully addresses the concern, set `"resolve": true` even while the change is awaiting commit or push.
 
 Keep `"resolve": false` for questions, partial fixes, suggested future work, or any reply that should continue the discussion.
+
+For a reply that offers a directly applicable code suggestion or needs a coding-agent handover, read `.revpack/instructions/04-suggestions-and-agent-handover.md`.
 
 ## System events
 
@@ -44,10 +46,9 @@ Set `generation.model` to the exact runtime model name exposed to you. Do not in
 [
   {
     "threadId": "T-001",
-    "disposition": "suggest_fix",
-    "generation": { "model": "Claude Fable 5" },
-    "body": "Good catch. The endpoint should preserve the existing audit call.{{#if useBitbucketHandoverMarkdown}}\n\n#### 🤖 Prompt for AI Agents\n\n> Verify this issue against the current code and only fix it if still applicable.\n>\n> In `@src/app.ts` around `exportData(...)`, restore audit logging before returning.{{else}}\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/app.ts` around `exportData(...)`, restore audit logging before returning.\n\n</details>{{/if}}",
-    "resolve": false
+    "disposition": "already_fixed",
+    "body": "Both export handlers now call `recordAuditEvent` before sending the response, including the early return for an empty export.",
+    "resolve": true
   }
 ]
 ```
