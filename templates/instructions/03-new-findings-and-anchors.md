@@ -1,28 +1,26 @@
 # New findings and positional anchors
 
+## Review the change in context
+
+What problem remains without this change? Use the stated intent when available. If it is unstated, review the observable behavior. Form a lightweight internal Risk Inventory of what changed and where a mistake would matter most. Use applicable `REVIEW.md` guidance when present. If it is absent, continue with the quality bar below.
+
+For a new capability or changed business rule, look where the project handles that use case. Does an existing path already meet the need? Does the proposed approach deliver the intended outcome end to end? Raise a design concern when you can show a missed requirement, a conflict with a documented decision or a concrete cost of maintaining two paths.
+
+In higher-risk areas, trace affected callers and consumers through relevant edge cases or failure paths. Check the guarantees they rely on and any companion updates the change requires elsewhere. Compare the resulting behavior with existing tests and documented contracts or architecture decisions. A test added alongside an implementation can encode the same mistaken assumption.
+
+For changed source comments, consider what a future maintainer learns about a decision or constraint. Flag a misleading claim or a retelling of the implementation discussion when it obscures how the code works.
+
 ## Quality bar
 
-Use `outputs/new-findings.json` for concrete, actionable issues that should become positional review threads. Prefer fewer, higher-value findings over many speculative ones.
+Before reporting a finding, try to disprove it. For a behavior claim, trace a reachable scenario and check whether a caller, guard or fallback already handles it. For a design or documentation concern, compare the specific code and project evidence involved. Keep a finding only when all of the following hold.
 
-Create a finding only when **all** of these are true:
+- This MR/PR introduces, exposes or worsens the issue. Show which changed code makes it relevant, how that leads to the consequence, and where the finding has a valid positional anchor in the current diff.
+- You can identify who or what is affected and how, for example incorrect behavior, a security risk, data loss, a broken contract, a performance regression or a concrete maintenance cost. For a test gap, name the specific regression it could miss.
+- The author can act on it and the existing discussion has not already covered it.
 
-1. The issue is introduced, exposed, or made worse by this MR/PR.
-2. The issue is visible from the diff or directly caused by changed code.
-3. The impact is concrete: incorrect behavior, security risk, data loss, broken API contract, performance regression, missing test for risky behavior, or maintainability problem with real future risk.
-4. The finding can be explained in 1–3 concise paragraphs.
-5. No existing thread, previous action, or other new finding already covers it.
+Prefer fewer, higher-value findings. Leave out broad refactoring preferences, style opinions without a readability impact, unrelated pre-existing problems and theoretical performance concerns without evidence.
 
-Do not create findings for speculative issues, broad refactoring preferences, style opinions (unless affecting readability in changed code), unrelated pre-existing problems, or theoretical performance concerns without evidence.
-
-## Review changed behavior, not just changed lines
-
-After understanding the overall change, form a lightweight internal Risk Inventory using the applicable `REVIEW.md` guidance when present and the quality bar above. Identify what behavior changed, what outcome it appears intended to deliver, and where failure would matter most. Use your judgment to focus deeper inspection.
-
-For higher-risk areas, inspect the surrounding code, affected callers and consumers, contracts, and tests. Consider reachability, relevant edge cases and failure modes, preserved guarantees, and related updates the change may require elsewhere.
-
-Before reporting a finding, try to disprove it. Keep only concerns that are concrete, introduced, exposed, or made worse by the MR/PR, not prevented by surrounding safeguards, and not already covered. Treat unresolved ambiguity about intent as a question, not a confirmed finding.
-
-Create positional findings only on lines listed in a per-file Anchor Map.
+If a merge decision depends on intent that the available evidence leaves open, check the existing discussion before raising a focused question in the optional Review Note. An absent rationale alone does not warrant a comment.
 
 ## Incremental review scope
 
@@ -38,7 +36,7 @@ The workspace contains only the new branch state. Deleted lines do not exist in 
 
 | Artifact                 | Use for                                                                                                           |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `diffs/files.json`       | Navigation, file selection, paths, and authoritative per-file patch and Anchor Map paths. Not itself an anchor.  |
+| `diffs/files.json`       | Navigation, file selection, paths, and authoritative per-file patch and Anchor Map paths. Not itself an anchor.   |
 | `diffs/latest.patch`     | Overall MR/PR understanding, cross-file relationships, change intent.                                             |
 | `diffs/patches/by-file/` | Detailed review of individual files selected through `diffs/files.json` (preferred over full patch).              |
 | `diffs/anchor-maps/`     | **Source of truth** for valid positional anchors. Every finding must reference a record in a per-file Anchor Map. |
@@ -92,6 +90,8 @@ Set `generation.model` to the exact runtime model name exposed to you. Do not in
 
 <example>
 
+In this example the runtime explicitly reports `Claude Fable 5`. Use the model identifier your own runtime reports.
+
 ```json
 [
   {
@@ -99,7 +99,7 @@ Set `generation.model` to the exact runtime model name exposed to you. Do not in
     "newPath": "src/app.ts",
     "newLine": 42,
     "generation": { "model": "Claude Fable 5" },
-    "body": "**Potential null dereference**: `user.name` is accessed without a null check.\n\nThe changed code reads `user.name` before validating that `user` exists. If the API receives a request without a resolved user, this fails with a runtime error instead of the expected validation response.\n\nSuggested fix: guard the access or return the existing validation response before reading the property.{{#if useBitbucketHandoverMarkdown}}\n\n#### 🤖 Prompt for AI Agents\n\n> Verify this issue against the current code and only fix it if still applicable.\n>\n> In `@src/app.ts` around line 42, guard `user.name` access for missing users.{{else}}\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/app.ts` around line 42, guard `user.name` access for missing users.\n\n</details>{{/if}}",
+    "body": "**Anonymous requests return 500**: This handler reads `user.name` before checking whether the request has a user.\n\nReturn the existing 401 response before accessing the name.",
     "severity": "high",
     "category": "correctness"
   }
@@ -110,46 +110,7 @@ Set `generation.model` to the exact runtime model name exposed to you. Do not in
 
 ## Finding body format
 
-````md
-**Short issue title**: Concrete problem and why it matters.
-
-The changed code does X, but in condition Y this causes Z.
-
-Suggested fix: [brief fix direction].
-
-```{{suggestionFence}}
-direct local replacement, if safely applicable
-```
-
-{{#if useBitbucketHandoverMarkdown}}
-#### 🤖 Prompt for AI Agents
-
-> Verify this issue against the current code and only fix it if still applicable.
->
-> In `@src/path/to/File.java` around `methodName(...)`, change the current behavior so that [desired behavior].
->
-> Preserve [important existing behavior, if relevant].
->
-> Add or update tests covering [specific scenario].
-{{else}}
-<details>
-<summary>🤖 Prompt for AI Agents</summary>
-
-Verify this issue against the current code and only fix it if still applicable.
-
-In `@src/path/to/File.java` around `methodName(...)`, change the current behavior so that [desired behavior].
-
-Preserve [important existing behavior, if relevant].
-
-Add or update tests covering [specific scenario].
-
-</details>
-{{/if}}
-````
-
-Omit the suggestion block when the replacement is not safe or complete.
-Omit the handover prompt when the fix is trivial and the suggestion suffices.
-Keep findings concise — no long code walkthroughs.
+Use the opening `**Short issue title**:` shown in the example. Explain the trigger and consequence in 1–3 short paragraphs. Give a fix direction when one is clear. For a safe local replacement, include a code suggestion. If the fix needs work elsewhere, append a self-contained handover for that work in the same `body`. Use the provider's format in `.revpack/instructions/04-suggestions-and-agent-handover.md`.
 
 ## Severity
 

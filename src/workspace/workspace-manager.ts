@@ -162,10 +162,6 @@ function buildInstructionRoute(
       reason: 'skip, no new target code to review proactively',
     });
     skipped.push({
-      path: '`.revpack/instructions/04-suggestions-and-agent-handover.md`',
-      reason: 'skip, no new findings pass is expected',
-    });
-    skipped.push({
       path: '`.revpack/instructions/05-review-note.md`',
       reason: 'skip, no MR/PR-level synthesis pass is expected',
     });
@@ -273,7 +269,6 @@ export class WorkspaceManager {
       outputDir: path.join(this.baseDir, 'outputs'),
     };
 
-    // Write description.md (raw MR/PR description)
     await this.writeDescription(target.description);
     await this.writeCommitList(options?.commits ?? []);
 
@@ -759,12 +754,12 @@ export class WorkspaceManager {
     const isLocal = target.provider === 'local';
     const targetKind = formatTargetKind(target);
     const targetDisplayId = formatTargetDisplayId(target);
-    const targetTypeLabel =
-      target.provider === 'gitlab'
-        ? 'GitLab merge request'
-        : target.provider === 'github'
-          ? 'GitHub pull request'
-          : 'Local Git review';
+    const targetTypeLabel = {
+      gitlab: 'GitLab merge request',
+      github: 'GitHub pull request',
+      'bitbucket-cloud': 'Bitbucket Cloud pull request',
+      local: 'Local Git review',
+    }[target.provider];
 
     const ps = options?.prepareSummary;
     let checkpoint: ContextTemplateView['checkpoint'];
@@ -833,6 +828,7 @@ export class WorkspaceManager {
     const readingOrder = this.buildContextReadingOrder(
       isIncrementalCodeReview,
       instructionRoute.proactiveReview,
+      target.description,
       hasCommitList,
       activeThreadCount > 0,
     );
@@ -920,16 +916,25 @@ export class WorkspaceManager {
   private buildContextReadingOrder(
     isIncrementalCodeReview: boolean,
     proactiveReview: boolean,
+    description: string,
     hasCommitList: boolean,
     hasActiveThreads: boolean,
   ): string[] {
+    const order = [
+      'Read the files listed in **Required Formal Review Instructions for This Run**.',
+      'Read applicable `REVIEW.md` guidance as described in **Formal review guidance**.',
+      'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
+    ];
+    if (proactiveReview && description && sanitizeDescriptionForAgent(description)) {
+      order.push('Read `.revpack/description.md` for the stated problem and intended outcome.');
+    }
+    if (proactiveReview && hasCommitList) {
+      order.push('Read `.revpack/commits.md` for commit-message intent context.');
+    }
+
     if (isIncrementalCodeReview) {
       return [
-        'Read this context file.',
-        'Read the files listed in **Required Formal Review Instructions for This Run**.',
-        'Read applicable `REVIEW.md` guidance as described in **Formal review guidance**.',
-        'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
-        ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
+        ...order,
         'Read `.revpack/diffs/incremental.patch` to understand what changed since the last checkpoint.',
         ...(hasActiveThreads ? ['Read relevant changed or active review thread files in `.revpack/threads/`.'] : []),
         'Use `.revpack/diffs/latest.patch` only for full MR/PR context when needed.',
@@ -939,20 +944,15 @@ export class WorkspaceManager {
       ];
     }
 
-    const order = [
-      'Read this context file.',
-      'Read the files listed in **Required Formal Review Instructions for This Run**.',
-      'Read applicable `REVIEW.md` guidance as described in **Formal review guidance**.',
-      'Read existing drafts in `.revpack/outputs/`, if present, and follow the rerun rules in the workflow instructions.',
-      ...(hasCommitList ? ['Read `.revpack/commits.md` for commit-message intent context.'] : []),
-      ...(hasActiveThreads
-        ? ['Read relevant active review thread files in `.revpack/threads/` when the current run requires thread work.']
-        : []),
-      'Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
-    ];
+    if (hasActiveThreads) {
+      order.push(
+        'Read relevant active review thread files in `.revpack/threads/` when the current run requires thread work.',
+      );
+    }
 
     if (proactiveReview) {
       order.push(
+        'Use `.revpack/diffs/files.json` to understand which files changed and to locate the relevant per-file patch paths.',
         'Use `.revpack/diffs/latest.patch` for the overall change and cross-file context.',
         'Use the patch paths listed in `.revpack/diffs/files.json` for focused review of individual changed files.',
         'Use the per-file Anchor Maps listed in `.revpack/diffs/files.json` to choose valid review anchors before creating findings.',

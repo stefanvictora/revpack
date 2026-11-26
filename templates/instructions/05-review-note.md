@@ -17,7 +17,7 @@ Good uses:
 - repeated patterns (naming, structure, maintainability) across multiple changed files
 - product, security, or architectural decisions that should be confirmed before merge
 
-For lower-confidence concerns, phrase as a question: "Please confirm whether existing projects need a backfill for this counter."
+When a material technical detail is unverified or a decision belongs to the author, state the evidence and phrase the uncertainty as a question. For example, “The migration sets the counter to zero for existing projects. Should their first report show zero or their historical total?”
 
 ## When to omit it
 

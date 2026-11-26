@@ -12,7 +12,9 @@ Use a suggestion block when:
 
 Do not use suggestion blocks for pseudocode, incomplete fragments, large rewrites, changes across multiple unrelated locations, or fixes you are not confident about.
 
-A fix may still need tests, imports, or follow-up elsewhere — that does not disqualify a suggestion block. Include both a suggestion block for the local fix and a handover prompt for remaining work.
+A fix may also need tests, imports or companion edits elsewhere. When the local replacement is safe, include both the suggestion block and a handover prompt for the remaining work, in that order in the finding or reply body.
+
+Separate Markdown blocks with `\n\n` in the JSON `body` string so each block renders on its own after parsing.
 
 Default syntax — replaces only the anchored line:
 
@@ -34,7 +36,7 @@ For GitHub, Bitbucket Cloud, and local reviews, the finding's positional anchor 
 
 ## Agent handover prompts
 
-Include a handover prompt when the fix is clear and a developer may want an AI coding agent to implement it. Especially useful for multi-file edits, test additions, or fixes too large for a suggestion block.
+Include a self-contained handover when the fix is clear and a developer could delegate it to a coding agent. This is especially useful for multi-file edits, test additions and fixes too large for a suggestion block. A directly applicable suggestion that completes a trivial fix is sufficient on its own.
 
 ### Writing effective handover prompts
 
@@ -83,5 +85,22 @@ Add or update tests covering [specific scenario].
 - Describe the desired final behavior and what should be preserved.
 - Mention tests when the fix should include a regression test.
 - Keep it concise: typically one location sentence, one behavior sentence, one preservation sentence, one test sentence.
+
+### Example with both blocks
+
+Here the suggestion fixes the export, and the handover covers the regression test. The runtime did not provide a model name. A reply can use the same `body` format.
+
+```json
+[
+  {
+    "oldPath": "src/export.ts",
+    "newPath": "src/export.ts",
+    "newLine": 42,
+    "body": "**Zero balances export as empty cells**: `formatBalance` treats zero as missing. Use the empty cell only for a missing balance.\n\n```{{suggestionFence}}\nreturn balance ?? '';\n```\n\n{{#if useBitbucketHandoverMarkdown}}#### 🤖 Prompt for AI Agents\n\n> Verify this issue against the current code and only fix it if still applicable.\n>\n> In `@src/export.test.ts`, cover `formatBalance` in `@src/export.ts`. A zero balance should export as `0` and a missing balance as an empty cell.{{else}}<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/export.test.ts`, cover `formatBalance` in `@src/export.ts`. A zero balance should export as `0` and a missing balance as an empty cell.\n\n</details>{{/if}}",
+    "severity": "medium",
+    "category": "correctness"
+  }
+]
+```
 
 ---

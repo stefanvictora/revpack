@@ -1,20 +1,12 @@
 # Review workflow and outputs
 
-## Review goal
-
-Review the MR/PR changes and write structured review outputs under `.revpack/outputs/`. Do not modify source files. The developer decides what to apply or publish.
-
-If you accidentally modify files outside `.revpack/outputs/`, stop and report it immediately.
-
 ## Execution model
 
-This workspace is read-only — for code review and output generation, not local validation.
+Read and search the diff, source, tests, review threads and documentation relevant to the task. Write drafts only under `.revpack/outputs/`. The developer decides what to apply or publish.
 
-Do not run build, test, lint, format, package-manager, migration, Docker, startup, or Git-hook commands. The project pipeline handles mechanical validation; if it fails, developers can see that in the MR/PR.
+If you accidentally modify anything outside `.revpack/outputs/`, stop immediately and report the change.
 
-Review tests by reading the diff and existing test files. Flag missing or misleading tests when there is a concrete risk, but do not execute them or claim they pass.
-
-Allowed activity: reading and searching files needed for review (source files, diff artifacts, thread files, documentation).
+Leave test execution and other mechanical checks to the project pipeline. Describe the assertions you read without claiming the tests passed. Flag a gap when you can name the regression it would miss.
 
 ## Output files
 
@@ -38,6 +30,8 @@ Existing `replies.json`, `new-findings.json`, and `note.md` are pending, revisab
 When reconciling an existing `replies.json`, a referenced `T-NNN` thread may be in `.revpack/threads/` or `.revpack/resolved-threads/`. A thread's current resolved state does not by itself invalidate a pending draft reply; retain, revise, or remove the draft based on whether it remains useful.
 
 Read an existing `summary.md` before updating it.
+
+When a follow-up question or pending draft depends on intent, consult the MR/PR description and available commit messages. When it depends on changed behavior, use `.revpack/diffs/files.json` to locate the relevant patch or Anchor Map. Before revising a code suggestion or handover in a draft, read `.revpack/instructions/04-suggestions-and-agent-handover.md` for the provider's format.
 
 ## Language and encoding
 
@@ -63,7 +57,5 @@ Key diff artifacts:
 | `diffs/anchor-maps/`     | Per-file valid positional anchors — read exact paths from `diffs/files.json` or search the whole directory |
 
 Use checked-out source files when the diff alone is not enough.
-
-`REVIEW.md` in the repository root contains project-specific review priorities and conventions.
 
 ---

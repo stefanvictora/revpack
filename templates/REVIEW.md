@@ -96,11 +96,7 @@ Do not flag:
 
 ## Pre-existing issues
 
-Do not treat unrelated pre-existing issues as normal review findings.
-
-If a pre-existing issue is important enough to mention, clearly mark it as pre-existing and avoid implying that the MR/PR author introduced it.
-
-If the change exposes, worsens, or relies on a pre-existing issue, it is in scope. Explain how the changed behavior makes the issue relevant.
+When an existing defect matters to a review thread or merge decision, label it as pre-existing. For a positional finding, explain how the MR/PR exposes it, worsens it, or introduces a new dependency on the faulty behavior. Make clear which consequence the author can address in this change.
 
 ## Testing feedback
 

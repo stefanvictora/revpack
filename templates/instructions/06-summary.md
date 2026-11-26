@@ -1,7 +1,7 @@
 # MR/PR summary
 
 <hard_constraints>
-Generate `outputs/summary.md`.
+Generate `outputs/summary.md` for the MR/PR as a whole. On an incremental review, keep an existing summary as written when it already describes and correctly categorizes the final outcomes.
 
 - Describe what the MR/PR changes, not what the reviewer found.
 - Write for reviewers who have not read the diff yet.
@@ -32,9 +32,11 @@ Use `Internal` only when the internal change is important for understanding arch
 
 Use the category that best describes the reader-relevant effect of the change.
 
-Choose categories relative to existing product behavior, not review timing. A capability newly introduced by this MR/PR is `Added` even if it appeared during an incremental review.
+Compare the final behavior with the MR/PR base. If the checkpoint delta leaves it unclear what existed at the base, consult the relevant part of `.revpack/diffs/latest.patch`.
 
-Use `Changed` for alterations to existing behavior, generated output, validation, workflows, or tool behavior.
+Use `Added` for a capability introduced at any point in this MR/PR. Fold a later fix or refinement into its `Added` bullet only if it changes what the reader needs to know. Remove any separate `Changed` or `Fixed` entry for the same correction.
+
+Use `Changed` for alterations to behavior, generated output, validation or workflows already present at the base. Use `Fixed` for a defect that was present at the base. Omit a regression introduced and fully undone within this MR/PR.
 
 Use `Documentation` for human-facing documentation such as README updates, guides, or explanatory text.
 
@@ -105,6 +107,8 @@ Merge related changes aggressively:
 
 <example>
 
+An MR/PR adds local review mode. A review follow-up fixes that new mode for workspace paths containing spaces. The MR/PR also changes the sort order of an existing list of remote review threads.
+
 ```md
 ## Added
 
@@ -112,7 +116,7 @@ Merge related changes aggressively:
 
 ## Changed
 
-- Updates CLI output and target resolution to distinguish MR, PR, and local review targets more clearly.
+- Sorts the remote review thread list by file path.
 
 ## Tests
 

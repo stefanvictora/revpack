@@ -6,7 +6,7 @@ Use `.revpack/threads/` and the active review thread overview in `.revpack/CONTE
 
 Only write a reply when it adds useful information for a human reviewer or the author. An active review thread does not require a reply just because it exists.
 
-Reply when:
+Reply when any of the following applies.
 
 - the thread asks a concrete question you can answer
 - the thread reports an issue and you can confirm it is fixed (no human has already confirmed)
@@ -25,6 +25,8 @@ For a fix made with `revpack-context`, describe the verified change in terms tha
 
 Keep `"resolve": false` for questions, partial fixes, suggested future work, or any reply that should continue the discussion.
 
+When proposing a fix, read `.revpack/instructions/04-suggestions-and-agent-handover.md` before drafting a code suggestion or a coding-agent handover. A safe local replacement can be paired with a handover for tests, imports or changes elsewhere.
+
 ## System events
 
 Thread files may contain system events (e.g. "changed this line in version 3 of the diff"), indicating the author may have pushed a fix. Always verify in the code — do not assume the issue is fixed just because a system event exists.
@@ -40,14 +42,22 @@ Set `generation.model` to the exact runtime model name exposed to you. Do not in
 
 <example>
 
+These drafts come from successive runs. The first runtime reported `Claude Fable 5`. The second did not expose a model name.
+
 ```json
 [
   {
     "threadId": "T-001",
     "disposition": "suggest_fix",
     "generation": { "model": "Claude Fable 5" },
-    "body": "Good catch. The endpoint should preserve the existing audit call.{{#if useBitbucketHandoverMarkdown}}\n\n#### 🤖 Prompt for AI Agents\n\n> Verify this issue against the current code and only fix it if still applicable.\n>\n> In `@src/app.ts` around `exportData(...)`, restore audit logging before returning.{{else}}\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\n\nVerify this issue against the current code and only fix it if still applicable.\n\nIn `@src/app.ts` around `exportData(...)`, restore audit logging before returning.\n\n</details>{{/if}}",
+    "body": "The CSV writer still treats a zero balance as missing. Check for null here so zero is included in the export.",
     "resolve": false
+  },
+  {
+    "threadId": "T-002",
+    "disposition": "already_fixed",
+    "body": "Both export handlers now call `recordAuditEvent` before sending the response, including the early return for an empty export.",
+    "resolve": true
   }
 ]
 ```

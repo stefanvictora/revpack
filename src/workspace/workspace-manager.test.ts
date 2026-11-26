@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { newFindingsArraySchema, repliesArraySchema } from '../core/schemas.js';
 import { WorkspaceManager } from '../workspace/workspace-manager.js';
 import type {
   ReviewTarget,
@@ -13,6 +14,14 @@ import type {
   BundleLocal,
 } from '../core/types.js';
 import { computeContentHash } from './thread-digest.js';
+
+const requiredHandoverStep = /^\d+\. `\.revpack\/instructions\/04-suggestions-and-agent-handover\.md`$/m;
+
+function jsonExample(instructions: string): unknown {
+  const block = /```json\r?\n([\s\S]*?)\r?\n```/.exec(instructions);
+  if (!block) throw new Error('Missing JSON example in generated review instructions');
+  return JSON.parse(block[1]);
+}
 
 const makeTarget = (): ReviewTarget => ({
   provider: 'gitlab',
@@ -246,15 +255,40 @@ describe('WorkspaceManager', () => {
     expect(context).not.toContain('## Review Contract');
     expect(reviewContract).toContain('do not discard a valid, non-duplicate issue');
     expect(findingsInstructions).toContain(
-      'using the applicable `REVIEW.md` guidance when present and the quality bar above',
+      'Use applicable `REVIEW.md` guidance when present. If it is absent, continue with the quality bar below.',
     );
-    expect(findingsInstructions).not.toContain('using the priorities in REVIEW.md');
-    expect(findingsInstructions).toContain('Use your judgment to focus deeper inspection');
+    expect(findingsInstructions).toContain('What problem remains without this change?');
+    expect(findingsInstructions).toContain('Does an existing path already meet the need?');
+    expect(findingsInstructions).toContain('For changed source comments');
     expect(findingsInstructions).toContain('Before reporting a finding, try to disprove it');
     expect(findingsInstructions).toContain('## Incremental review scope');
     expect(findingsInstructions).toContain('Looking up the required records is an input step');
-    expect(finalChecks).toContain('disprove each remaining candidate finding');
+    expect(finalChecks).toContain('revisit the Risk Inventory');
+    expect(finalChecks).toContain('try to disprove each remaining candidate finding');
     expect(finalChecks).toContain('no valid finding was removed solely because it is outside the checkpoint delta');
+  });
+
+  it('shows publishable draft examples for known and unknown model names and open and completed threads', async () => {
+    const target = makeTarget();
+    const { threadIndex } = await createBundle(manager, target, []);
+    await manager.writeContext(target, [], [], threadIndex);
+
+    const dir = path.join(manager.bundlePath, 'instructions');
+    const findings = newFindingsArraySchema.parse(
+      jsonExample(await fs.readFile(path.join(dir, '03-new-findings-and-anchors.md'), 'utf-8')),
+    );
+    const replies = repliesArraySchema.parse(
+      jsonExample(await fs.readFile(path.join(dir, '02-thread-replies.md'), 'utf-8')),
+    );
+
+    expect(findings[0].generation?.model).toEqual(expect.any(String));
+    expect(replies[0]).toMatchObject({
+      disposition: 'suggest_fix',
+      resolve: false,
+      generation: { model: expect.any(String) },
+    });
+    expect(replies[1]).toMatchObject({ disposition: 'already_fixed', resolve: true });
+    expect(replies[1].generation).toBeUndefined();
   });
 
   it('renders GitHub instruction templates with plain suggestion fences', async () => {
@@ -264,25 +298,19 @@ describe('WorkspaceManager', () => {
     await manager.writeContext(target, [], [makeDiff()], threadIndex);
 
     const bundleDir = path.join(tmpDir, '.revpack');
-    const findingsInstructions = await fs.readFile(
-      path.join(bundleDir, 'instructions', '03-new-findings-and-anchors.md'),
-      'utf-8',
-    );
     const suggestionsInstructions = await fs.readFile(
       path.join(bundleDir, 'instructions', '04-suggestions-and-agent-handover.md'),
       'utf-8',
     );
 
-    expect(findingsInstructions).toContain('```suggestion\n');
-    expect(findingsInstructions).not.toContain('suggestion:-0+0');
     expect(suggestionsInstructions).toContain('```suggestion\n');
     expect(suggestionsInstructions).not.toContain('suggestion:-0+0');
     expect(suggestionsInstructions).not.toContain('suggestion:-1+2');
     expect(suggestionsInstructions).toContain('For GitHub, Bitbucket Cloud, and local reviews');
     expect(suggestionsInstructions).not.toContain('For GitHub and local reviews');
     expect(suggestionsInstructions).toContain('The fence stays plain `suggestion`');
-    expect(findingsInstructions).toContain('<details>');
-    expect(findingsInstructions).toContain('<summary>🤖 Prompt for AI Agents</summary>');
+    expect(suggestionsInstructions).toContain('<details>');
+    expect(suggestionsInstructions).toContain('<summary>🤖 Prompt for AI Agents</summary>');
   });
 
   it('renders GitLab instruction templates with range-offset suggestion fences', async () => {
@@ -292,19 +320,16 @@ describe('WorkspaceManager', () => {
     await manager.writeContext(target, [], [makeDiff()], threadIndex);
 
     const bundleDir = path.join(tmpDir, '.revpack');
-    const findingsInstructions = await fs.readFile(
-      path.join(bundleDir, 'instructions', '03-new-findings-and-anchors.md'),
-      'utf-8',
-    );
     const suggestionsInstructions = await fs.readFile(
       path.join(bundleDir, 'instructions', '04-suggestions-and-agent-handover.md'),
       'utf-8',
     );
 
-    expect(findingsInstructions).toContain('```suggestion:-0+0\n');
     expect(suggestionsInstructions).toContain('```suggestion:-0+0\n');
     expect(suggestionsInstructions).toContain('Use wider ranges only when the replacement needs neighboring lines.');
     expect(suggestionsInstructions).toContain('suggestion range (`-1+2`)');
+    const [finding] = newFindingsArraySchema.parse(jsonExample(suggestionsInstructions));
+    expect(finding.body).toMatch(/\n\n```suggestion:-0\+0\n[^\n]+\n```\n\n<details>\n<summary>/);
   });
 
   it('renders local instruction templates with plain suggestion fences', async () => {
@@ -344,14 +369,18 @@ describe('WorkspaceManager', () => {
       'utf-8',
     );
 
-    expect(repliesInstructions).toContain('#### 🤖 Prompt for AI Agents');
-    expect(findingsInstructions).toContain('#### 🤖 Prompt for AI Agents');
+    for (const instructions of [repliesInstructions, findingsInstructions]) {
+      expect(instructions).toContain('`.revpack/instructions/04-suggestions-and-agent-handover.md`');
+      expect(instructions).not.toContain('🤖 Prompt for AI Agents');
+    }
     expect(suggestionsInstructions).toContain('#### 🤖 Prompt for AI Agents');
     expect(suggestionsInstructions).toContain('For GitHub, Bitbucket Cloud, and local reviews');
     expect(suggestionsInstructions).toContain('The fence stays plain `suggestion`');
     expect(suggestionsInstructions).not.toContain('For GitHub and local reviews');
     expect(suggestionsInstructions).not.toContain('suggestion:-0+0');
-    expect(findingsInstructions).toContain('> Verify this issue against the current code');
+    expect(suggestionsInstructions).toContain('> Verify this issue against the current code');
+    const [finding] = newFindingsArraySchema.parse(jsonExample(suggestionsInstructions));
+    expect(finding.body).toMatch(/\n\n```suggestion\n[^\n]+\n```\n\n#### 🤖 Prompt for AI Agents\n\n> /);
     expect(`${repliesInstructions}\n${findingsInstructions}\n${suggestionsInstructions}`).not.toContain('<details>');
     expect(`${repliesInstructions}\n${findingsInstructions}\n${suggestionsInstructions}`).not.toContain('<summary>');
   });
@@ -957,8 +986,22 @@ describe('WorkspaceManager', () => {
         '| `.revpack/commits.md` | Commit messages for the reviewed non-merge commits; intent context only |',
       );
       expect(content).toContain('Read `.revpack/commits.md` for commit-message intent context.');
+      const descriptionIndex = content.indexOf('Read `.revpack/description.md`');
+      expect(descriptionIndex).toBeGreaterThan(-1);
+      expect(content.indexOf('Read `.revpack/commits.md`')).toBeGreaterThan(descriptionIndex);
       expect(content).not.toContain('`.revpack/commits.md` —');
     });
+
+    it.each(['', '###### revpack:summary\nGenerated summary\n###### revpack:end'])(
+      'skips the description reading step when there is no author description (%j)',
+      async (description) => {
+        const target = { ...makeTarget(), description };
+        const { threadIndex } = await createBundle(manager, target, []);
+        const contextPath = await manager.writeContext(target, [], [], threadIndex);
+        const content = await fs.readFile(contextPath, 'utf-8');
+        expect(content).not.toContain('Read `.revpack/description.md`');
+      },
+    );
 
     it('omits commit message context when commits.md is missing or empty', async () => {
       const { threadIndex } = await createBundle(manager, makeTarget(), [], [makeDiff()]);
@@ -1150,6 +1193,14 @@ describe('WorkspaceManager', () => {
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('## Incremental Review Rules');
+      expect(content).toMatch(/^\d+\. `\.revpack\/instructions\/06-summary\.md`$/m);
+      const summaryInstructions = await fs.readFile(
+        path.join(manager.bundlePath, 'instructions', '06-summary.md'),
+        'utf-8',
+      );
+      expect(summaryInstructions).toContain('Compare the final behavior with the MR/PR base.');
+      expect(summaryInstructions).toContain('Fold a later fix or refinement into its `Added` bullet');
+      expect(summaryInstructions).toContain('Remove any separate `Changed` or `Fixed` entry for the same correction.');
       expect(content).toContain('Incremental mode limits required review effort. It does not limit valid reporting.');
       expect(content).toContain(
         'Do not remove or suppress a valid finding solely because the relevant line is outside `.revpack/diffs/incremental.patch`.',
@@ -1207,7 +1258,9 @@ describe('WorkspaceManager', () => {
       const content = await fs.readFile(contextPath, 'utf-8');
       const commitsIndex = content.indexOf('Read `.revpack/commits.md` for commit-message intent context.');
       const incrementalIndex = content.indexOf('Read `.revpack/diffs/incremental.patch`');
-      expect(commitsIndex).toBeGreaterThan(-1);
+      const descriptionIndex = content.indexOf('Read `.revpack/description.md`');
+      expect(descriptionIndex).toBeGreaterThan(-1);
+      expect(commitsIndex).toBeGreaterThan(descriptionIndex);
       expect(incrementalIndex).toBeGreaterThan(commitsIndex);
     });
 
@@ -1297,12 +1350,14 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('`.revpack/instructions/02-thread-replies.md` — skip, no active review threads');
       // Fresh review (no prepareSummary) → proactive review instructions required
       expect(content).not.toContain('03-new-findings-and-anchors.md` — skip');
+      expect(content).toMatch(requiredHandoverStep);
 
       const workflowInstructions = await fs.readFile(
         path.join(tmpDir, '.revpack', 'instructions', '01-review-workflow-and-outputs.md'),
         'utf-8',
       );
       expect(workflowInstructions).toContain('## Rerunning a review');
+      expect(workflowInstructions).toContain('`.revpack/instructions/04-suggestions-and-agent-handover.md`');
       expect(workflowInstructions).toContain(
         'Existing `replies.json`, `new-findings.json`, and `note.md` are pending, revisable drafts.',
       );
@@ -1340,9 +1395,10 @@ describe('WorkspaceManager', () => {
 
     it('routes thread-only refreshes away from proactive review instructions', async () => {
       const threads = [makeThread()];
-      const { threadIndex } = await createBundle(manager, makeTarget(), threads);
+      const { threadIndex } = await createBundle(manager, makeTarget(), threads, [], [], [makeCommit()]);
 
       const contextPath = await manager.writeContext(makeTarget(), threads, [], threadIndex, {
+        hasCommitList: true,
         prepareSummary: {
           mode: 'refresh',
           checkpoint: {
@@ -1366,6 +1422,7 @@ describe('WorkspaceManager', () => {
 
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('| Mode | Thread follow-up |');
+      expect(content).not.toMatch(requiredHandoverStep);
       expect(content).toContain('`.revpack/instructions/02-thread-replies.md`');
       expect(content).not.toMatch(/^\d+\. `\.revpack\/instructions\/03-new-findings-and-anchors\.md`/m);
       expect(content).toContain(
@@ -1381,7 +1438,8 @@ describe('WorkspaceManager', () => {
       expect(content).toContain('threads or replies have been updated');
       expect(content).toContain('Focus on updated active review threads');
       // All proactive instructions are skipped with specific reasons
-      expect(content).toContain('skip, no new findings pass is expected');
+      expect(content).not.toContain('Read `.revpack/description.md`');
+      expect(content).not.toContain('Read `.revpack/commits.md`');
       expect(content).toContain('skip, no MR/PR-level synthesis pass is expected');
       expect(content).toContain('skip, no code-change summary update is expected');
     });
@@ -3039,9 +3097,10 @@ describe('WorkspaceManager', () => {
       });
       const content = await fs.readFile(contextPath, 'utf-8');
       expect(content).toContain('| Mode | Outputs-only follow-up |');
+      expect(content).not.toMatch(requiredHandoverStep);
       expect(content).toContain('skip, no thread/reply updates since the last checkpoint');
       expect(content).toContain('skip, no new target code to review proactively');
-      expect(content).toContain('skip, no new findings pass is expected');
+      expect(content).not.toContain('Read `.revpack/description.md`');
       expect(content).toContain('skip, no MR/PR-level synthesis pass is expected');
       expect(content).toContain('skip, no code-change summary update is expected');
       expect(content).toContain('Inspect pending outputs');
@@ -3080,7 +3139,7 @@ describe('WorkspaceManager', () => {
       // Checkpoint-specific guidance
       expect(content).toContain('Target code has changed since the last review checkpoint');
       expect(content).toContain('Focus proactive review on the code changes since the last checkpoint');
-      // All instructions required → no "Skipped" section
+      expect(content).toMatch(requiredHandoverStep);
       expect(content).not.toContain('Skipped this run');
       // Instructions numbered starting from 1
       expect(content).toMatch(/^1\. `\.revpack\/instructions\/00-review-contract\.md`/m);
@@ -3139,18 +3198,16 @@ describe('WorkspaceManager', () => {
   });
 
   describe('writeContext target types', () => {
-    it('renders GitHub pull request type correctly', async () => {
-      const target: ReviewTarget = {
-        ...makeTarget(),
-        provider: 'github',
-        targetType: 'pull_request',
-        targetId: '7',
-      };
+    it.each([
+      ['github', 'GitHub pull request'],
+      ['bitbucket-cloud', 'Bitbucket Cloud pull request'],
+    ] as const)('identifies a %s pull request in the agent context', async (provider, label) => {
+      const target = makeTargetForProvider(provider);
       const { threadIndex } = await createBundle(manager, target, []);
       const contextPath = await manager.writeContext(target, [], [], threadIndex);
       const content = await fs.readFile(contextPath, 'utf-8');
-      expect(content).toContain('GitHub pull request');
-      expect(content).toContain('#7');
+      expect(content).toContain(`| Type | ${label} |`);
+      expect(content).toContain(`| PR | #${target.targetId} — ${target.title} |`);
     });
 
     it('renders local provider type correctly', async () => {
